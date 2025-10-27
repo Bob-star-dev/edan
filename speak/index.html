@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text-to-Speech 🦑</title>
+    
+    <!-- ResponsiveVoice for Text-to-Speech -->
+    <script src='https://code.responsivevoice.org/responsivevoice.js'></script>
+    
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Text-to-Speech 🦑</h1>
+
+    <section>
+        <textarea id="textInput" placeholder="Hello, Codepen!" spellcheck="false">
+What I should remember?
+        </textarea>
+        
+        <!-- Voice selection -->
+        <input type="radio" name="voice" value="UK English Female" data-label="Female" checked>
+        <input type="radio" name="voice" value="UK English Male" data-label="Male">
+        
+        <!-- Speed control -->
+        <input type="range" id="rateControl" min=".2" max="1.7" step=".1" data-label="Rate" value="1">
+        
+        <!-- Speak button -->
+        <div id="speakBtn">SAY IT</div>
+    </section>
+
+    <article>
+        <span>For example or for fun copy following paragraph and paste into textarea ʘ‿ʘ</span>
+        <pre>For millions of years mankind lived just like the animals.
+Then something happened, 
+which unleashed the power of our imagination.
+We learned to code!</pre>
+    </article>
+
+    <!-- Custom JavaScript -->
+    <script src="script.js"></script>
+</body>
+</html>
