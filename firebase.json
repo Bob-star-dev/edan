@@ -1,12 +1,19 @@
 {
   "hosting": {
-    "public": "map",
+    "public": ".",
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      "speak/**",
+      "voice/**",
+      "tracking/**"
     ],
     "rewrites": [
+      {
+        "source": "/map/**",
+        "destination": "/map.html"
+      },
       {
         "source": "**",
         "destination": "/index.html"
