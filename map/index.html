@@ -23,16 +23,41 @@
 <body>
 <div id="map"></div>
 
+<!-- Permission Request Popup -->
+<div id="permissionPopup" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 10px; z-index: 10000; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-width: 400px; text-align: center; display: block;">
+  <h2 style="margin-top: 0; color: #3b49df;">Akses Lokasi Diperlukan</h2>
+  <p style="font-size: 16px; color: #666;">Aplikasi ini memerlukan akses ke lokasi Anda saat ini untuk menampilkan:</p>
+  <ul style="text-align: left; margin: 20px 0;">
+    <li>📍 Lokasi Anda saat ini di peta</li>
+    <li>🗺️ Rute dari lokasi Anda ke tujuan</li>
+    <li>📍 Update lokasi setiap 3 detik</li>
+  </ul>
+  <button id="requestPermissionBtn" onclick="requestLocationPermission()" style="background: #3b49df; color: white; border: none; padding: 12px 30px; font-size: 16px; border-radius: 5px; cursor: pointer; margin: 10px;">
+    Berikan Akses Lokasi
+  </button>
+  <p style="font-size: 12px; color: #999; margin-top: 15px;">Setelah mengklik, browser akan meminta izin akses lokasi</p>
+  <p style="font-size: 11px; color: #ff6b6b; margin-top: 10px; font-weight: bold;">
+    ⚠️ Penting: Gunakan <strong>localhost:8000</strong> atau <strong>127.0.0.1:8000</strong><br>
+    Geolocation tidak bekerja dengan IP network (192.168.x.x)
+  </p>
+</div>
+
+<!-- Status Panel -->
 <div style="position: absolute; top: 10px; left: 10px; background: white; padding: 15px; border-radius: 5px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.3); max-width: 300px;">
-  <h3 style="margin-top: 0;">Track Your Location</h3>
+  <h3 style="margin-top: 0;">📍 Track Your Location</h3>
   <p style="font-size: 14px; margin: 5px 0;" id="status">Waiting for location...</p>
   <p style="font-size: 14px; margin: 5px 0;" id="coordinates">Lat: -, Lng: -</p>
+  <p style="font-size: 12px; margin: 5px 0; color: #666;" id="accuracy">Accuracy: -</p>
   
   <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
     <h4 style="margin-top: 0; font-size: 16px;">Live Route Tracking</h4>
     <p style="font-size: 12px; color: #666;">Shows route from your current location to destination</p>
     <p style="font-size: 11px; color: #999;">Route updates every 3 seconds</p>
   </div>
+  
+  <button id="retryBtn" style="margin-top: 10px; background: #28a745; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-size: 14px; width: 100%; display: none;">
+    🔄 Coba Lagi
+  </button>
 </div>
 
 <!-- Leaflet JS -->
