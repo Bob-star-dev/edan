@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Location Tracker with Route</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Leaflet Routing Machine CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="map.css">
+    <style>
+    body {
+        padding: 0;
+        margin: 0;
+    }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+
+<div style="position: absolute; top: 10px; left: 10px; background: white; padding: 15px; border-radius: 5px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.3); max-width: 300px;">
+  <h3 style="margin-top: 0;">Track Your Location</h3>
+  <p style="font-size: 14px; margin: 5px 0;" id="status">Waiting for location...</p>
+  <p style="font-size: 14px; margin: 5px 0;" id="coordinates">Lat: -, Lng: -</p>
+  
+  <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
+    <h4 style="margin-top: 0; font-size: 16px;">Live Route Tracking</h4>
+    <p style="font-size: 12px; color: #666;">Shows route from your current location to destination</p>
+    <p style="font-size: 11px; color: #999;">Route updates every 3 seconds</p>
+  </div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Leaflet Routing Machine JS -->
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+<!-- Custom JS -->
+<script src="index.js"></script>
+</body>
+</html>
