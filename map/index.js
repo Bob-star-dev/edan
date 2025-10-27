@@ -36,6 +36,9 @@ let announcementQueue = [];
 
 // Function to handle when user's location is found
 function onLocationFound(e) {
+    // Hide permission popup when location is found
+    hidePermissionPopup();
+    
     // Update status display
     const statusEl = document.getElementById('status');
     const coordsEl = document.getElementById('coordinates');
@@ -116,6 +119,9 @@ function onLocationError(e) {
 
 // Store last route hash to detect new routes
 let lastRouteHash = null;
+let isAnnouncingRoute = false; // Prevent duplicate announcements
+let lastSpokenMessage = ''; // Track last spoken message to prevent duplicates
+let lastAnnouncementTime = 0; // Track when last announcement was made
 
 // Function to update or create the route from user location to destination
 function updateRoute(userLatLng) {
@@ -136,26 +142,70 @@ function updateRoute(userLatLng) {
         route.on('routesfound', function(e) {
             // Create route hash
             const routeHash = JSON.stringify(e.routes[0].coordinates);
+            const now = Date.now();
             
-            // Only announce if this is a new route (different hash)
-            if (routeHash !== lastRouteHash) {
+            // Check if enough time has passed since last announcement (prevent rapid triggers)
+            const timeSinceLastAnnouncement = now - lastAnnouncementTime;
+            const hasEnoughTimePassed = timeSinceLastAnnouncement > 3000; // 3 seconds minimum
+            
+            // Only announce if this is a new route, not already announcing, and enough time has passed
+            if (routeHash !== lastRouteHash && !isAnnouncingRoute && hasEnoughTimePassed) {
                 lastRouteHash = routeHash;
+                isAnnouncingRoute = true;
+                lastAnnouncementTime = now;
+                
+                console.log('🗺️ New route detected, preparing announcement...');
                 
                 // Delay to allow routing control to render
                 setTimeout(function() {
                     if (voiceDirectionsEnabled) {
                         announceRouteDirections(true);
                     }
+                    // Reset flag after announcement starts
+                    setTimeout(function() {
+                        isAnnouncingRoute = false;
+                    }, 5000); // Give it 5 seconds to finish announcement
                 }, 1500);
+            } else if (isAnnouncingRoute) {
+                console.log('⚠️ Already announcing route, skipping...');
+            } else if (!hasEnoughTimePassed) {
+                console.log('⏱️ Too soon since last announcement, skipping...');
+            } else {
+                console.log('ℹ️ Route unchanged, skipping announcement');
             }
         });
         
     } else {
-        // Update existing route
-        route.setWaypoints([
-            L.latLng(userLatLng.lat || userLatLng[0], userLatLng.lng || userLatLng[1]),
-            L.latLng(latLngB[0], latLngB[1])
-        ]);
+        // Update existing route only if waypoints actually changed
+        const waypoints = route.getWaypoints();
+        if (waypoints && waypoints.length >= 2) {
+            const currentStart = waypoints[0];
+            const currentEnd = waypoints[1];
+            const newStart = L.latLng(userLatLng.lat || userLatLng[0], userLatLng.lng || userLatLng[1]);
+            const newEnd = L.latLng(latLngB[0], latLngB[1]);
+            
+            // Compare coordinates manually to avoid equals() error
+            const currentStartLat = typeof currentStart.lat === 'function' ? currentStart.lat() : currentStart.lat;
+            const currentStartLng = typeof currentStart.lng === 'function' ? currentStart.lng() : currentStart.lng;
+            const currentEndLat = typeof currentEnd.lat === 'function' ? currentEnd.lat() : currentEnd.lat;
+            const currentEndLng = typeof currentEnd.lng === 'function' ? currentEnd.lng() : currentEnd.lng;
+            
+            const startChanged = Math.abs(currentStartLat - newStart.lat) > 0.001 || 
+                               Math.abs(currentStartLng - newStart.lng) > 0.001;
+            const endChanged = Math.abs(currentEndLat - newEnd.lat) > 0.001 || 
+                             Math.abs(currentEndLng - newEnd.lng) > 0.001;
+            
+            // Only update if coordinates actually changed
+            if (startChanged || endChanged) {
+                route.setWaypoints([newStart, newEnd]);
+            }
+        } else {
+            // Fallback: just update the route
+            route.setWaypoints([
+                L.latLng(userLatLng.lat || userLatLng[0], userLatLng.lng || userLatLng[1]),
+                L.latLng(latLngB[0], latLngB[1])
+            ]);
+        }
     }
 }
 
@@ -362,6 +412,18 @@ function initSpeechRecognition() {
     };
 }
 
+// Known cities list
+const knownCities = {
+    'jakarta': { lat: -6.2088, lng: 106.8456, name: 'Jakarta, Indonesia' },
+    'surakarta': { lat: -7.5565, lng: 110.8315, name: 'Surakarta, Indonesia' },
+    'solo': { lat: -7.5565, lng: 110.8315, name: 'Surakarta, Indonesia' },
+    'bandung': { lat: -6.9175, lng: 107.6191, name: 'Bandung, Indonesia' },
+    'yogyakarta': { lat: -7.7956, lng: 110.3695, name: 'Yogyakarta, Indonesia' },
+    'medan': { lat: 3.5952, lng: 98.6722, name: 'Medan, Indonesia' },
+    'surabaya': { lat: -7.2575, lng: 112.7521, name: 'Surabaya, Indonesia' },
+    'makassar': { lat: -5.1477, lng: 119.4327, name: 'Makassar, Indonesia' }
+};
+
 // Handle voice commands
 function handleVoiceCommand(transcript) {
     // Convert transcript to lowercase for easier matching
@@ -376,6 +438,32 @@ function handleVoiceCommand(transcript) {
     if (command.includes('mulai rute') || command.includes('mulai navigasi') || command.includes('ikut rute') || command === 'mulayi' || command.trim() === 'mulayi') {
         startRouteNavigation();
         return;
+    }
+    
+    // Check if command is a known city name directly
+    // Clean up the command - remove punctuation and extra spaces
+    const cityKey = command.toLowerCase().trim().replace(/[.,;:!?]/g, '').trim();
+    console.log('Checking for city:', cityKey);
+    console.log('Known cities:', Object.keys(knownCities));
+    
+    if (knownCities[cityKey]) {
+        console.log('Found city:', cityKey, knownCities[cityKey]);
+        const city = knownCities[cityKey];
+        updateDestination(city.lat, city.lng, city.name);
+        updateVoiceStatus('✅ Tujuan: ' + city.name);
+        speakText('Menuju ' + city.name + '. Mencari rute...', 'id-ID', true);
+        
+        // Auto-stop listening after receiving location
+        setTimeout(function() {
+            if (isListening && recognition) {
+                recognition.stop();
+                isListening = false;
+                updateVoiceButton();
+            }
+        }, 500);
+        return;
+    } else {
+        console.log('City NOT found:', cityKey);
     }
     
     // Try to extract location from command (supports both English and Indonesian)
@@ -396,7 +484,7 @@ function handleVoiceCommand(transcript) {
             }
         }, 500);
     } else {
-        updateVoiceStatus('❓ Tidak mengerti lokasi. Coba: "pergi ke Jakarta" atau "mulai"');
+        updateVoiceStatus('❓ Tidak mengerti lokasi. Coba sebutkan nama kota seperti: "Jakarta"');
     }
 }
 
@@ -445,26 +533,46 @@ async function geocodeLocation(location) {
         updateVoiceStatus('🔍 Mencari: ' + location);
         speakText('Mencari lokasi ' + location + '...', 'id-ID', true);
         
-        // Use Nominatim API for geocoding
-        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}&limit=1`;
-        const response = await fetch(url);
-        const data = await response.json();
+        // Use OpenStreetMap Geocoding API (works better with CORS)
+        const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=id&format=json`;
         
-        if (data && data.length > 0) {
-            const result = data[0];
-            const newLat = parseFloat(result.lat);
-            const newLng = parseFloat(result.lon);
+        try {
+            const response = await fetch(geocodeUrl);
+            const data = await response.json();
             
-            // Update destination
-            updateDestination(newLat, newLng, result.display_name);
-            updateVoiceStatus('✅ Tujuan: ' + result.display_name);
+            if (data && data.results && data.results.length > 0) {
+                const result = data.results[0];
+                const newLat = result.latitude;
+                const newLng = result.longitude;
+                const name = result.name + ', ' + result.admin1;
+                
+                // Update destination
+                updateDestination(newLat, newLng, name);
+                updateVoiceStatus('✅ Tujuan: ' + name);
+                return;
+            }
+        } catch (openMeteoError) {
+            console.log('OpenMeteo failed, trying alternative...');
+        }
+        
+        // Fallback to hardcoded cities for Indonesia
+        // Clean up the location name - remove punctuation and extra spaces
+        const cityKey = location.toLowerCase().trim().replace(/[.,;:!?]/g, '').trim();
+        console.log('Looking for city:', cityKey);
+        
+        if (knownCities[cityKey]) {
+            const city = knownCities[cityKey];
+            updateDestination(city.lat, city.lng, city.name);
+            updateVoiceStatus('✅ Tujuan: ' + city.name);
         } else {
+            console.log('City not found:', cityKey, 'Available cities:', Object.keys(knownCities));
             speakText('Lokasi tidak ditemukan: ' + location, 'id-ID', true);
             updateVoiceStatus('❌ Lokasi tidak ditemukan: ' + location);
         }
+        
     } catch (error) {
         console.error('Geocoding error:', error);
-        speakText('Error saat mencari lokasi', 'id-ID', true);
+        speakText('Error saat mencari lokasi. Coba gunakan nama kota lain.', 'id-ID', true);
         updateVoiceStatus('❌ Error saat mencari lokasi');
     }
 }
@@ -644,6 +752,12 @@ function speakText(text, lang = 'id-ID', priority = false, onComplete = null) {
         return;
     }
     
+    // Skip if this exact message was just spoken (prevent duplicate announcements)
+    if (text === lastSpokenMessage && !priority) {
+        console.log('⏭️ Duplicate message skipped:', text);
+        return;
+    }
+    
     // If there's ongoing speech and this is not priority, queue it
     if (isSpeaking && !priority) {
         announcementQueue.push({ text, lang, onComplete });
@@ -678,6 +792,7 @@ function speakText(text, lang = 'id-ID', priority = false, onComplete = null) {
         // Add event handlers
         utterance.onstart = function() {
             isSpeaking = true;
+            lastSpokenMessage = text; // Remember this message
             console.log('Speech started:', text);
         };
         utterance.onerror = function(event) {
@@ -691,6 +806,11 @@ function speakText(text, lang = 'id-ID', priority = false, onComplete = null) {
         utterance.onend = function() {
             console.log('Speech ended');
             isSpeaking = false;
+            
+            // Clear lastSpokenMessage after 5 seconds to allow same message again later
+            setTimeout(function() {
+                lastSpokenMessage = '';
+            }, 5000);
             
             // Call onComplete callback if provided
             if (onComplete) {
@@ -761,6 +881,7 @@ function announceRouteDirections(priority = false) {
             const distance = instructionDistance ? instructionDistance.textContent.trim() : '';
             validInstructions.push({ text: text, distance: distance });
         }
+
     }
     
     // Announce first 3-4 instructions
@@ -789,22 +910,27 @@ function announceRouteDirections(priority = false) {
     // Announce arrival message
     announcement += 'Anda akan tiba di tujuan.';
     
-    // Callback to auto-restart microphone after route announcement
-    function restartMicrophone() {
-        console.log('Auto-restarting microphone...');
+    // Callback to auto-start navigation after route announcement
+    function startNavigationAutomatically() {
+        console.log('✓✓✓ Auto-starting navigation after route announcement');
+        
+        // Speak navigation start message
         setTimeout(function() {
-            if (!isListening && recognition) {
-                recognition.start();
-                isListening = true;
-                updateVoiceStatus('🎤 Siap mendengarkan. Ucapkan "Mulai" untuk memulai navigasi.');
+            console.log('✓ Speaking: Memulai navigasi...');
+            speakText('Memulai navigasi. Ikuti petunjuk arah.', 'id-ID', true);
+            updateVoiceStatus('📍 Navigasi dimulai');
+            
+            // Ensure microphone is stopped
+            if (isListening && recognition) {
+                recognition.stop();
+                isListening = false;
                 updateVoiceButton();
-                speakText('Siap. Ucapkan "mulai" untuk memulai navigasi.', 'id-ID', true);
             }
         }, 500);
     }
     
     // Speak the announcement using browser's Web Speech API with priority and callback
-    speakText(announcement, 'id-ID', priority, restartMicrophone);
+    speakText(announcement, 'id-ID', priority, startNavigationAutomatically);
 }
 
 // Convert distance to Indonesian format
