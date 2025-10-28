@@ -16,7 +16,8 @@ let hasPermission = false;
 let locationInterval = null;
 
 // Destination point (changeable via voice command)
-let latLngB = [3.58, 98.66];
+// Format: [latitude, longitude] - e.g., Medan, Indonesia
+let latLngB = [3.5797, 98.6665]; // Medan, Indonesia [lat, lng]
 let destinationMarker = L.marker(latLngB).addTo(map)
   .bindPopup("Destination");
 
@@ -123,6 +124,80 @@ let isAnnouncingRoute = false; // Prevent duplicate announcements
 let lastSpokenMessage = ''; // Track last spoken message to prevent duplicates
 let lastAnnouncementTime = 0; // Track when last announcement was made
 
+// Force update route - always recreate for new destination
+function forceUpdateRoute(userLatLng) {
+    console.log('🔄 FORCE updating route for new destination');
+    
+    // Remove old route completely
+    if (route) {
+        console.log('🗑️ Removing old route');
+        map.removeControl(route);
+        route = null;
+    }
+    
+    // Always create fresh route with new destination
+    console.log('✨ Creating NEW route to destination:', latLngB);
+    // Ensure latLngB is correct: latLngB = [lat, lng]
+    const endLat = latLngB[0];
+    const endLng = latLngB[1];
+    
+    // Check if coordinates are valid
+    if (isNaN(endLat) || isNaN(endLng)) {
+        console.error('❌ Invalid destination coordinates:', latLngB);
+        return;
+    }
+    
+    // Debug: log coordinates being used
+    console.log('📍 Creating route from:', userLatLng, 'to:', { lat: endLat, lng: endLng });
+    
+    route = L.Routing.control({
+        waypoints: [
+            L.latLng(userLatLng.lat || userLatLng[0], userLatLng.lng || userLatLng[1]),
+            L.latLng(endLat, endLng)
+        ],
+        lineOptions: {
+            styles: [{color: '#3b49df', opacity: 0.7, weight: 5}]
+        },
+        createMarker: function() { return null; }
+    }).addTo(map);
+    
+    // Handle routing errors
+    route.on('routingerror', function(e) {
+        console.error('❌ Routing error:', e);
+        speakText('Gagal menghitung rute. Server OSRM mungkin sedang bermasalah.', 'id-ID', true);
+        updateVoiceStatus('⚠️ Error menghitung rute');
+    });
+    
+    // Re-attach event listener
+    route.on('routesfound', function(e) {
+        console.log('✅✅✅ NEW ROUTE FOUND FOR NEW DESTINATION!');
+        console.log('📍 Route distance:', e.routes[0].summary.totalDistance / 1000, 'km');
+        console.log('⏱️ Route time:', e.routes[0].summary.totalTime / 60, 'minutes');
+        
+        const routeHash = JSON.stringify(e.routes[0].coordinates);
+        
+        // Force new announcement
+        lastRouteHash = null;
+        isAnnouncingRoute = false;
+        lastAnnouncementTime = 0;
+        
+        // Trigger announcement with longer delay to ensure DOM is fully rendered
+        setTimeout(function() {
+            console.log('🔔 Triggering announcement for NEW destination');
+            
+            // Translate instructions to Indonesian (retry-based, handles dynamic content)
+            translateRouteInstructions();
+            
+            // Also try again after a bit more delay
+            setTimeout(translateRouteInstructions, 1000);
+            
+            if (voiceDirectionsEnabled) {
+                announceRouteDirections(true);
+            }
+        }, 3000); // Increased from 2000 to 3000ms
+    });
+}
+
 // Function to update or create the route from user location to destination
 function updateRoute(userLatLng) {
     if (!route) {
@@ -138,15 +213,30 @@ function updateRoute(userLatLng) {
             createMarker: function() { return null; } // Hide default markers
         }).addTo(map);
         
+        // Handle routing errors
+        route.on('routingerror', function(e) {
+            console.error('❌ Routing error:', e);
+            speakText('Gagal menghitung rute. Server mungkin sedang bermasalah.', 'id-ID', false);
+            updateVoiceStatus('⚠️ Error menghitung rute');
+        });
+        
         // Listen for route found events to announce directions
         route.on('routesfound', function(e) {
             // Create route hash
             const routeHash = JSON.stringify(e.routes[0].coordinates);
             const now = Date.now();
             
+            console.log('🗺️ Route found event triggered');
+            console.log('  - lastRouteHash:', lastRouteHash ? 'exists' : 'null');
+            console.log('  - isAnnouncingRoute:', isAnnouncingRoute);
+            console.log('  - voiceDirectionsEnabled:', voiceDirectionsEnabled);
+            
             // Check if enough time has passed since last announcement (prevent rapid triggers)
             const timeSinceLastAnnouncement = now - lastAnnouncementTime;
-            const hasEnoughTimePassed = timeSinceLastAnnouncement > 3000; // 3 seconds minimum
+            const hasEnoughTimePassed = timeSinceLastAnnouncement > 1000; // 1 second minimum (reduced from 3)
+            
+            console.log('  - Time since last announcement:', timeSinceLastAnnouncement, 'ms');
+            console.log('  - Has enough time passed:', hasEnoughTimePassed);
             
             // Only announce if this is a new route, not already announcing, and enough time has passed
             if (routeHash !== lastRouteHash && !isAnnouncingRoute && hasEnoughTimePassed) {
@@ -154,24 +244,35 @@ function updateRoute(userLatLng) {
                 isAnnouncingRoute = true;
                 lastAnnouncementTime = now;
                 
-                console.log('🗺️ New route detected, preparing announcement...');
+                console.log('🗺️ NEW ROUTE DETECTED - Preparing announcement!');
                 
                 // Delay to allow routing control to render
                 setTimeout(function() {
+                    console.log('⏰ Timeout: Checking if we should announce...');
+                    
+                    // Translate instructions to Indonesian
+                    translateRouteInstructions();
+                    // Try again after more delay
+                    setTimeout(translateRouteInstructions, 1000);
+                    
                     if (voiceDirectionsEnabled) {
+                        console.log('✅ Voice directions enabled - Calling announceRouteDirections');
                         announceRouteDirections(true);
+                    } else {
+                        console.log('❌ Voice directions disabled - Skipping announcement');
                     }
                     // Reset flag after announcement starts
                     setTimeout(function() {
                         isAnnouncingRoute = false;
+                        console.log('🔄 Reset isAnnouncingRoute flag');
                     }, 5000); // Give it 5 seconds to finish announcement
-                }, 1500);
+                }, 2000); // Increased from 1500 to 2000ms
             } else if (isAnnouncingRoute) {
                 console.log('⚠️ Already announcing route, skipping...');
             } else if (!hasEnoughTimePassed) {
                 console.log('⏱️ Too soon since last announcement, skipping...');
-            } else {
-                console.log('ℹ️ Route unchanged, skipping announcement');
+            } else if (routeHash === lastRouteHash) {
+                console.log('ℹ️ Route unchanged (same hash), skipping announcement');
             }
         });
         
@@ -195,12 +296,70 @@ function updateRoute(userLatLng) {
             const endChanged = Math.abs(currentEndLat - newEnd.lat) > 0.001 || 
                              Math.abs(currentEndLng - newEnd.lng) > 0.001;
             
+            console.log('📊 Waypoint comparison:', {
+                startChanged: startChanged,
+                endChanged: endChanged,
+                currentEnd: { lat: (currentEndLat || 0).toFixed(6), lng: (currentEndLng || 0).toFixed(6) },
+                newEnd: { lat: (newEnd.lat || 0).toFixed(6), lng: (newEnd.lng || 0).toFixed(6) },
+                latDiff: Math.abs(currentEndLat - newEnd.lat),
+                lngDiff: Math.abs(currentEndLng - newEnd.lng)
+            });
+            
             // Only update if coordinates actually changed
             if (startChanged || endChanged) {
-                route.setWaypoints([newStart, newEnd]);
+                console.log('🔄 Updating route waypoints - end destination changed to', newEnd);
+                console.log('📍 From:', { lat: currentEndLat, lng: currentEndLng }, 'To:', { lat: newEnd.lat, lng: newEnd.lng });
+                
+                // Remove old route and create new one to force update
+                if (route) {
+                    console.log('🗑️ Removing old route');
+                    map.removeControl(route);
+                    route = null;
+                }
+                
+                // Create fresh route with new destination
+                console.log('✨ Creating new route to destination');
+                route = L.Routing.control({
+                    waypoints: [newStart, newEnd],
+                    lineOptions: {
+                        styles: [{color: '#3b49df', opacity: 0.7, weight: 5}]
+                    },
+                    createMarker: function() { return null; }
+                }).addTo(map);
+                
+                // Re-attach event listener for new route
+                route.on('routesfound', function(e) {
+                    console.log('✅✅✅ NEW ROUTE FOUND AFTER DESTINATION CHANGE!');
+                    console.log('📍 Route distance:', e.routes[0].summary.totalDistance / 1000, 'km');
+                    console.log('⏱️ Route time:', e.routes[0].summary.totalTime / 60, 'minutes');
+                    
+                    const routeHash = JSON.stringify(e.routes[0].coordinates);
+                    
+                    // Force new announcement
+                    lastRouteHash = null;
+                    isAnnouncingRoute = false;
+                    lastAnnouncementTime = 0;
+                    
+                    // Trigger announcement after route is calculated
+                    setTimeout(function() {
+                        console.log('🔔 Triggering announcement for NEW destination');
+                        
+                        // Translate instructions to Indonesian
+                        translateRouteInstructions();
+                        // Try again after more delay
+                        setTimeout(translateRouteInstructions, 1000);
+                        
+                        if (voiceDirectionsEnabled) {
+                            announceRouteDirections(true);
+                        }
+                    }, 3000); // Increased from 2000 to 3000ms
+                });
+            } else {
+                console.log('ℹ️ Route waypoints unchanged, skipping update');
             }
         } else {
             // Fallback: just update the route
+            console.log('🔄 Updating route waypoints (fallback)');
             route.setWaypoints([
                 L.latLng(userLatLng.lat || userLatLng[0], userLatLng.lng || userLatLng[1]),
                 L.latLng(latLngB[0], latLngB[1])
@@ -369,7 +528,7 @@ function initSpeechRecognition() {
     // Configure speech recognition
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = 'en-US'; // Can be changed to 'id-ID' for Indonesian
+    recognition.lang = 'id-ID'; // Using Indonesian language
     
     // Handle speech recognition results
     recognition.onresult = function(event) {
@@ -596,11 +755,14 @@ function updateDestination(lat, lng, name) {
     
     // Reset route hash to force new announcement
     lastRouteHash = null;
+    isAnnouncingRoute = false; // Reset announcement flag for new destination
+    lastAnnouncementTime = 0; // Reset timing for new destination
     
     // Update route if user location exists
+    // ALWAYS force update route when destination changes
     if (currentUserPosition) {
         const userLatLng = currentUserPosition.getLatLng();
-        updateRoute(userLatLng);
+        forceUpdateRoute(userLatLng);
     }
     
     // Pan to new destination
@@ -793,7 +955,9 @@ function speakText(text, lang = 'id-ID', priority = false, onComplete = null) {
         utterance.onstart = function() {
             isSpeaking = true;
             lastSpokenMessage = text; // Remember this message
-            console.log('Speech started:', text);
+            // Only log short preview to avoid cluttering console
+            const preview = text.length > 100 ? text.substring(0, 100) + '...' : text;
+            console.log('Speech started:', preview);
         };
         utterance.onerror = function(event) {
             if (event.error !== 'interrupted') {
@@ -861,17 +1025,47 @@ function announceRouteDirections(priority = false) {
     let announcement = '';
     if (routeInfo) {
         const info = routeInfo.textContent.trim();
+        console.log('📏 Route info read from DOM:', info);
         announcement = 'Rute ditemukan. ' + convertDistanceToIndonesian(info) + '. ';
+    } else {
+        console.log('⚠️ No route info found in DOM');
     }
     
-    // Read first 3 instructions in Google Maps style
+    // Read first few instructions in Google Maps style
+    console.log('📋 Reading instructions from', instructionRows.length, 'rows');
+    
     let validInstructions = [];
     for (let i = 0; i < instructionRows.length - 1; i++) {
-        const instructionText = instructionRows[i].querySelector('.leaflet-routing-instruction-text');
-        const instructionDistance = instructionRows[i].querySelector('.leaflet-routing-instruction-distance');
+        const row = instructionRows[i];
+        
+        // Try multiple possible selectors
+        let instructionText = row.querySelector('.leaflet-routing-instruction-text');
+        if (!instructionText) {
+            const firstTd = row.querySelector('td');
+            if (firstTd) {
+                const span = firstTd.querySelector('span');
+                instructionText = span || firstTd;
+            }
+        }
+        
+        let instructionDistance = row.querySelector('.leaflet-routing-instruction-distance');
+        if (!instructionDistance) {
+            instructionDistance = row.querySelector('.leaflet-routing-distance');
+        }
+        if (!instructionDistance) {
+            const tds = row.querySelectorAll('td');
+            if (tds.length >= 2) {
+                instructionDistance = tds[tds.length - 1]; // Last td is usually distance
+            }
+        }
         
         if (instructionText) {
             let text = instructionText.textContent.trim();
+            
+            // Debug: log first instruction
+            if (i === 0) {
+                console.log('📝 First instruction text:', text.substring(0, 100));
+            }
             
             // Skip "Head" instructions
             if (text.toLowerCase().startsWith('head')) {
@@ -879,21 +1073,24 @@ function announceRouteDirections(priority = false) {
             }
             
             const distance = instructionDistance ? instructionDistance.textContent.trim() : '';
-            validInstructions.push({ text: text, distance: distance });
+            if (text) { // Only add if text is not empty
+                validInstructions.push({ text: text, distance: distance });
+            }
         }
-
     }
     
-    // Announce first 3-4 instructions
+    console.log('✓ Found', validInstructions.length, 'valid instructions');
+    
+    // Announce first 2-3 instructions to give overview
     if (validInstructions.length > 0) {
-        announcement += 'Petunjuk arah. ';
+        announcement += 'Petunjuk arah: ';
         
-        for (let i = 0; i < Math.min(4, validInstructions.length); i++) {
+        for (let i = 0; i < Math.min(3, validInstructions.length); i++) {
             const inst = validInstructions[i];
             let instruction = convertInstructionToNatural(inst.text);
             
-            // Add distance if available
-            if (inst.distance && inst.distance !== '35 m' && inst.distance !== '0 m') {
+            // Add distance if available and meaningful
+            if (inst.distance && inst.distance !== '35 m' && inst.distance !== '0 m' && inst.distance.length > 0) {
                 instruction += ' dalam ' + convertDistance(inst.distance);
             }
             
@@ -905,32 +1102,43 @@ function announceRouteDirections(priority = false) {
         }
         
         announcement += '. ';
+    } else {
+        // If no instructions found, at least say something
+        announcement += 'Ikuti rute yang ditampilkan di peta. ';
     }
     
-    // Announce arrival message
-    announcement += 'Anda akan tiba di tujuan.';
+    // Announce navigation start message
+    announcement += 'Memulai navigasi.';
     
-    // Callback to auto-start navigation after route announcement
-    function startNavigationAutomatically() {
-        console.log('✓✓✓ Auto-starting navigation after route announcement');
+    // Debug: log the full announcement with line breaks for readability
+    console.log('📢 Full announcement to be spoken:');
+    console.log('=========================================');
+    console.log(announcement);
+    console.log('=================================');
+    
+    // Callback after announcement is done
+    function afterRouteAnnouncement() {
+        console.log('✓ Route announcement completed');
         
-        // Speak navigation start message
+        // Ensure microphone is stopped after destination is set
+        if (isListening && recognition) {
+            recognition.stop();
+            isListening = false;
+            updateVoiceButton();
+        }
+        
+        // Update status with instructions for user
+        updateVoiceStatus('📍 Navigasi aktif - Klik mikrofon untuk perintah');
+        
+        // Announce that microphone is available for further commands
         setTimeout(function() {
-            console.log('✓ Speaking: Memulai navigasi...');
-            speakText('Memulai navigasi. Ikuti petunjuk arah.', 'id-ID', true);
-            updateVoiceStatus('📍 Navigasi dimulai');
-            
-            // Ensure microphone is stopped
-            if (isListening && recognition) {
-                recognition.stop();
-                isListening = false;
-                updateVoiceButton();
-            }
-        }, 500);
+            console.log('✓ Announcing microphone availability');
+            speakText('Navigasi sudah aktif. Klik tombol mikrofon untuk perintah lain.', 'id-ID', false);
+        }, 2000); // Wait 2 seconds after route announcement
     }
     
-    // Speak the announcement using browser's Web Speech API with priority and callback
-    speakText(announcement, 'id-ID', priority, startNavigationAutomatically);
+    // Speak the announcement using browser's Web Speech API with priority
+    speakText(announcement, 'id-ID', priority, afterRouteAnnouncement);
 }
 
 // Convert distance to Indonesian format
@@ -1004,24 +1212,96 @@ function convertDistanceToIndonesian(info) {
     return result || info;
 }
 
+// Translate route instructions in DOM to Indonesian
+function translateRouteInstructions() {
+    console.log('🌐 Translating route instructions to Indonesian');
+    
+    // Retry multiple times to catch dynamic content
+    let retryCount = 0;
+    const maxRetries = 5;
+    
+    function attemptTranslate() {
+        // Find all instruction text cells
+        const instructionCells = document.querySelectorAll('.leaflet-routing-instruction-text');
+        
+        if (instructionCells.length === 0 && retryCount < maxRetries) {
+            retryCount++;
+            console.log('⏳ Waiting for instructions to load... retry', retryCount);
+            setTimeout(attemptTranslate, 500);
+            return;
+        }
+        
+        console.log('Found', instructionCells.length, 'instructions to translate');
+        
+        let translatedCount = 0;
+        instructionCells.forEach(function(cell, index) {
+            const originalText = cell.textContent.trim();
+            if (originalText && originalText.length > 0 && !originalText.toLowerCase().includes('berangkat') && !originalText.toLowerCase().includes('belok')) {
+                const translatedText = convertInstructionToNatural(originalText);
+                if (translatedText !== originalText) {
+                    cell.textContent = translatedText;
+                    translatedCount++;
+                    if (index < 3) { // Log first 3 translations
+                        console.log('  ✓', originalText, '→', translatedText);
+                    }
+                }
+            }
+        });
+        
+        console.log('✅ Translated', translatedCount, 'instructions');
+        
+        // Also translate h3 summary
+        const routeSummary = document.querySelector('.leaflet-routing-alt h3');
+        if (routeSummary) {
+            const summary = routeSummary.textContent.trim();
+            console.log('📊 Route summary:', summary);
+        }
+    }
+    
+    attemptTranslate();
+}
+
 // Convert instruction to natural Indonesian like Google Maps
 function convertInstructionToNatural(text) {
     text = String(text || '');
     
     // Handle specific patterns
     const patterns = [
+        { pattern: /^Head (.+)$/i, replacement: 'Berangkat $1' },
+        { pattern: /^Turn right$/i, replacement: 'Belok kanan' },
+        { pattern: /^Turn left$/i, replacement: 'Belok kiri' },
         { pattern: /^Turn right onto (.+)$/i, replacement: 'Belok kanan ke $1' },
         { pattern: /^Turn left onto (.+)$/i, replacement: 'Belok kiri ke $1' },
+        { pattern: /^Turn left to stay on (.+)$/i, replacement: 'Belok kiri tetap di $1' },
+        { pattern: /^Go straight$/i, replacement: 'Lurus terus' },
         { pattern: /^Go straight onto (.+)$/i, replacement: 'Lurus terus ke $1' },
         { pattern: /^Continue onto (.+)$/i, replacement: 'Lanjutkan ke $1' },
-        { pattern: /^Make a sharp left$/i, replacement: 'Lakukan putaran tajam ke kiri' },
-        { pattern: /^Make a slight right onto (.+)$/i, replacement: 'Lakukan sedikit ke kanan menuju $1' },
+        { pattern: /^Continue straight to stay on (.+)$/i, replacement: 'Lurus terus tetap di $1' },
+        { pattern: /^Continue straight$/i, replacement: 'Lurus terus' },
+        { pattern: /^Keep right onto (.+)$/i, replacement: 'Tetap di kanan ke $1' },
         { pattern: /^Keep left onto (.+)$/i, replacement: 'Tetap di kiri ke $1' },
-        { pattern: /^Enter the traffic circle and take the (\w+) exit onto (.+)$/i, replacement: 'Masuk bundaran dan ambil exit $1 ke $2' },
+        { pattern: /^Keep left towards (.+)$/i, replacement: 'Tetap di kiri menuju $1' },
+        { pattern: /^Keep right towards (.+)$/i, replacement: 'Tetap di kanan menuju $1' },
+        { pattern: /^Take the ramp on the left towards (.+)$/i, replacement: 'Ambil jalan keluar kiri menuju $1' },
+        { pattern: /^Take the ramp on the left$/i, replacement: 'Ambil jalan keluar kiri' },
+        { pattern: /^Take the ramp onto (.+)$/i, replacement: 'Ambil jalan keluar ke $1' },
+        { pattern: /^Take the ramp$/i, replacement: 'Ambil jalan keluar' },
+        { pattern: /^Merge right onto (.+)$/i, replacement: 'Bergabung kanan ke $1' },
+        { pattern: /^Merge left towards (.+)$/i, replacement: 'Bergabung kiri menuju $1' },
+        { pattern: /^Merge right towards (.+)$/i, replacement: 'Bergabung kanan menuju $1' },
+        { pattern: /^Make a slight left to stay on (.+)$/i, replacement: 'Sedikit ke kiri tetap di $1' },
+        { pattern: /^Make a slight right to stay on (.+)$/i, replacement: 'Sedikit ke kanan tetap di $1' },
+        { pattern: /^Make a slight left onto (.+)$/i, replacement: 'Sedikit ke kiri ke $1' },
+        { pattern: /^Make a slight right onto (.+)$/i, replacement: 'Sedikit ke kanan ke $1' },
+        { pattern: /^Make a slight left$/i, replacement: 'Sedikit ke kiri' },
+        { pattern: /^Make a slight right$/i, replacement: 'Sedikit ke kanan' },
+        { pattern: /^Keep right at the fork$/i, replacement: 'Tetap kanan di persimpangan' },
+        { pattern: /^Keep left at the fork$/i, replacement: 'Tetap kiri di persimpangan' },
+        { pattern: /^Enter the traffic circle and take the (\d+)(?:st|nd|rd|th) exit onto (.+)$/i, replacement: 'Masuk bundaran dan ambil jalan keluar ke-$1 ke $2' },
+        { pattern: /^Enter (.+) and take the (.+) exit onto (.+)$/i, replacement: 'Masuk $1 dan ambil $2 ke $3' },
         { pattern: /^Exit the traffic circle onto (.+)$/i, replacement: 'Keluar bundaran ke $1' },
-        { pattern: /^Head (.+)$/i, replacement: 'Berangkat $1' },
-        { pattern: /^You have arrived$/i, replacement: 'Anda telah tiba' },
-        { pattern: /^You have arrived at your destination, on the (.+)$/i, replacement: 'Anda tiba di tujuan, di $1' }
+        { pattern: /^You have arrived at your destination, (.+)$/i, replacement: 'Anda telah tiba di tujuan, $1' },
+        { pattern: /^You have arrived$/i, replacement: 'Anda telah tiba' }
     ];
     
     // Try to match patterns
@@ -1038,12 +1318,18 @@ function convertInstructionToNatural(text) {
     text = text.replace(/Turn right/gi, 'Belok kanan');
     text = text.replace(/Turn left/gi, 'Belok kiri');
     text = text.replace(/Go straight/gi, 'Lurus terus');
-    text = text.replace(/Continue/gi, 'Lanjutkan');
     text = text.replace(/straight/gi, 'lurus');
+    text = text.replace(/Continue/gi, 'Lanjutkan');
+    text = text.replace(/Keep right/gi, 'Tetap kanan');
+    text = text.replace(/Keep left/gi, 'Tetap kiri');
     text = text.replace(/onto/gi, 'ke');
     text = text.replace(/traffic circle/gi, 'bundaran');
     text = text.replace(/and take the/gi, 'dan ambil');
     text = text.replace(/exit/gi, 'keluar');
+    text = text.replace(/Merge/gi, 'Bergabung');
+    text = text.replace(/Take the ramp/gi, 'Ambil jalan keluar');
+    text = text.replace(/Make a/gi, 'Buat');
+    text = text.replace(/slight/gi, 'sedikit');
     
     return text;
 }

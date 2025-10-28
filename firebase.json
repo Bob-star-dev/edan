@@ -4,16 +4,9 @@
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**",
-      "speak/**",
-      "voice/**",
-      "tracking/**"
+      "**/node_modules/**"
     ],
     "rewrites": [
-      {
-        "source": "/map/**",
-        "destination": "/map.html"
-      },
       {
         "source": "**",
         "destination": "/index.html"
