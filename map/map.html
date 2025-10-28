@@ -30,7 +30,7 @@
   <ul style="text-align: left; margin: 20px 0;">
     <li>📍 Lokasi Anda saat ini di peta</li>
     <li>🗺️ Rute dari lokasi Anda ke tujuan</li>
-    <li>📍 Update lokasi setiap 3 detik</li>
+    <li>📍 Update lokasi setiap 1 detik (realtime)</li>
   </ul>
   <button id="requestPermissionBtn" onclick="requestLocationPermission()" style="background: #3b49df; color: white; border: none; padding: 12px 30px; font-size: 16px; border-radius: 5px; cursor: pointer; margin: 10px;">
     Berikan Akses Lokasi
@@ -48,7 +48,7 @@
   <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
     <h4 style="margin-top: 0; font-size: 16px;">Live Route Tracking</h4>
     <p style="font-size: 12px; color: #666;">Shows route from your current location to destination</p>
-    <p style="font-size: 11px; color: #999;">Route updates every 3 seconds</p>
+    <p style="font-size: 11px; color: #999;">Route updates every 1 second (realtime)</p>
   </div>
   
   <button id="retryBtn" style="margin-top: 10px; background: #28a745; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-size: 14px; width: 100%; display: none;">
@@ -66,7 +66,7 @@
   </button>
   
   <p id="voiceStatus" style="font-size: 12px; color: #666; margin: 10px 0 0 0; min-height: 20px; font-style: italic;">
-    Klik tombol untuk mulai mendengarkan
+    Setel tujuan terlebih dahulu dengan mengklik tombol mikrofon
   </p>
   
   <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
