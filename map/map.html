@@ -61,12 +61,13 @@
   <h4 style="margin-top: 0; font-size: 16px;">🎤 Navigasi Suara</h4>
   <p style="font-size: 12px; color: #666; margin: 5px 0;">Ucapkan tujuan Anda untuk bernavigasi</p>
   
-  <button id="voiceBtn" onclick="toggleVoiceListening()" style="background: #3b49df; color: white; border: none; padding: 12px 20px; border-radius: 5px; cursor: pointer; font-size: 14px; width: 100%; margin-top: 10px;">
+  <!-- Hidden button for voice control - accessible via screen reader -->
+  <button id="voiceBtn" onclick="toggleVoiceListening()" style="display: none;" aria-label="Toggle voice listening" role="button" tabindex="-1">
     🎤 Aktifkan Mikrofon
   </button>
   
-  <p id="voiceStatus" style="font-size: 12px; color: #666; margin: 10px 0 0 0; min-height: 20px; font-style: italic;">
-    Setel tujuan terlebih dahulu dengan mengklik tombol mikrofon
+  <p id="voiceStatus" style="font-size: 12px; color: #666; margin: 10px 0 0 0; min-height: 30px; font-style: italic;">
+    Aplikasi siap. Mikrofon akan aktif otomatis. Ucapkan nama kota tujuan Anda.
   </p>
   
   <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
@@ -74,10 +75,7 @@
       💡 Percobaan perintah suara:<br>
       • "Jakarta" (langsung sebutkan kota)<br>
       • "Pergi ke Bandung" juga bisa<br>
-      • "Hotel Alana" (cari terdekat dari lokasi Anda)<br>
-      • "Mulai" (setelah tujuan ditetapkan)<br>
-      <br>
-      🎯 <strong>Proximity Search:</strong> Aplikasi akan mencari lokasi terdekat dengan posisi Anda saat ini!
+      • "Mulai" (setelah tujuan ditetapkan)
     </p>
   </div>
 </div>
