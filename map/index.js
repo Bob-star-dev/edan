@@ -637,16 +637,158 @@ function initSpeechRecognition() {
     };
 }
 
-// Known cities list
+// Known cities and districts list - expanded for better coverage
 const knownCities = {
+    // Major Cities
     'jakarta': { lat: -6.2088, lng: 106.8456, name: 'Jakarta, Indonesia' },
+    'surabaya': { lat: -7.2575, lng: 112.7521, name: 'Surabaya, Indonesia' },
+    'bandung': { lat: -6.9175, lng: 107.6191, name: 'Bandung, Indonesia' },
+    'medan': { lat: 3.5952, lng: 98.6722, name: 'Medan, Indonesia' },
+    'makassar': { lat: -5.1477, lng: 119.4327, name: 'Makassar, Indonesia' },
+    'semarang': { lat: -6.9932, lng: 110.4203, name: 'Semarang, Indonesia' },
+    'palembang': { lat: -2.9761, lng: 104.7754, name: 'Palembang, Indonesia' },
+    'denpasar': { lat: -8.6705, lng: 115.2126, name: 'Denpasar, Indonesia' },
+    
+    // Central Java
+    'yogyakarta': { lat: -7.7956, lng: 110.3695, name: 'Yogyakarta, Indonesia' },
     'surakarta': { lat: -7.5565, lng: 110.8315, name: 'Surakarta, Indonesia' },
     'solo': { lat: -7.5565, lng: 110.8315, name: 'Surakarta, Indonesia' },
-    'bandung': { lat: -6.9175, lng: 107.6191, name: 'Bandung, Indonesia' },
-    'yogyakarta': { lat: -7.7956, lng: 110.3695, name: 'Yogyakarta, Indonesia' },
-    'medan': { lat: 3.5952, lng: 98.6722, name: 'Medan, Indonesia' },
-    'surabaya': { lat: -7.2575, lng: 112.7521, name: 'Surabaya, Indonesia' },
-    'makassar': { lat: -5.1477, lng: 119.4327, name: 'Makassar, Indonesia' }
+    // Districts in Surakarta
+    'gilingan': { lat: -7.5565, lng: 110.8315, name: 'Gilingan, Surakarta' },
+    'gilingan surakarta': { lat: -7.5565, lng: 110.8315, name: 'Gilingan, Surakarta' },
+    'gilingan solo': { lat: -7.5565, lng: 110.8315, name: 'Gilingan, Surakarta' },
+    'pajang': { lat: -7.5700, lng: 110.8100, name: 'Pajang, Surakarta' },
+    'pasarkliwon': { lat: -7.5760, lng: 110.8310, name: 'Pasarkliwon, Surakarta' },
+    'jebres': { lat: -7.5600, lng: 110.8500, name: 'Jebres, Surakarta' },
+    'banjarsari': { lat: -7.5560, lng: 110.8170, name: 'Banjarsari, Surakarta' },
+    'laweyan': { lat: -7.5640, lng: 110.7950, name: 'Laweyan, Surakarta' },
+    'serengan': { lat: -7.5680, lng: 110.8250, name: 'Serengan, Surakarta' },
+    
+    // Places of Worship - Surakarta
+    'masjid sheikh zayed': { lat: -7.5575, lng: 110.8400, name: 'Masjid Sheikh Zayed, Surakarta' },
+    'masjid sheikh zayed solo': { lat: -7.5575, lng: 110.8400, name: 'Masjid Sheikh Zayed, Surakarta' },
+    'masjid agung surakarta': { lat: -7.5740, lng: 110.8365, name: 'Masjid Agung Surakarta' },
+    
+    // Universities - Surakarta
+    'uns': { lat: -7.5600, lng: 110.8569, name: 'Universitas Sebelas Maret, Surakarta' },
+    'universitas sebelas maret': { lat: -7.5600, lng: 110.8569, name: 'Universitas Sebelas Maret, Surakarta' },
+    'gedung 1 fakultas teknik uns': { lat: -7.5617, lng: 110.8572, name: 'Gedung 1 Fakultas Teknik UNS' },
+    'fakultas teknik uns': { lat: -7.5617, lng: 110.8572, name: 'Fakultas Teknik UNS' },
+    'ft uns': { lat: -7.5617, lng: 110.8572, name: 'Fakultas Teknik UNS' },
+    'kentingan': { lat: -7.5617, lng: 110.8572, name: 'Kentingan, Jebres, Surakarta' },
+    'kampus uns': { lat: -7.5600, lng: 110.8569, name: 'Kampus UNS' },
+    
+    // Tourist Attractions - Surakarta
+    'keraton surakarta': { lat: -7.5748, lng: 110.8253, name: 'Keraton Surakarta Hadiningrat' },
+    'keraton solo': { lat: -7.5748, lng: 110.8253, name: 'Keraton Surakarta Hadiningrat' },
+    'triwindu': { lat: -7.5622, lng: 110.8244, name: 'Pasar Triwindu Surakarta' },
+    'pasar klewer': { lat: -7.5667, lng: 110.8269, name: 'Pasar Klewer Surakarta' },
+    'batik laweyan': { lat: -7.5640, lng: 110.7950, name: 'Kampung Batik Laweyan' },
+    'kampung batik': { lat: -7.5640, lng: 110.7950, name: 'Kampung Batik Laweyan' },
+    'balai kota solo': { lat: -7.5644, lng: 110.8150, name: 'Balai Kota Surakarta' },
+    'balai kota surakarta': { lat: -7.5644, lng: 110.8150, name: 'Balai Kota Surakarta' },
+    
+    // Shopping Malls - Surakarta
+    'solo grand mall': { lat: -7.5392, lng: 110.8103, name: 'Solo Grand Mall' },
+    'the park mall solo': { lat: -7.5450, lng: 110.8130, name: 'The Park Mall Solo' },
+    'hartono mall': { lat: -7.5480, lng: 110.8220, name: 'Hartono Mall' },
+    
+    // Hospitals - Surakarta
+    'rspad': { lat: -7.5580, lng: 110.8200, name: 'RSPAD Surakarta' },
+    'rsud dr moewardi': { lat: -7.5550, lng: 110.8500, name: 'RSUD Dr. Moewardi' },
+    'rumah sakit moewardi': { lat: -7.5550, lng: 110.8500, name: 'RSUD Dr. Moewardi' },
+    
+    // Schools - Surakarta
+    'sma negeri 1 solo': { lat: -7.5720, lng: 110.8280, name: 'SMA Negeri 1 Surakarta' },
+    'sma 1 solo': { lat: -7.5720, lng: 110.8280, name: 'SMA Negeri 1 Surakarta' },
+    'sma negeri 3 solo': { lat: -7.5550, lng: 110.8100, name: 'SMA Negeri 3 Surakarta' },
+    'sma 3 solo': { lat: -7.5550, lng: 110.8100, name: 'SMA Negeri 3 Surakarta' },
+    
+    // Government Offices - Surakarta
+    'pemkot solo': { lat: -7.5644, lng: 110.8150, name: 'Pemerintah Kota Surakarta' },
+    'pemkot surakarta': { lat: -7.5644, lng: 110.8150, name: 'Pemerintah Kota Surakarta' },
+    
+    // Restaurants & Food Places - Surakarta
+    'rumah makan garuda': { lat: -7.5670, lng: 110.8290, name: 'Rumah Makan Garuda Solo' },
+    'timlo solo': { lat: -7.5680, lng: 110.8240, name: 'Timlo Solo, Pasar Gede' },
+    'selat solo': { lat: -7.5680, lng: 110.8250, name: 'Selat Solo' },
+    'pecel pak sutar': { lat: -7.5660, lng: 110.8270, name: 'Pecel Pak Sutar' },
+    
+    // Transportation Hubs - Surakarta
+    'stasiun purwosari': { lat: -7.5680, lng: 110.7980, name: 'Stasiun Purwosari' },
+    'terminal tirtonadi': { lat: -7.5770, lng: 110.8400, name: 'Terminal Tirtonadi' },
+    'terminal kertosono': { lat: -7.5750, lng: 110.8420, name: 'Terminal Kertosono' },
+    'bandara adisumarmo': { lat: -7.5158, lng: 110.7531, name: 'Bandara Adisumarmo' },
+    
+    // Hotels - Surakarta
+    'hotel alana': { lat: -7.5650, lng: 110.8270, name: 'Hotel Alana Solo' },
+    'hotel alana solo': { lat: -7.5650, lng: 110.8270, name: 'Hotel Alana Solo' },
+    'hotel solo': { lat: -7.5650, lng: 110.8270, name: 'Hotel Solo' },
+    'hotel quality solo': { lat: -7.5630, lng: 110.8250, name: 'Hotel Quality Solo' },
+    'novotel solo': { lat: -7.5580, lng: 110.8320, name: 'Novotel Solo' },
+    'raden hotel': { lat: -7.5670, lng: 110.8300, name: 'Raden Hotel Solo' },
+    'raden hotel solo': { lat: -7.5670, lng: 110.8300, name: 'Raden Hotel Solo' },
+    
+    // Gas Stations - Surakarta
+    'pertamina': { lat: -7.5600, lng: 110.8150, name: 'Pertamina Surakarta' },
+    'shell': { lat: -7.5450, lng: 110.8100, name: 'Shell Surakarta' },
+    'total': { lat: -7.5700, lng: 110.8200, name: 'Total Surakarta' },
+    
+    // Traditional Markets - Surakarta
+    'pasar gede': { lat: -7.5680, lng: 110.8290, name: 'Pasar Gede Bosch Surakarta' },
+    'pasar grosir solo': { lat: -7.5600, lng: 110.8220, name: 'Pasar Grosir Solo' },
+    'belanja batik': { lat: -7.5640, lng: 110.7950, name: 'Pusat Belanja Batik Laweyan' },
+    
+    // Parks & Recreation - Surakarta
+    'taman balekambang': { lat: -7.5600, lng: 110.8100, name: 'Taman Balekambang Solo' },
+    'taman sriwedari': { lat: -7.5680, lng: 110.8210, name: 'Taman Sriwedari Solo' },
+    'air terjun grojogan sewu': { lat: -7.4400, lng: 110.9200, name: 'Air Terjun Grojogan Sewu' },
+    
+    // Universities - Jakarta & Bandung
+    'ui': { lat: -6.3619, lng: 106.8250, name: 'Universitas Indonesia' },
+    'itb': { lat: -6.8891, lng: 107.6105, name: 'Institut Teknologi Bandung' },
+    'ugm': { lat: -7.7731, lng: 110.3773, name: 'Universitas Gadjah Mada' },
+    'ipb': { lat: -6.5616, lng: 106.7226, name: 'Institut Pertanian Bogor' },
+    
+    // Popular Tourist Spots - Jakarta
+    'monas': { lat: -6.1751, lng: 106.8650, name: 'Monumen Nasional Jakarta' },
+    'ancol': { lat: -6.1277, lng: 106.8418, name: 'Taman Impian Jaya Ancol' },
+    'dufan': { lat: -6.1256, lng: 106.8415, name: 'Dufan Ancol Jakarta' },
+    'kota tua': { lat: -6.1352, lng: 106.8136, name: 'Kota Tua Jakarta' },
+    
+    'salatiga': { lat: -7.3307, lng: 110.5084, name: 'Salatiga, Indonesia' },
+    'magelang': { lat: -7.4706, lng: 110.2178, name: 'Magelang, Indonesia' },
+    'pekalongan': { lat: -6.8887, lng: 109.6753, name: 'Pekalongan, Indonesia' },
+    'tegal': { lat: -6.8667, lng: 109.1333, name: 'Tegal, Indonesia' },
+    
+    // West Java
+    'bogor': { lat: -6.5971, lng: 106.8060, name: 'Bogor, Indonesia' },
+    'depok': { lat: -6.4025, lng: 106.7942, name: 'Depok, Indonesia' },
+    'bekasi': { lat: -6.2383, lng: 106.9756, name: 'Bekasi, Indonesia' },
+    'tangerang': { lat: -6.1783, lng: 106.6319, name: 'Tangerang, Indonesia' },
+    'cimahi': { lat: -6.8856, lng: 107.5421, name: 'Cimahi, Indonesia' },
+    'tasikmalaya': { lat: -7.3276, lng: 108.2208, name: 'Tasikmalaya, Indonesia' },
+    'cirebon': { lat: -6.7320, lng: 108.5523, name: 'Cirebon, Indonesia' },
+    
+    // East Java
+    'malang': { lat: -7.9666, lng: 112.6326, name: 'Malang, Indonesia' },
+    'kediri': { lat: -7.8164, lng: 112.0122, name: 'Kediri, Indonesia' },
+    'jember': { lat: -8.1845, lng: 113.6681, name: 'Jember, Indonesia' },
+    'blitar': { lat: -8.0955, lng: 112.1609, name: 'Blitar, Indonesia' },
+    'batu': { lat: -7.8714, lng: 112.5234, name: 'Batu, Indonesia' },
+    
+    // North Sumatra
+    'binjai': { lat: 3.6001, lng: 98.4854, name: 'Binjai, Indonesia' },
+    'pematangsiantar': { lat: 2.9694, lng: 99.0684, name: 'Pematangsiantar, Indonesia' },
+    
+    // South Sulawesi
+    'parepare': { lat: -4.0143, lng: 119.6375, name: 'Parepare, Indonesia' },
+    'palopo': { lat: -2.9935, lng: 120.1969, name: 'Palopo, Indonesia' },
+    
+    // Bali
+    'batubulan': { lat: -8.5333, lng: 115.2833, name: 'Batubulan, Bali, Indonesia' },
+    'ubud': { lat: -8.5069, lng: 115.2625, name: 'Ubud, Bali, Indonesia' },
+    'kuta': { lat: -8.7074, lng: 115.1749, name: 'Kuta, Bali, Indonesia' }
 };
 
 // Handle voice commands
@@ -697,8 +839,15 @@ function handleVoiceCommand(transcript) {
     let location = extractLocation(command);
     
     if (location) {
-        // Geocode the location using Nominatim (OpenStreetMap)
-        geocodeLocation(location);
+        // Get current user location if available
+        let userLatLng = null;
+        if (currentUserPosition) {
+            userLatLng = currentUserPosition.getLatLng();
+            console.log('📍 Searching near user location:', userLatLng);
+        }
+        
+        // Geocode the location with proximity to user location
+        geocodeLocation(location, userLatLng);
         
         // Auto-stop listening after receiving location
         setTimeout(function() {
@@ -709,7 +858,7 @@ function handleVoiceCommand(transcript) {
             }
         }, 500);
     } else {
-        updateVoiceStatus('❓ Tidak mengerti lokasi. Coba sebutkan nama kota seperti: "Jakarta"');
+        updateVoiceStatus('❓ Tidak mengerti lokasi. Coba sebutkan nama daerah, desa, atau kota seperti: "Jakarta", "Bogor", "Ubud"');
     }
 }
 
@@ -752,32 +901,100 @@ function extractLocation(command) {
     return command;
 }
 
-// Geocode location using Nominatim (OpenStreetMap API)
-async function geocodeLocation(location) {
+// Geocode location - supports cities, villages, districts, and all locations in Indonesia
+// userLatLng: current user location for proximity search (optional)
+async function geocodeLocation(location, userLatLng = null) {
     try {
-        updateVoiceStatus('🔍 Mencari: ' + location);
-        speakText('Mencari lokasi ' + location + '...', 'id-ID', true);
+        // Update status with proximity info if available
+        if (userLatLng) {
+            updateVoiceStatus('🔍 Mencari: ' + location + ' di sekitar Anda');
+            speakText('Mencari ' + location + ' di sekitar lokasi Anda...', 'id-ID', true);
+        } else {
+            updateVoiceStatus('🔍 Mencari: ' + location);
+            speakText('Mencari lokasi ' + location + ' di Indonesia...', 'id-ID', true);
+        }
         
-        // Use OpenStreetMap Geocoding API (works better with CORS)
-        const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=id&format=json`;
-        
+        // API 1: OpenMeteo Geocoding API (supports all locations: cities, villages, districts)
         try {
+            // Build geocoding URL with proximity search if user location is available
+            let geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=10&language=id&format=json`;
+            
+            // Add proximity search parameters if user location is available
+            if (userLatLng) {
+                geocodeUrl += `&latitude=${userLatLng.lat}&longitude=${userLatLng.lng}`;
+                console.log('📍 Pencarian berdasarkan proximity:', userLatLng.lat, userLatLng.lng);
+            }
+            
+            console.log('🌐 Searching for:', location);
             const response = await fetch(geocodeUrl);
             const data = await response.json();
             
+            console.log('📊 Geocoding results:', data.results ? data.results.length : 0, 'results found');
+            
             if (data && data.results && data.results.length > 0) {
-                const result = data.results[0];
-                const newLat = result.latitude;
-                const newLng = result.longitude;
-                const name = result.name + ', ' + result.admin1;
+                // Log all results for debugging
+                console.log('🔍 All geocoding results:');
+                data.results.forEach((r, i) => {
+                    console.log(`  ${i+1}. ${r.name} (${r.admin1}, ${r.country})`);
+                });
                 
-                // Update destination
-                updateDestination(newLat, newLng, name);
-                updateVoiceStatus('✅ Tujuan: ' + name);
-                return;
+                // Find best match based on whether proximity search is used
+                let bestMatch = null;
+                
+                if (userLatLng) {
+                    // With proximity search, first result is already sorted by distance
+                    // Still prioritize Indonesia results
+                    for (const result of data.results) {
+                        if (result.country === 'Indonesia' || result.country_code === 'ID') {
+                            bestMatch = result;
+                            console.log('✅ Best match (nearest Indonesia):', bestMatch.name);
+                            break;
+                        }
+                    }
+                    // If no Indonesia result found, use first result (nearest overall)
+                    if (!bestMatch && data.results.length > 0) {
+                        bestMatch = data.results[0];
+                        console.log('⚠️ Using nearest result (not Indonesia):', bestMatch.name);
+                    }
+                } else {
+                    // Without proximity search, just prioritize Indonesia
+                    for (const result of data.results) {
+                        if (result.country === 'Indonesia' || result.country_code === 'ID') {
+                            bestMatch = result;
+                            console.log('✅ Best match (Indonesia):', bestMatch.name);
+                            break;
+                        }
+                    }
+                    // If no Indonesian result, use first result anyway
+                    if (!bestMatch && data.results.length > 0) {
+                        bestMatch = data.results[0];
+                        console.log('⚠️ Using first result (not Indonesia):', bestMatch.name);
+                    }
+                }
+                
+                if (bestMatch) {
+                    const newLat = bestMatch.latitude;
+                    const newLng = bestMatch.longitude;
+                    // Build name: village/city name, then admin area
+                    let name = bestMatch.name;
+                    if (bestMatch.admin1) {
+                        name += ', ' + bestMatch.admin1;
+                    }
+                    if (bestMatch.country) {
+                        name += ', ' + bestMatch.country;
+                    }
+                    
+                    console.log('📍 Found location:', name, 'at', newLat, newLng);
+                    
+                    // Update destination
+                    updateDestination(newLat, newLng, name);
+                    updateVoiceStatus('✅ Tujuan: ' + name);
+                    speakText('Menuju ' + name, 'id-ID', true);
+                    return;
+                }
             }
-        } catch (openMeteoError) {
-            console.log('OpenMeteo failed, trying alternative...');
+        } catch (apiError) {
+            console.log('❌ OpenMeteo API failed:', apiError);
         }
         
         // Fallback to hardcoded cities for Indonesia
@@ -797,7 +1014,7 @@ async function geocodeLocation(location) {
         
     } catch (error) {
         console.error('Geocoding error:', error);
-        speakText('Error saat mencari lokasi. Coba gunakan nama kota lain.', 'id-ID', true);
+        speakText('Error saat mencari lokasi. Coba sebutkan nama daerah, desa, atau kota yang lebih spesifik.', 'id-ID', true);
         updateVoiceStatus('❌ Error saat mencari lokasi');
     }
 }
@@ -1081,104 +1298,35 @@ function announceRouteDirections(priority = false) {
     const activeRoute = routingContainer.querySelector('.leaflet-routing-alt:not(.leaflet-routing-alt-minimized)');
     if (!activeRoute) return;
     
-    // Get route summary
-    const routeInfo = activeRoute.querySelector('h3');
-    const instructionRows = activeRoute.querySelectorAll('tbody tr');
+    // Get h2 (nama jalan) and h3 (jarak dan waktu)
+    const routeName = activeRoute.querySelector('h2'); // Nama jalan
+    const routeInfo = activeRoute.querySelector('h3'); // Jarak dan waktu
     
-    if (!instructionRows.length) return;
-    
-    // Get route summary
+    // Build announcement: hanya h2 dan h3 saja
     let announcement = '';
+    
+    // Ambil nama jalan dari h2
+    if (routeName) {
+        const roadName = routeName.textContent.trim();
+        console.log('🛣️ Nama jalan (h2):', roadName);
+        announcement = roadName + '. '; // Ucapkan nama jalan
+    }
+    
+    // Ambil jarak dan waktu dari h3
     if (routeInfo) {
         const info = routeInfo.textContent.trim();
-        console.log('📏 Route info read from DOM:', info);
-        announcement = 'Rute ditemukan. ' + convertDistanceToIndonesian(info) + '. ';
-    } else {
-        console.log('⚠️ No route info found in DOM');
+        console.log('📏 Jarak dan waktu (h3):', info);
+        announcement += info; // Ucapkan jarak dan waktu
     }
     
-    // Read first few instructions in Google Maps style
-    console.log('📋 Reading instructions from', instructionRows.length, 'rows');
-    
-    let validInstructions = [];
-    for (let i = 0; i < instructionRows.length - 1; i++) {
-        const row = instructionRows[i];
-        
-        // Get all cells in the row
-        const cells = row.querySelectorAll('td');
-        if (cells.length < 3) continue; // Skip rows without proper structure
-        
-        // Column structure: [0] = icon, [1] = instruction text, [2] = distance
-        // Try to find instruction with class first
-        let instructionText = row.querySelector('.leaflet-routing-instruction-text');
-        if (!instructionText && cells.length >= 2) {
-            // Fallback: use second column (index 1) for instruction text
-            instructionText = cells[1];
-        }
-        
-        // Try to find distance with class first
-        let instructionDistance = row.querySelector('.leaflet-routing-instruction-distance');
-        if (!instructionDistance) {
-            instructionDistance = row.querySelector('.leaflet-routing-distance');
-        }
-        if (!instructionDistance && cells.length >= 3) {
-            // Fallback: use third column (index 2) for distance
-            instructionDistance = cells[2];
-        }
-        
-        if (instructionText) {
-            let text = instructionText.textContent.trim();
-            
-            // Debug: log first instruction
-            if (i === 0) {
-                console.log('📝 First instruction text:', text.substring(0, 100));
-            }
-            
-            // Skip "Head" instructions
-            if (text.toLowerCase().startsWith('head')) {
-                continue;
-            }
-            
-            const distance = instructionDistance ? instructionDistance.textContent.trim() : '';
-            if (text) { // Only add if text is not empty
-                validInstructions.push({ text: text, distance: distance });
-            }
-        }
+    // Jika tidak ada data, beri pesan default
+    if (!announcement) {
+        console.log('⚠️ No route data found in h2 or h3');
+        announcement = 'Rute sedang dimuat...';
     }
     
-    console.log('✓ Found', validInstructions.length, 'valid instructions');
-    
-    // Announce first 2-3 instructions to give overview
-    if (validInstructions.length > 0) {
-        announcement += 'Petunjuk arah: ';
-        
-        for (let i = 0; i < Math.min(3, validInstructions.length); i++) {
-            const inst = validInstructions[i];
-            let instruction = convertInstructionToNatural(inst.text);
-            
-            // Add distance if available and meaningful
-            if (inst.distance && inst.distance !== '35 m' && inst.distance !== '0 m' && inst.distance.length > 0) {
-                instruction += ' dalam ' + convertDistance(inst.distance);
-            }
-            
-            if (i === 0) {
-                announcement += instruction;
-            } else {
-                announcement += '. Kemudian, ' + instruction;
-            }
-        }
-        
-        announcement += '. ';
-    } else {
-        // If no instructions found, at least say something
-        announcement += 'Ikuti rute yang ditampilkan di peta. ';
-    }
-    
-    // Announce navigation start message
-    announcement += 'Memulai navigasi.';
-    
-    // Debug: log the full announcement with line breaks for readability
-    console.log('📢 Full announcement to be spoken:');
+    // Debug: log the announcement to be spoken
+    console.log('📢 Announcement to be spoken (h2 + h3 only):');
     console.log('=========================================');
     console.log(announcement);
     console.log('=================================');
@@ -1194,14 +1342,8 @@ function announceRouteDirections(priority = false) {
             updateVoiceButton();
         }
         
-        // Update status with instructions for user
-        updateVoiceStatus('📍 Navigasi aktif - Klik mikrofon untuk perintah');
-        
-        // Announce that microphone is available for further commands
-        setTimeout(function() {
-            console.log('✓ Announcing microphone availability');
-            speakText('Navigasi sudah aktif. Klik tombol mikrofon untuk perintah lain.', 'id-ID', false);
-        }, 2000); // Wait 2 seconds after route announcement
+        // Update status with instructions for user (tanpa announce suara tambahan)
+        updateVoiceStatus('📍 Navigasi aktif');
     }
     
     // Speak the announcement using browser's Web Speech API with priority
