@@ -285,78 +285,123 @@ function updateRoute(userLatLng) {
             const newStart = L.latLng(userLatLng.lat || userLatLng[0], userLatLng.lng || userLatLng[1]);
             const newEnd = L.latLng(latLngB[0], latLngB[1]);
             
-            // Compare coordinates manually to avoid equals() error
-            const currentStartLat = typeof currentStart.lat === 'function' ? currentStart.lat() : currentStart.lat;
-            const currentStartLng = typeof currentStart.lng === 'function' ? currentStart.lng() : currentStart.lng;
-            const currentEndLat = typeof currentEnd.lat === 'function' ? currentEnd.lat() : currentEnd.lat;
-            const currentEndLng = typeof currentEnd.lng === 'function' ? currentEnd.lng() : currentEnd.lng;
+            // Compare coordinates - handle both function call and direct property access
+            let currentStartLat, currentStartLng, currentEndLat, currentEndLng;
             
-            const startChanged = Math.abs(currentStartLat - newStart.lat) > 0.001 || 
-                               Math.abs(currentStartLng - newStart.lng) > 0.001;
-            const endChanged = Math.abs(currentEndLat - newEnd.lat) > 0.001 || 
-                             Math.abs(currentEndLng - newEnd.lng) > 0.001;
+            // Try to get coordinates from current waypoints
+            // Note: Leaflet Routing Machine returns waypoints that can be accessed directly
             
-            console.log('📊 Waypoint comparison:', {
-                startChanged: startChanged,
-                endChanged: endChanged,
-                currentEnd: { lat: (currentEndLat || 0).toFixed(6), lng: (currentEndLng || 0).toFixed(6) },
-                newEnd: { lat: (newEnd.lat || 0).toFixed(6), lng: (newEnd.lng || 0).toFixed(6) },
-                latDiff: Math.abs(currentEndLat - newEnd.lat),
-                lngDiff: Math.abs(currentEndLng - newEnd.lng)
-            });
+            // Check if waypoints are arrays (lat, lng format)
+            if (Array.isArray(currentStart) && currentStart.length >= 2) {
+                currentStartLat = currentStart[0];
+                currentStartLng = currentStart[1];
+            } else if (typeof currentStart.lat === 'function' && typeof currentStart.lng === 'function') {
+                currentStartLat = currentStart.lat();
+                currentStartLng = currentStart.lng();
+            } else if (currentStart.lat !== undefined && currentStart.lng !== undefined) {
+                currentStartLat = currentStart.lat;
+                currentStartLng = currentStart.lng;
+            } else {
+                // If we can't get coordinates, use new coordinates without logging
+                currentStartLat = newStart.lat;
+                currentStartLng = newStart.lng;
+            }
             
-            // Only update if coordinates actually changed
-            if (startChanged || endChanged) {
-                console.log('🔄 Updating route waypoints - end destination changed to', newEnd);
-                console.log('📍 From:', { lat: currentEndLat, lng: currentEndLng }, 'To:', { lat: newEnd.lat, lng: newEnd.lng });
+            if (Array.isArray(currentEnd) && currentEnd.length >= 2) {
+                currentEndLat = currentEnd[0];
+                currentEndLng = currentEnd[1];
+            } else if (typeof currentEnd.lat === 'function' && typeof currentEnd.lng === 'function') {
+                currentEndLat = currentEnd.lat();
+                currentEndLng = currentEnd.lng();
+            } else if (currentEnd.lat !== undefined && currentEnd.lng !== undefined) {
+                currentEndLat = currentEnd.lat;
+                currentEndLng = currentEnd.lng;
+            } else {
+                // If we can't get coordinates, use new coordinates without logging
+                currentEndLat = newEnd.lat;
+                currentEndLng = newEnd.lng;
+            }
+            
+            // Validate extracted coordinates are numbers
+            if (isNaN(currentStartLat) || isNaN(currentStartLng) || isNaN(currentEndLat) || isNaN(currentEndLng) ||
+                isNaN(newStart.lat) || isNaN(newStart.lng) || isNaN(newEnd.lat) || isNaN(newEnd.lng)) {
+                // If coordinates are invalid, just return to avoid update loop and logging spam
+                // The route will update naturally on the next valid location update
+                return;
+            } else {
+                // Calculate differences
+                const startLatDiff = Math.abs(currentStartLat - newStart.lat);
+                const startLngDiff = Math.abs(currentStartLng - newStart.lng);
+                const endLatDiff = Math.abs(currentEndLat - newEnd.lat);
+                const endLngDiff = Math.abs(currentEndLng - newEnd.lng);
                 
-                // Remove old route and create new one to force update
-                if (route) {
-                    console.log('🗑️ Removing old route');
-                    map.removeControl(route);
-                    route = null;
+                // Update threshold: ~11 meters for start, ~111 meters for end
+                const startChanged = startLatDiff > 0.0001 || startLngDiff > 0.0001;
+                const endChanged = endLatDiff > 0.001 || endLngDiff > 0.001;
+                
+                // Only log if there's a significant change
+                if (startChanged || endChanged) {
+                    console.log('📊 Waypoint comparison:', {
+                        startChanged: startChanged,
+                        endChanged: endChanged,
+                        startDist: ((startLatDiff + startLngDiff) * 1000).toFixed(2) + 'm',
+                        endDist: ((endLatDiff + endLngDiff) * 1000).toFixed(2) + 'm'
+                    });
                 }
                 
-                // Create fresh route with new destination
-                console.log('✨ Creating new route to destination');
-                route = L.Routing.control({
-                    waypoints: [newStart, newEnd],
-                    lineOptions: {
-                        styles: [{color: '#3b49df', opacity: 0.7, weight: 5}]
-                    },
-                    createMarker: function() { return null; }
-                }).addTo(map);
-                
-                // Re-attach event listener for new route
-                route.on('routesfound', function(e) {
-                    console.log('✅✅✅ NEW ROUTE FOUND AFTER DESTINATION CHANGE!');
-                    console.log('📍 Route distance:', e.routes[0].summary.totalDistance / 1000, 'km');
-                    console.log('⏱️ Route time:', e.routes[0].summary.totalTime / 60, 'minutes');
+                // Update if start location changed (user moved) or end location changed (destination changed)
+                if (startChanged || endChanged) {
+                    console.log('🔄 Updating route waypoints - end destination changed to', newEnd);
+                    console.log('📍 From:', { lat: currentEndLat, lng: currentEndLng }, 'To:', { lat: newEnd.lat, lng: newEnd.lng });
                     
-                    const routeHash = JSON.stringify(e.routes[0].coordinates);
+                    // Remove old route and create new one to force update
+                    if (route) {
+                        console.log('🗑️ Removing old route');
+                        map.removeControl(route);
+                        route = null;
+                    }
                     
-                    // Force new announcement
-                    lastRouteHash = null;
-                    isAnnouncingRoute = false;
-                    lastAnnouncementTime = 0;
+                    // Create fresh route with new destination
+                    console.log('✨ Creating new route to destination');
+                    route = L.Routing.control({
+                        waypoints: [newStart, newEnd],
+                        lineOptions: {
+                            styles: [{color: '#3b49df', opacity: 0.7, weight: 5}]
+                        },
+                        createMarker: function() { return null; }
+                    }).addTo(map);
                     
-                    // Trigger announcement after route is calculated
-                    setTimeout(function() {
-                        console.log('🔔 Triggering announcement for NEW destination');
+                    // Re-attach event listener for new route
+                    route.on('routesfound', function(e) {
+                        console.log('✅✅✅ NEW ROUTE FOUND AFTER DESTINATION CHANGE!');
+                        console.log('📍 Route distance:', e.routes[0].summary.totalDistance / 1000, 'km');
+                        console.log('⏱️ Route time:', e.routes[0].summary.totalTime / 60, 'minutes');
                         
-                        // Translate instructions to Indonesian
-                        translateRouteInstructions();
-                        // Try again after more delay
-                        setTimeout(translateRouteInstructions, 1000);
+                        const routeHash = JSON.stringify(e.routes[0].coordinates);
                         
-                        if (voiceDirectionsEnabled) {
-                            announceRouteDirections(true);
-                        }
-                    }, 3000); // Increased from 2000 to 3000ms
-                });
-            } else {
-                console.log('ℹ️ Route waypoints unchanged, skipping update');
-            }
+                        // Force new announcement
+                        lastRouteHash = null;
+                        isAnnouncingRoute = false;
+                        lastAnnouncementTime = 0;
+                        
+                        // Trigger announcement after route is calculated
+                        setTimeout(function() {
+                            console.log('🔔 Triggering announcement for NEW destination');
+                            
+                            // Translate instructions to Indonesian
+                            translateRouteInstructions();
+                            // Try again after more delay
+                            setTimeout(translateRouteInstructions, 1000);
+                            
+                            if (voiceDirectionsEnabled) {
+                                announceRouteDirections(true);
+                            }
+                        }, 3000); // Increased from 2000 to 3000ms
+                    });
+                } else {
+                    console.log('ℹ️ Route waypoints unchanged, skipping update');
+                }
+            } // Close else block for valid coordinates
         } else {
             // Fallback: just update the route
             console.log('🔄 Updating route waypoints (fallback)');
@@ -1038,25 +1083,26 @@ function announceRouteDirections(priority = false) {
     for (let i = 0; i < instructionRows.length - 1; i++) {
         const row = instructionRows[i];
         
-        // Try multiple possible selectors
+        // Get all cells in the row
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 3) continue; // Skip rows without proper structure
+        
+        // Column structure: [0] = icon, [1] = instruction text, [2] = distance
+        // Try to find instruction with class first
         let instructionText = row.querySelector('.leaflet-routing-instruction-text');
-        if (!instructionText) {
-            const firstTd = row.querySelector('td');
-            if (firstTd) {
-                const span = firstTd.querySelector('span');
-                instructionText = span || firstTd;
-            }
+        if (!instructionText && cells.length >= 2) {
+            // Fallback: use second column (index 1) for instruction text
+            instructionText = cells[1];
         }
         
+        // Try to find distance with class first
         let instructionDistance = row.querySelector('.leaflet-routing-instruction-distance');
         if (!instructionDistance) {
             instructionDistance = row.querySelector('.leaflet-routing-distance');
         }
-        if (!instructionDistance) {
-            const tds = row.querySelectorAll('td');
-            if (tds.length >= 2) {
-                instructionDistance = tds[tds.length - 1]; // Last td is usually distance
-            }
+        if (!instructionDistance && cells.length >= 3) {
+            // Fallback: use third column (index 2) for distance
+            instructionDistance = cells[2];
         }
         
         if (instructionText) {
