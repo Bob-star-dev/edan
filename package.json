@@ -1,5 +1,16 @@
 {
+  "name": "sanavision",
+  "version": "1.0.0",
+  "description": "Real-Time Location Navigation with Voice Control",
+  "scripts": {
+    "dev": "live-server --port=3000 --open=index.html",
+    "map": "live-server --port=3001 --open=map/map.html",
+    "start": "live-server --port=3000 --open=index.html"
+  },
   "dependencies": {
     "firebase": "^12.4.0"
+  },
+  "devDependencies": {
+    "live-server": "^1.2.2"
   }
 }
