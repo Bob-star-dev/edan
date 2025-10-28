@@ -40,6 +40,12 @@ let lastAnnouncedDirection = '';
 let isSpeaking = false;
 let announcementQueue = [];
 
+// Navigation tracking variables
+let currentRouteData = null; // Store current route details
+let currentLegIndex = 0; // Track which instruction leg we're on
+let lastAnnouncedInstruction = null; // Prevent duplicate announcements
+let isNavigating = false; // Track if user is actively navigating
+
 // Function to handle when user's location is found
 function onLocationFound(e) {
     // Hide permission popup when location is found
@@ -102,6 +108,14 @@ function onLocationFound(e) {
     
     // Mark that we have permission
     hasPermission = true;
+    
+    // Check for next navigation direction if navigating (Google Maps style)
+    if (isNavigating) {
+        // Small delay to ensure DOM is ready
+        setTimeout(function() {
+            announceNextDirection();
+        }, 500);
+    }
 }
 
 // Function to handle location errors
@@ -189,6 +203,12 @@ function forceUpdateRoute(userLatLng) {
         console.log('📍 Route distance:', e.routes[0].summary.totalDistance / 1000, 'km');
         console.log('⏱️ Route time:', e.routes[0].summary.totalTime / 60, 'minutes');
         
+        // Save route data for navigation tracking
+        currentRouteData = e.routes[0];
+        currentLegIndex = 0;
+        lastAnnouncedInstruction = null;
+        isNavigating = true;
+        
         const routeHash = JSON.stringify(e.routes[0].coordinates);
         
         // Force new announcement
@@ -243,6 +263,12 @@ function updateRoute(userLatLng) {
         
         // Listen for route found events to announce directions
         route.on('routesfound', function(e) {
+            // Save route data for navigation tracking
+            currentRouteData = e.routes[0];
+            currentLegIndex = 0;
+            lastAnnouncedInstruction = null;
+            isNavigating = true;
+            
             // Create route hash
             const routeHash = JSON.stringify(e.routes[0].coordinates);
             const now = Date.now();
@@ -397,6 +423,12 @@ function updateRoute(userLatLng) {
                         console.log('✅✅✅ NEW ROUTE FOUND AFTER DESTINATION CHANGE!');
                         console.log('📍 Route distance:', e.routes[0].summary.totalDistance / 1000, 'km');
                         console.log('⏱️ Route time:', e.routes[0].summary.totalTime / 60, 'minutes');
+                        
+                        // Save route data for navigation tracking
+                        currentRouteData = e.routes[0];
+                        currentLegIndex = 0;
+                        lastAnnouncedInstruction = null;
+                        isNavigating = true;
                         
                         const routeHash = JSON.stringify(e.routes[0].coordinates);
                         
@@ -659,8 +691,25 @@ function handleVoiceCommand(transcript) {
     // Show what was recognized
     updateVoiceStatus('🎤 Aku mendengar: "' + transcript + '"');
     
+    // Voice trigger commands for blind users - activate microphone
+    if (command === 'halo' || command === 'hello' || command === 'aktivasi' || command === 'activate' || command === 'buka mikrofon' || command === 'aktifkan') {
+        if (!isListening) {
+            if (!recognition) {
+                initSpeechRecognition();
+            }
+            recognition.start();
+            isListening = true;
+            updateVoiceStatus('🎤 Mikrofon aktif. Sebutkan tujuan Anda.');
+            speakText('Mikrofon aktif. Sebutkan nama kota tujuan Anda', 'id-ID', true);
+        } else {
+            updateVoiceStatus('🎤 Mikrofon sudah aktif');
+            speakText('Mikrofon sudah aktif', 'id-ID', true);
+        }
+        return;
+    }
+    
     // Check for navigation commands in Indonesian
-    if (command.includes('mulai rute') || command.includes('mulai navigasi') || command.includes('ikut rute') || command === 'mulayi' || command.trim() === 'mulayi') {
+    if (command.includes('mulai rute') || command.includes('mulai navigasi') || command.includes('ikut rute') || command === 'mulai' || command.trim() === 'mulai') {
         startRouteNavigation();
         return;
     }
@@ -674,18 +723,16 @@ function handleVoiceCommand(transcript) {
     if (knownCities[cityKey]) {
         console.log('Found city:', cityKey, knownCities[cityKey]);
         const city = knownCities[cityKey];
+        
+        // Stop microphone first to prevent overlap
+        if (isListening && recognition) {
+            recognition.stop();
+            isListening = false;
+        }
+        
         updateDestination(city.lat, city.lng, city.name);
         updateVoiceStatus('✅ Tujuan: ' + city.name);
-        speakText('Menuju ' + city.name + '. Mencari rute...', 'id-ID', true);
-        
-        // Auto-stop listening after receiving location
-        setTimeout(function() {
-            if (isListening && recognition) {
-                recognition.stop();
-                isListening = false;
-                updateVoiceButton();
-            }
-        }, 500);
+        // updateDestination will handle the announcement
         return;
     } else {
         console.log('City NOT found:', cityKey);
@@ -700,14 +747,8 @@ function handleVoiceCommand(transcript) {
         // Geocode the location using Nominatim (OpenStreetMap)
         geocodeLocation(location);
         
-        // Auto-stop listening after receiving location
-        setTimeout(function() {
-            if (isListening && recognition) {
-                recognition.stop();
-                isListening = false;
-                updateVoiceButton();
-            }
-        }, 500);
+        // Keep microphone listening for more commands (hands-free for blind users)
+        // Don't auto-stop - user can give more voice commands
     } else {
         updateVoiceStatus('❓ Tidak mengerti lokasi. Coba sebutkan nama kota seperti: "Jakarta"');
     }
@@ -724,14 +765,8 @@ function startRouteNavigation() {
     speakText('Memulai navigasi. Ikuti petunjuk arah.', 'id-ID', true);
     updateVoiceStatus('📍 Navigasi dimulai');
     
-    // Stop listening after starting navigation
-    setTimeout(function() {
-        if (isListening && recognition) {
-            recognition.stop();
-            isListening = false;
-            updateVoiceButton();
-        }
-    }, 500);
+    // Keep microphone listening for more commands (hands-free for blind users)
+    // Don't auto-stop - user can change destination or ask for help
 }
 
 // Extract location from voice command
@@ -771,6 +806,12 @@ async function geocodeLocation(location) {
                 const newLng = result.longitude;
                 const name = result.name + ', ' + result.admin1;
                 
+                // Stop microphone first to prevent overlap
+                if (isListening && recognition) {
+                    recognition.stop();
+                    isListening = false;
+                }
+                
                 // Update destination
                 updateDestination(newLat, newLng, name);
                 updateVoiceStatus('✅ Tujuan: ' + name);
@@ -787,17 +828,65 @@ async function geocodeLocation(location) {
         
         if (knownCities[cityKey]) {
             const city = knownCities[cityKey];
+            
+            // Stop microphone first to prevent overlap
+            if (isListening && recognition) {
+                recognition.stop();
+                isListening = false;
+            }
+            
             updateDestination(city.lat, city.lng, city.name);
             updateVoiceStatus('✅ Tujuan: ' + city.name);
         } else {
             console.log('City not found:', cityKey, 'Available cities:', Object.keys(knownCities));
-            speakText('Lokasi tidak ditemukan: ' + location, 'id-ID', true);
+            
+            // Stop microphone first to prevent overlap
+            if (isListening && recognition) {
+                recognition.stop();
+                isListening = false;
+            }
+            
+            // Announce location not found
+            speakText('Lokasi tidak ditemukan: ' + location, 'id-ID', true, function() {
+                // After announcement, ask for destination again
+                speakText('Sebutkan tujuan Anda lagi', 'id-ID', true, function() {
+                    // Restart microphone after announcement finishes
+                    setTimeout(function() {
+                        if (recognition && !isListening) {
+                            recognition.start();
+                            isListening = true;
+                            updateVoiceStatus('🎤 Mikrofon aktif kembali. Sebutkan tujuan Anda.');
+                        }
+                    }, 500);
+                });
+            });
+            
             updateVoiceStatus('❌ Lokasi tidak ditemukan: ' + location);
         }
         
     } catch (error) {
         console.error('Geocoding error:', error);
-        speakText('Error saat mencari lokasi. Coba gunakan nama kota lain.', 'id-ID', true);
+        // Stop microphone first to prevent overlap
+        if (isListening && recognition) {
+            recognition.stop();
+            isListening = false;
+        }
+        
+        // Announce error
+        speakText('Error saat mencari lokasi. Coba gunakan nama kota lain.', 'id-ID', true, function() {
+            // After announcement, ask for destination again
+            speakText('Sebutkan tujuan Anda lagi', 'id-ID', true, function() {
+                // Restart microphone after announcement finishes
+                setTimeout(function() {
+                    if (recognition && !isListening) {
+                        recognition.start();
+                        isListening = true;
+                        updateVoiceStatus('🎤 Mikrofon aktif kembali. Sebutkan tujuan Anda.');
+                    }
+                }, 500);
+            });
+        });
+        
         updateVoiceStatus('❌ Error saat mencari lokasi');
     }
 }
@@ -865,18 +954,11 @@ function updateVoiceStatus(message) {
     }
 }
 
-// Update voice button appearance
+// Update voice button appearance (button is hidden for blind users)
 function updateVoiceButton() {
-    const voiceBtn = document.getElementById('voiceBtn');
-    if (voiceBtn) {
-        if (isListening) {
-            voiceBtn.innerHTML = '🛑 Berhenti';
-            voiceBtn.style.background = '#dc3545';
-        } else {
-            voiceBtn.innerHTML = '🎤 Aktifkan Mikrofon';
-            voiceBtn.style.background = '#3b49df';
-        }
-    }
+    // Button is now hidden - this function is kept for compatibility
+    // Status updates are shown in voiceStatus text instead
+    // Blind users control everything via voice commands
 }
 
 // Initialize speech recognition on page load
@@ -885,10 +967,25 @@ if (document.readyState === 'loading') {
         initSpeechRecognition();
         initSpeechSynthesis();
         
-        // Auto-announce voice directions are ready
+        // Auto-announce voice directions are ready for blind users
         setTimeout(function() {
             if (voiceDirectionsEnabled) {
-                speakText('Panduan suara aktif. Klik tombol mikrofon dan sebutkan tujuan Anda.', 'id-ID', true);
+                // Activate microphone AFTER announcement completes (prevent overlap)
+                speakText('Aplikasi navigasi siap. Ucapkan nama kota tujuan Anda. Contoh: Jakarta.', 'id-ID', true, function() {
+                    // Callback: announce "Mikrofon aktif" first
+                    console.log('First announcement completed');
+                    speakText('Mikrofon aktif', 'id-ID', true, function() {
+                        // Callback: NOW activate microphone AFTER "Mikrofon aktif" announcement finishes
+                        console.log('Mikrofon aktif announcement completed, activating microphone...');
+                        setTimeout(function() {
+                            if (recognition && !isListening) {
+                                recognition.start();
+                                isListening = true;
+                                updateVoiceStatus('🎤 Mikrofon aktif. Sebutkan tujuan Anda.');
+                            }
+                        }, 500); // Small delay after announcement to ensure clean transition
+                    });
+                });
             }
         }, 2000);
     });
@@ -896,10 +993,25 @@ if (document.readyState === 'loading') {
     initSpeechRecognition();
     initSpeechSynthesis();
     
-    // Auto-announce voice directions are ready
+    // Auto-announce voice directions are ready for blind users
     setTimeout(function() {
         if (voiceDirectionsEnabled) {
-            speakText('Panduan suara aktif. Klik tombol mikrofon dan sebutkan tujuan Anda.', 'id-ID', true);
+            // Activate microphone AFTER announcement completes (prevent overlap)
+            speakText('Aplikasi navigasi siap. Ucapkan nama kota tujuan Anda. Contoh: Jakarta.', 'id-ID', true, function() {
+                // Callback: announce "Mikrofon aktif" first
+                console.log('First announcement completed');
+                speakText('Mikrofon aktif', 'id-ID', true, function() {
+                    // Callback: NOW activate microphone AFTER "Mikrofon aktif" announcement finishes
+                    console.log('Mikrofon aktif announcement completed, activating microphone...');
+                    setTimeout(function() {
+                        if (recognition && !isListening) {
+                            recognition.start();
+                            isListening = true;
+                            updateVoiceStatus('🎤 Mikrofon aktif. Sebutkan tujuan Anda.');
+                        }
+                    }, 500); // Small delay after announcement to ensure clean transition
+                });
+            });
         }
     }, 2000);
 }
@@ -1187,20 +1299,16 @@ function announceRouteDirections(priority = false) {
     function afterRouteAnnouncement() {
         console.log('✓ Route announcement completed');
         
-        // Ensure microphone is stopped after destination is set
-        if (isListening && recognition) {
-            recognition.stop();
-            isListening = false;
-            updateVoiceButton();
-        }
+        // Keep microphone listening for blind users (hands-free operation)
+        // Microphone remains active so user can give more commands
         
         // Update status with instructions for user
-        updateVoiceStatus('📍 Navigasi aktif - Klik mikrofon untuk perintah');
+        updateVoiceStatus('📍 Navigasi aktif - Siap menerima perintah suara');
         
-        // Announce that microphone is available for further commands
+        // Announce that microphone is ready for further commands
         setTimeout(function() {
             console.log('✓ Announcing microphone availability');
-            speakText('Navigasi sudah aktif. Klik tombol mikrofon untuk perintah lain.', 'id-ID', false);
+            speakText('Navigasi sudah aktif. Ucapkan perintah lain kapan saja.', 'id-ID', false);
         }, 2000); // Wait 2 seconds after route announcement
     }
     
@@ -1401,11 +1509,103 @@ function convertInstructionToNatural(text) {
     return text;
 }
 
-// Function to speak turn-by-turn directions based on user position
+// Function to speak turn-by-turn directions based on user position (Google Maps style)
 function announceNextDirection() {
-    if (!voiceDirectionsEnabled || !route) return;
+    if (!voiceDirectionsEnabled || !route || !isNavigating || !currentRouteData || !currentUserPosition) return;
     
-    // This would ideally track the user's position along the route
-    // and announce upcoming turns
-    console.log('Checking for next direction...');
+    try {
+        // Get route instructions from DOM
+        const routingContainer = document.querySelector('.leaflet-routing-alternatives-container');
+        if (!routingContainer) return;
+        
+        const activeRoute = routingContainer.querySelector('.leaflet-routing-alt:not(.leaflet-routing-alt-minimized)');
+        if (!activeRoute) return;
+        
+        const instructionRows = activeRoute.querySelectorAll('tbody tr');
+        if (!instructionRows.length) return;
+        
+        // Get current user position
+        const userLatLng = currentUserPosition.getLatLng();
+        
+        // Calculate distance to next turn (look at first few instructions)
+        for (let i = 0; i < Math.min(5, instructionRows.length); i++) {
+            const row = instructionRows[i];
+            const cells = row.querySelectorAll('td');
+            
+            if (cells.length < 3) continue;
+            
+            // Get instruction text and distance
+            let instructionText = row.querySelector('.leaflet-routing-instruction-text');
+            let instructionDistance = row.querySelector('.leaflet-routing-instruction-distance');
+            
+            if (!instructionText && cells.length >= 2) {
+                instructionText = cells[1];
+            }
+            if (!instructionDistance && cells.length >= 3) {
+                instructionDistance = cells[2];
+            }
+            
+            if (!instructionText) continue;
+            
+            const text = convertInstructionToNatural(instructionText.textContent.trim());
+            const distance = instructionDistance ? instructionDistance.textContent.trim() : '';
+            
+            // Skip if already announced or empty
+            if (!text || text === lastAnnouncedInstruction) {
+                continue;
+            }
+            
+            // Skip generic instructions
+            if (text.toLowerCase().includes('head') || text.toLowerCase().includes('berangkat')) {
+                continue;
+            }
+            
+            // Parse distance - announce if within 200 meters
+            if (distance) {
+                const distanceInMeters = parseDistance(distance);
+                
+                // Announce if within 200 meters and is a turn instruction
+                if (distanceInMeters <= 200 && distanceInMeters > 0) {
+                    console.log('📍 Next turn:', text, 'in', distance);
+                    
+                    // Only announce if different from last announced
+                    if (text !== lastAnnouncedInstruction) {
+                        lastAnnouncedInstruction = text;
+                        
+                        // Announce the turn instruction
+                        if (distanceInMeters >= 100) {
+                            speakText(text + ' dalam ' + Math.round(distanceInMeters) + ' meter', 'id-ID', true);
+                        } else {
+                            speakText(text + ' sekarang', 'id-ID', true);
+                        }
+                    }
+                    break; // Only announce one instruction at a time
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error in announceNextDirection:', error);
+    }
+}
+
+// Helper function to parse distance from text (e.g., "150 m" -> 150)
+function parseDistance(distanceText) {
+    if (!distanceText) return 0;
+    
+    // Remove extra spaces and convert to lowercase
+    const text = distanceText.trim().toLowerCase();
+    
+    // Check for km
+    if (text.includes('km')) {
+        const km = parseFloat(text.replace('km', '').trim());
+        return km * 1000;
+    }
+    
+    // Check for m
+    if (text.includes('m')) {
+        const m = parseFloat(text.replace('m', '').trim());
+        return m;
+    }
+    
+    return 0;
 }
