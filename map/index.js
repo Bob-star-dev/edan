@@ -14,12 +14,17 @@ let currentUserPosition = null;
 let currentAccuracy = null;
 let hasPermission = false;
 let locationInterval = null;
+let isFirstLocationUpdate = true; // Track if this is the first location update
+
+// Configuration for location update interval
+// Options: 500ms (very fast), 1000ms (1s - realtime), 2000ms (2s), 3000ms (3s), 5000ms (5s)
+// Note: Faster updates = more battery/data usage
+const LOCATION_UPDATE_INTERVAL = 1000; // 1 second for realtime tracking
 
 // Destination point (changeable via voice command)
 // Format: [latitude, longitude] - e.g., Medan, Indonesia
-let latLngB = [3.5797, 98.6665]; // Medan, Indonesia [lat, lng]
-let destinationMarker = L.marker(latLngB).addTo(map)
-  .bindPopup("Destination");
+let latLngB = null; // No default destination - user must set destination first
+let destinationMarker = null; // No destination marker until user sets a destination
 
 // Route control - will be created after we get user's location
 let route = null;
@@ -78,8 +83,18 @@ function onLocationFound(e) {
     currentUserPosition = L.marker(e.latlng, {icon: customIcon}).addTo(map)
         .bindPopup("📍 Lokasi Anda (Akurasi: " + radius.toFixed(0) + "m)").openPopup();
     
-    // Update route from current location to destination
-    updateRoute(e.latlng);
+    // Auto-center map to user location (only first time)
+    // This makes the map automatically zoom to user's position when opened
+    if (isFirstLocationUpdate) {
+        map.setView(e.latlng, 16);
+        isFirstLocationUpdate = false; // Reset flag after first update
+    }
+    
+    // Don't create route automatically - wait for user to set destination
+    // Route will be created when user sets destination via voice command
+    if (latLngB && destinationMarker) {
+        updateRoute(e.latlng);
+    }
     
     // Hide permission popup if shown
     const popup = document.getElementById('permissionPopup');
@@ -200,6 +215,12 @@ function forceUpdateRoute(userLatLng) {
 
 // Function to update or create the route from user location to destination
 function updateRoute(userLatLng) {
+    // Don't create route if no destination is set
+    if (!latLngB) {
+        console.log('⚠️ No destination set yet - skipping route creation');
+        return;
+    }
+    
     if (!route) {
         // Create route for the first time
         route = L.Routing.control({
@@ -455,8 +476,8 @@ function startLocationTracking() {
     // Try to locate immediately
     locate();
     
-    // Continue locating every 3 seconds
-    locationInterval = setInterval(locate, 3000);
+    // Continue locating at configured interval (default: 1 second for realtime)
+    locationInterval = setInterval(locate, LOCATION_UPDATE_INTERVAL);
 }
 
 // Function to locate user using Leaflet
@@ -783,7 +804,7 @@ async function geocodeLocation(location) {
 
 // Update destination marker and route
 function updateDestination(lat, lng, name) {
-    // Remove old marker
+    // Remove old marker if it exists
     if (destinationMarker) {
         map.removeLayer(destinationMarker);
     }
@@ -805,7 +826,7 @@ function updateDestination(lat, lng, name) {
     
     // Update route if user location exists
     // ALWAYS force update route when destination changes
-    if (currentUserPosition) {
+    if (currentUserPosition && latLngB) {
         const userLatLng = currentUserPosition.getLatLng();
         forceUpdateRoute(userLatLng);
     }
@@ -867,9 +888,9 @@ if (document.readyState === 'loading') {
         // Auto-announce voice directions are ready
         setTimeout(function() {
             if (voiceDirectionsEnabled) {
-                speakText('Panduan suara aktif. Aplikasi siap digunakan.', 'id-ID', true);
+                speakText('Panduan suara aktif. Klik tombol mikrofon dan sebutkan tujuan Anda.', 'id-ID', true);
             }
-        }, 1000);
+        }, 2000);
     });
 } else {
     initSpeechRecognition();
@@ -878,9 +899,9 @@ if (document.readyState === 'loading') {
     // Auto-announce voice directions are ready
     setTimeout(function() {
         if (voiceDirectionsEnabled) {
-            speakText('Panduan suara aktif. Aplikasi siap digunakan.', 'id-ID', true);
+            speakText('Panduan suara aktif. Klik tombol mikrofon dan sebutkan tujuan Anda.', 'id-ID', true);
         }
-    }, 1000);
+    }, 2000);
 }
 
 // Initialize speech synthesis voices
