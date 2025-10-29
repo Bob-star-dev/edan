@@ -1312,8 +1312,8 @@ function handleVoiceCommand(transcript) {
         
         // Announce destination for known cities
         speakText('Tujuan Anda adalah ' + city.name, 'id-ID', true, function() {
-            // After announcing destination, restart microphone to listen for "Navigasi" command
-            speakText('Ucapkan Navigasi untuk memulai', 'id-ID', true, function() {
+            // After announcing destination, give instruction before asking for "Navigasi" command
+            speakText('Jika ingin mengganti tujuan sebutkan lokasi dan jika tidak katakan navigasi untuk memulai perjalanan', 'id-ID', true, function() {
                 // Restart microphone to listen for "Navigasi" command (window of 10 seconds)
                 setTimeout(function() {
                     if (recognition && !isListening) {
@@ -1666,8 +1666,8 @@ async function geocodeLocation(location, userLatLng = null) {
                 
                 // Announce shortened destination name
                 speakText('Tujuan Anda adalah ' + shortName, 'id-ID', true, function() {
-                    // After announcing destination, restart microphone to listen for "Navigasi" command
-                    speakText('Ucapkan Navigasi untuk memulai', 'id-ID', true, function() {
+                    // After announcing destination, give instruction before asking for "Navigasi" command
+                    speakText('Jika ingin mengganti tujuan sebutkan lokasi dan jika tidak katakan navigasi untuk memulai perjalanan', 'id-ID', true, function() {
                         // Restart microphone to listen for "Navigasi" command (window of 10 seconds)
                         setTimeout(function() {
                             if (recognition && !isListening) {
@@ -1723,8 +1723,8 @@ async function geocodeLocation(location, userLatLng = null) {
             
             // Announce destination for fallback cities
             speakText('Tujuan Anda adalah ' + city.name, 'id-ID', true, function() {
-                // After announcing destination, restart microphone to listen for "Navigasi" command
-                speakText('Ucapkan Navigasi untuk memulai', 'id-ID', true, function() {
+                // After announcing destination, give instruction before asking for "Navigasi" command
+                speakText('Jika ingin mengganti tujuan sebutkan lokasi dan jika tidak katakan navigasi untuk memulai perjalanan', 'id-ID', true, function() {
                     // Restart microphone to listen for "Navigasi" command (window of 10 seconds)
                     setTimeout(function() {
                         if (recognition && !isListening) {
@@ -1881,139 +1881,18 @@ function updateVoiceButton() {
     // Blind users control everything via voice commands
 }
 
-// Function to activate microphone after user interaction
-function activateMicrophoneAfterInteraction() {
-    if (!recognition) {
-        initSpeechRecognition();
-    }
-    
-    // Mark that user has interacted (now we can use TTS)
-    hasUserInteraction = true;
-    console.log('✅ User interaction detected (click/touch) - hasUserInteraction = true');
-    
-    // Clear stopped flag if it was set (allows reactivation during navigation)
-    if (recognition && recognition._stopped) {
-        recognition._stopped = false;
-        console.log('🎤 Clearing stopped flag - reactivating microphone via click');
-    }
-    
-    // Try to start microphone
-    if (recognition && !isListening) {
-        try {
-            console.log('🎤 Starting microphone after user interaction...');
-            recognition.start();
-            isListening = true;
-            console.log('✅ Microphone started successfully after click');
-            
-            // Now we can use speakText because user has interacted (click counts as interaction)
-            // Give different messages based on navigation state
-            if (isNavigating) {
-                updateVoiceStatus('🎤 Mikrofon aktif kembali. Sebutkan tujuan baru atau perintah lain.');
-                speakText('Senavision Siap. Mikrofon aktif kembali. Sebutkan tujuan baru jika ingin mengubah rute', 'id-ID', true);
-            } else {
-                updateVoiceStatus('🎤 Mikrofon aktif. Sebutkan tujuan Anda.');
-                // First time activation - welcome message with TTS (now allowed because user clicked)
-                speakText('Senavision Siap. Mikrofon aktif. Sebutkan nama kota atau lokasi tujuan Anda', 'id-ID', true);
-            }
-            
-            console.log('🎤 Microphone activated after user interaction');
-        } catch (error) {
-            console.error('❌ Failed to activate microphone:', error);
-            updateVoiceStatus('⚠️ Klik layar untuk mengaktifkan mikrofon');
-            // If error is "not-allowed", the onerror handler will deal with it
-        }
-    } else if (isListening) {
-        console.log('ℹ️ Microphone already listening');
-    }
-}
-
 // Initialize speech recognition on page load
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function() {
         initSpeechRecognition();
         initSpeechSynthesis();
         
-        // Add click/touch listeners to activate microphone after user interaction
-        // Browser requires user interaction before accessing microphone (security policy)
-        // CRITICAL: User MUST click once first time to activate microphone
-        // After that, voice command "Halo" will work
-        document.addEventListener('click', function activateMicrophoneOnClick() {
-            console.log('🖱️ Click detected - activating microphone...');
-            if (!hasUserInteraction) {
-                activateMicrophoneAfterInteraction();
-            } else {
-                // Jika sudah interact tapi mikrofon tidak aktif (termasuk saat navigasi aktif)
-                // Aktifkan mikrofon melalui fungsi yang sama untuk konsistensi
-                if (recognition && !isListening) {
-                    // Clear stopped flag jika ada (penting saat navigasi aktif)
-                    if (recognition._stopped) {
-                        recognition._stopped = false;
-                        console.log('🎤 Clearing stopped flag via click - microphone can be reactivated');
-                    }
-                    
-                    try {
-                        recognition.start();
-                        isListening = true;
-                        console.log('✅ Microphone started via click');
-                        
-                        // Berikan pesan berbeda berdasarkan status navigasi
-                        if (isNavigating) {
-                            updateVoiceStatus('🎤 Mikrofon aktif kembali. Sebutkan tujuan baru atau ucapkan "Halo".');
-                            speakText('Mikrofon aktif kembali. Sebutkan tujuan baru jika ingin mengubah rute', 'id-ID', true);
-                        } else {
-                            updateVoiceStatus('🎤 Mikrofon aktif. Ucapkan "Halo" atau sebutkan tujuan.');
-                        }
-                    } catch (error) {
-                        console.error('Failed to start microphone:', error);
-                        updateVoiceStatus('⚠️ Klik layar sekali lagi untuk mengaktifkan mikrofon');
-                    }
-                }
-            }
-        }); // Removed { once: true } so user can click again if needed
-        
-        document.addEventListener('touchstart', function activateMicrophoneOnTouch() {
-            console.log('👆 Touch detected - activating microphone...');
-            if (!hasUserInteraction) {
-                activateMicrophoneAfterInteraction();
-            } else {
-                // Jika sudah interact tapi mikrofon tidak aktif (termasuk saat navigasi aktif)
-                // Aktifkan mikrofon melalui fungsi yang sama untuk konsistensi
-                if (recognition && !isListening) {
-                    // Clear stopped flag jika ada (penting saat navigasi aktif)
-                    if (recognition._stopped) {
-                        recognition._stopped = false;
-                        console.log('🎤 Clearing stopped flag via touch - microphone can be reactivated');
-                    }
-                    
-                    try {
-                        recognition.start();
-                        isListening = true;
-                        console.log('✅ Microphone started via touch');
-                        
-                        // Berikan pesan berbeda berdasarkan status navigasi
-                        if (isNavigating) {
-                            updateVoiceStatus('🎤 Mikrofon aktif kembali. Sebutkan tujuan baru atau ucapkan "Halo".');
-                            speakText('Mikrofon aktif kembali. Sebutkan tujuan baru jika ingin mengubah rute', 'id-ID', true);
-                        } else {
-                            updateVoiceStatus('🎤 Mikrofon aktif. Ucapkan "Halo" atau sebutkan tujuan.');
-                        }
-                    } catch (error) {
-                        console.error('Failed to start microphone:', error);
-                        updateVoiceStatus('⚠️ Klik layar sekali lagi untuk mengaktifkan mikrofon');
-                    }
-                }
-            }
-        });
-        
-        // Auto-announce voice directions are ready for blind users
-        // IMPORTANT: User MUST click page ONCE first time to activate microphone
-        // After first click, voice command "Halo" will work
+        // Auto-announce SENAVISION welcome guide when page loads
+        // Announce welcome message and user guide
         setTimeout(function() {
             if (voiceDirectionsEnabled) {
-                // Don't use speakText here - browser blocks it without user interaction
-                // Just update status text instead
-                updateVoiceStatus('🖱️ Klik layar sekali untuk mengaktifkan mikrofon, lalu ucapkan "Halo"');
-                console.log('ℹ️ Ready - user must click page once, then say "Halo" or speak destination');
+                console.log('📢 Starting SENAVISION welcome guide');
+                announceWelcomeGuide();
             }
         }, 2000);
     });
@@ -2021,82 +1900,72 @@ if (document.readyState === 'loading') {
     initSpeechRecognition();
     initSpeechSynthesis();
     
-    // Add click/touch listeners to activate microphone after user interaction
-    document.addEventListener('click', function activateMicrophoneOnClick() {
-        console.log('🖱️ Click detected - activating microphone...');
-        if (!hasUserInteraction) {
-            activateMicrophoneAfterInteraction();
-        } else {
-            // Jika sudah interact tapi mikrofon tidak aktif (termasuk saat navigasi aktif)
-            // Aktifkan mikrofon melalui fungsi yang sama untuk konsistensi
-            if (recognition && !isListening) {
-                // Clear stopped flag jika ada (penting saat navigasi aktif)
-                if (recognition._stopped) {
-                    recognition._stopped = false;
-                    console.log('🎤 Clearing stopped flag via click - microphone can be reactivated');
-                }
-                
-                try {
-                    recognition.start();
-                    isListening = true;
-                    console.log('✅ Microphone started via click');
-                    
-                    // Berikan pesan berbeda berdasarkan status navigasi
-                    if (isNavigating) {
-                        updateVoiceStatus('🎤 Mikrofon aktif kembali. Sebutkan tujuan baru atau ucapkan "Halo".');
-                        speakText('Mikrofon aktif kembali. Sebutkan tujuan baru jika ingin mengubah rute', 'id-ID', true);
-                    } else {
-                        updateVoiceStatus('🎤 Mikrofon aktif. Ucapkan "Halo" atau sebutkan tujuan.');
-                    }
-                } catch (error) {
-                    console.error('Failed to start microphone:', error);
-                    updateVoiceStatus('⚠️ Klik layar sekali lagi untuk mengaktifkan mikrofon');
-                }
-            }
-        }
-    });
-    
-    document.addEventListener('touchstart', function activateMicrophoneOnTouch() {
-        console.log('👆 Touch detected - activating microphone...');
-        if (!hasUserInteraction) {
-            activateMicrophoneAfterInteraction();
-        } else {
-            // Jika sudah interact tapi mikrofon tidak aktif (termasuk saat navigasi aktif)
-            // Aktifkan mikrofon melalui fungsi yang sama untuk konsistensi
-            if (recognition && !isListening) {
-                // Clear stopped flag jika ada (penting saat navigasi aktif)
-                if (recognition._stopped) {
-                    recognition._stopped = false;
-                    console.log('🎤 Clearing stopped flag via touch - microphone can be reactivated');
-                }
-                
-                try {
-                    recognition.start();
-                    isListening = true;
-                    console.log('✅ Microphone started via touch');
-                    
-                    // Berikan pesan berbeda berdasarkan status navigasi
-                    if (isNavigating) {
-                        updateVoiceStatus('🎤 Mikrofon aktif kembali. Sebutkan tujuan baru atau ucapkan "Halo".');
-                        speakText('Mikrofon aktif kembali. Sebutkan tujuan baru jika ingin mengubah rute', 'id-ID', true);
-                    } else {
-                        updateVoiceStatus('🎤 Mikrofon aktif. Ucapkan "Halo" atau sebutkan tujuan.');
-                    }
-                } catch (error) {
-                    console.error('Failed to start microphone:', error);
-                    updateVoiceStatus('⚠️ Klik layar sekali lagi untuk mengaktifkan mikrofon');
-                }
-            }
-        }
-    });
-    
-    // Auto-announce voice directions are ready for blind users
+    // Auto-announce SENAVISION welcome guide when page loads
+    // Announce welcome message and user guide
     setTimeout(function() {
         if (voiceDirectionsEnabled) {
-            updateVoiceStatus('🖱️ Klik layar sekali untuk mengaktifkan mikrofon, lalu ucapkan "Halo"');
-            console.log('ℹ️ Ready - user must click page once, then say "Halo" or speak destination');
+            console.log('📢 Starting SENAVISION welcome guide');
+            announceWelcomeGuide();
         }
     }, 2000);
+}
+
+// Function to announce SENAVISION welcome and user guide
+let isFirstLoad = true; // Track if this is the first time page loads
+function announceWelcomeGuide() {
+    // Only announce on first load
+    if (!isFirstLoad) {
+        console.log('⚠️ Welcome guide already announced, skipping');
+        return;
+    }
+    isFirstLoad = false;
+    
+    // Check if we're in the middle of the page load sequence
+    // Don't announce if speech synthesis is not ready
+    if (!('speechSynthesis' in window)) {
+        console.warn('Speech synthesis not available yet');
+        return;
+    }
+    
+    const welcomeText = 'SENAVISION siap. Berikut panduan cara menggunakan aplikasi. ' +
+        'Pertama, sebutkan nama kota atau lokasi tujuan Anda. Misalnya Jakarta atau Bandung. ' +
+        'Kedua, setelah tujuan ditetapkan, ucapkan kata "Navigasi" untuk memulai navigasi. ' +
+        'Ketiga, ikuti panduan suara yang akan membimbing Anda menuju tujuan. ' +
+        'Aplikasi siap digunakan. Silakan sebutkan tujuan Anda.';
+    
+    console.log('📢 Starting welcome guide announcement');
+    updateVoiceStatus('📢 Memutar panduan penggunaan...');
+    
+    // Set hasUserInteraction to true so we can use speech synthesis
+    hasUserInteraction = true;
+    
+    speakText(welcomeText, 'id-ID', true, function() {
+        // After welcome message finishes, activate microphone
+        console.log('✅ Welcome guide finished - activating microphone');
+        
+        // Initialize speech recognition if not already done
+        if (!recognition) {
+            initSpeechRecognition();
+        }
+        
+        // Clear stopped flag if any
+        if (recognition && recognition._stopped) {
+            recognition._stopped = false;
+        }
+        
+        // Start microphone to listen for user commands
+        if (!isListening && recognition) {
+            try {
+                recognition.start();
+                isListening = true;
+                console.log('✅ Microphone activated after welcome guide');
+                updateVoiceStatus('🎤 Mikrofon aktif. Sebutkan tujuan Anda.');
+            } catch (error) {
+                console.error('❌ Failed to activate microphone:', error);
+                updateVoiceStatus('⚠️ Error mengaktifkan mikrofon. Klik layar untuk mencoba lagi.');
+            }
+        }
+    });
 }
 
 // Initialize speech synthesis voices
