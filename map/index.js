@@ -33,6 +33,7 @@ let route = null;
 let recognition = null;
 let isListening = false;
 let finalTranscript = '';
+let hasUserInteraction = false; // Track if user has interacted (required for microphone access)
 
 // Voice Directions Variables - AUTO ENABLED for blind users
 let voiceDirectionsEnabled = true; // Automatically enabled for accessibility
@@ -53,43 +54,76 @@ function onLocationFound(e) {
     // Hide permission popup when location is found
     hidePermissionPopup();
     
-    // Update status display
+    // Update status display - REAL-TIME UPDATE setiap user bergerak
     const statusEl = document.getElementById('status');
     const coordsEl = document.getElementById('coordinates');
     const accuracyEl = document.getElementById('accuracy');
     
-    if (statusEl) statusEl.textContent = '✅ Location found!';
-    if (coordsEl) coordsEl.textContent = `Lat: ${e.latlng.lat.toFixed(6)}, Lng: ${e.latlng.lng.toFixed(6)}`;
+    // Update status dengan timestamp untuk menunjukkan update real-time
+    if (statusEl) {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        statusEl.textContent = `✅ Location updated: ${timeStr}`;
+    }
     
-    // Calculate accuracy
+    // Update koordinat secara real-time setiap user bergerak
+    if (coordsEl) {
+        const lat = e.latlng.lat.toFixed(6);
+        const lng = e.latlng.lng.toFixed(6);
+        coordsEl.textContent = `Lat: ${lat}, Lng: ${lng}`;
+        // Tambahkan highlight effect untuk menunjukkan update
+        coordsEl.style.transition = 'background-color 0.3s';
+        coordsEl.style.backgroundColor = '#e8f5e9';
+        setTimeout(() => {
+            if (coordsEl) coordsEl.style.backgroundColor = 'transparent';
+        }, 300);
+    }
+    
+    // Calculate accuracy dan update
     const radius = e.accuracy / 2;
-    if (accuracyEl) accuracyEl.textContent = `Accuracy: ${radius.toFixed(0)}m`;
+    if (accuracyEl) {
+        accuracyEl.textContent = `Accuracy: ${radius.toFixed(0)}m`;
+        // Highlight accuracy juga untuk menunjukkan update
+        accuracyEl.style.transition = 'background-color 0.3s';
+        accuracyEl.style.backgroundColor = '#e8f5e9';
+        setTimeout(() => {
+            if (accuracyEl) accuracyEl.style.backgroundColor = 'transparent';
+        }, 300);
+    }
     
-    // Remove old position markers if they exist
+    // Update markers secara efisien (jangan hapus dan buat ulang)
+    // Update marker yang sudah ada untuk smooth transition
     if (currentUserPosition) {
-        map.removeLayer(currentUserPosition);
+        // Update existing marker position (lebih efisien dari hapus/buat ulang)
+        currentUserPosition.setLatLng(e.latlng);
+        currentUserPosition.setPopupContent("📍 Lokasi Anda (Akurasi: " + radius.toFixed(0) + "m)");
+    } else {
+        // Create marker hanya jika belum ada
+        const customIcon = L.divIcon({
+            className: 'custom-user-marker',
+            html: '<div style="background: #3b49df; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 10px rgba(0,0,0,0.3);"></div>',
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
+        });
+        
+        currentUserPosition = L.marker(e.latlng, {icon: customIcon}).addTo(map)
+            .bindPopup("📍 Lokasi Anda (Akurasi: " + radius.toFixed(0) + "m)").openPopup();
     }
+    
     if (currentAccuracy) {
-        map.removeLayer(currentAccuracy);
+        // Update existing accuracy circle
+        currentAccuracy.setLatLng(e.latlng);
+        currentAccuracy.setRadius(radius);
+    } else {
+        // Create accuracy circle hanya jika belum ada
+        currentAccuracy = L.circle(e.latlng, radius, {
+            color: '#ffd700',
+            fillColor: '#ffd700',
+            fillOpacity: 0.2
+        }).addTo(map);
     }
     
-    // Create accuracy circle (yellow for user location area)
-    currentAccuracy = L.circle(e.latlng, radius, {
-        color: '#ffd700',
-        fillColor: '#ffd700',
-        fillOpacity: 0.2
-    }).addTo(map);
-    
-    // Create user position marker with custom icon
-    const customIcon = L.divIcon({
-        className: 'custom-user-marker',
-        html: '<div style="background: #3b49df; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 10px rgba(0,0,0,0.3);"></div>',
-        iconSize: [20, 20],
-        iconAnchor: [10, 10]
-    });
-    
-    currentUserPosition = L.marker(e.latlng, {icon: customIcon}).addTo(map)
-        .bindPopup("📍 Lokasi Anda (Akurasi: " + radius.toFixed(0) + "m)").openPopup();
+    // Markers sudah dibuat/diupdate di atas, tidak perlu dibuat ulang
     
     // Auto-center map to user location (only first time)
     // This makes the map automatically zoom to user's position when opened
@@ -110,6 +144,14 @@ function onLocationFound(e) {
     
     // Mark that we have permission
     hasPermission = true;
+    
+    // IMPORTANT: Do NOT auto-start microphone after location permission
+    // User MUST say "Halo" to activate microphone (per new requirements)
+    // Just mark that user has interacted (for browser security)
+    if (!hasUserInteraction) {
+        hasUserInteraction = true;
+        console.log('✅ Location permission granted - user must say "Halo" to activate microphone');
+    }
     
     // Check for next navigation direction if navigating (Google Maps style)
     if (isNavigating) {
@@ -413,48 +455,69 @@ function updateRoute(userLatLng) {
                 
                 // Update if start location changed (user moved) or end location changed (destination changed)
                 if (startChanged || endChanged) {
-                    console.log('🔄 Updating route waypoints - end destination changed to', newEnd);
-                    console.log('📍 From:', { lat: currentEndLat, lng: currentEndLng }, 'To:', { lat: newEnd.lat, lng: newEnd.lng });
-                    
-                    // Remove old route and create new one to force update
-                    if (route) {
-                        console.log('🗑️ Removing old route');
-                        map.removeControl(route);
-                        route = null;
+                    // If destination changed, recreate route completely
+                    if (endChanged) {
+                        console.log('🔄 Destination changed - recreating route');
+                        console.log('📍 From:', { lat: currentEndLat, lng: currentEndLng }, 'To:', { lat: newEnd.lat, lng: newEnd.lng });
+                        
+                        // Remove old route and create new one to force update
+                        if (route) {
+                            console.log('🗑️ Removing old route');
+                            map.removeControl(route);
+                            route = null;
+                        }
+                        
+                        // Create fresh route with new destination
+                        console.log('✨ Creating new route to destination');
+                        route = L.Routing.control({
+                            waypoints: [newStart, newEnd],
+                            lineOptions: {
+                                styles: [{color: '#3b49df', opacity: 0.7, weight: 5}]
+                            },
+                            createMarker: function() { return null; }
+                        }).addTo(map);
+                        
+                        // Re-attach event listener for new route
+                        route.on('routesfound', function(e) {
+                            console.log('✅✅✅ NEW ROUTE FOUND AFTER DESTINATION CHANGE!');
+                            console.log('📍 Route distance:', e.routes[0].summary.totalDistance / 1000, 'km');
+                            console.log('⏱️ Route time:', e.routes[0].summary.totalTime / 60, 'minutes');
+                            
+                            // Save route data for navigation tracking
+                            currentRouteData = e.routes[0];
+                            currentLegIndex = 0;
+                            lastAnnouncedInstruction = null;
+                            announcedInstructions = []; // Reset announced instructions
+                            isNavigating = false; // Not navigating yet - wait for user command
+                            shouldAnnounceRoute = false; // Don't auto-announce route yet
+                            
+                            const routeHash = JSON.stringify(e.routes[0].coordinates);
+                            
+                            // Don't auto-announce route - wait for user to say "Navigasi"
+                            console.log('✅✅✅ Route found - waiting for user to say "Navigasi" to start');
+                            
+                            // Translate instructions to Indonesian but don't announce yet
+                            translateRouteInstructions();
+                        });
+                    } else if (startChanged) {
+                        // REAL-TIME: User location changed - update route smoothly without recreating
+                        // This makes navigation follow user movement in real-time
+                        console.log('📍 User location changed - updating route start point (REAL-TIME NAVIGATION)');
+                        
+                        try {
+                            // Use setWaypoints() for efficient real-time updates
+                            // This keeps route visible and smoothly follows user movement
+                            route.setWaypoints([
+                                newStart,  // Update start to current user location (real-time)
+                                newEnd     // Keep destination unchanged
+                            ]);
+                            
+                            console.log('✅ Route updated in real-time - following user movement');
+                        } catch (error) {
+                            console.error('Error updating waypoints (real-time):', error);
+                            // Fallback: route will be updated on next location update
+                        }
                     }
-                    
-                    // Create fresh route with new destination
-                    console.log('✨ Creating new route to destination');
-                    route = L.Routing.control({
-                        waypoints: [newStart, newEnd],
-                        lineOptions: {
-                            styles: [{color: '#3b49df', opacity: 0.7, weight: 5}]
-                        },
-                        createMarker: function() { return null; }
-                    }).addTo(map);
-                    
-                    // Re-attach event listener for new route
-                    route.on('routesfound', function(e) {
-                        console.log('✅✅✅ NEW ROUTE FOUND AFTER DESTINATION CHANGE!');
-                        console.log('📍 Route distance:', e.routes[0].summary.totalDistance / 1000, 'km');
-                        console.log('⏱️ Route time:', e.routes[0].summary.totalTime / 60, 'minutes');
-                        
-                        // Save route data for navigation tracking
-                        currentRouteData = e.routes[0];
-                        currentLegIndex = 0;
-                        lastAnnouncedInstruction = null;
-                        announcedInstructions = []; // Reset announced instructions
-                        isNavigating = false; // Not navigating yet - wait for user command
-                        shouldAnnounceRoute = false; // Don't auto-announce route yet
-                        
-                        const routeHash = JSON.stringify(e.routes[0].coordinates);
-                        
-                        // Don't auto-announce route - wait for user to say "Navigasi"
-                        console.log('✅✅✅ Route found - waiting for user to say "Navigasi" to start');
-                        
-                        // Translate instructions to Indonesian but don't announce yet
-                        translateRouteInstructions();
-                    });
                 } else {
                     console.log('ℹ️ Route waypoints unchanged, skipping update');
                 }
@@ -643,6 +706,19 @@ function initSpeechRecognition() {
                 finalTranscript += transcript;
             } else {
                 interimTranscript += transcript;
+                
+                // CRITICAL: Check interim results for "Halo" to activate microphone immediately
+                // This allows "Halo" to work even if microphone wasn't fully active
+                const interimClean = transcript.toLowerCase().trim().replace(/[.,;:!?]/g, '');
+                if (interimClean.includes('halo') || interimClean.includes('hello') || interimClean.includes('aktivasi') || interimClean.includes('activate')) {
+                    console.log('🎤 "Halo" detected in interim results - activating microphone immediately');
+                    if (recognition && recognition._stopped) {
+                        recognition._stopped = false;
+                        hasUserInteraction = true; // Mark interaction for browser security
+                        console.log('🎤 Clearing stopped flag via interim "Halo" detection');
+                    }
+                    // Don't call handleVoiceCommand here, let final result handle it
+                }
             }
         }
         
@@ -660,7 +736,49 @@ function initSpeechRecognition() {
     // Handle speech recognition errors
     recognition.onerror = function(event) {
         console.error('Speech recognition error:', event.error);
-        updateVoiceStatus('❌ Error: ' + event.error);
+        
+        // Handle specific error types with user-friendly messages
+        if (event.error === 'not-allowed') {
+            // Browser requires user interaction before accessing microphone
+            // Set hasUserInteraction to true so next attempt will work
+            hasUserInteraction = true;
+            updateVoiceStatus('⚠️ Klik layar sekali untuk mengaktifkan mikrofon');
+            console.log('⚠️ Microphone requires user interaction - please click page once');
+            
+            // After user clicks, try to start again automatically
+            const clickHandler = function() {
+                hasUserInteraction = true;
+                try {
+                    if (recognition && !isListening) {
+                        recognition.start();
+                        isListening = true;
+                        console.log('🎤 Microphone started after click');
+                        updateVoiceStatus('🎤 Mikrofon aktif. Ucapkan "Halo" atau sebutkan tujuan.');
+                        speakText('Mikrofon aktif. Ucapkan "Halo" atau sebutkan tujuan Anda', 'id-ID', true);
+                    }
+                } catch (err) {
+                    console.error('Failed to start after click:', err);
+                }
+                document.removeEventListener('click', clickHandler);
+                document.removeEventListener('touchstart', clickHandler);
+            };
+            
+            document.addEventListener('click', clickHandler, { once: true });
+            document.addEventListener('touchstart', clickHandler, { once: true });
+        } else if (event.error === 'no-speech') {
+            // No speech detected - normal, just continue listening
+            console.log('ℹ️ No speech detected, continuing to listen...');
+            // Don't update status for no-speech, just silently continue
+            return;
+        } else if (event.error === 'aborted') {
+            // Speech recognition was stopped intentionally
+            console.log('ℹ️ Speech recognition stopped');
+            return;
+        } else {
+            // Other errors
+            updateVoiceStatus('❌ Error: ' + event.error);
+        }
+        
         isListening = false;
         updateVoiceButton();
     };
@@ -670,6 +788,33 @@ function initSpeechRecognition() {
         console.log('Speech recognition ended');
         isListening = false;
         updateVoiceButton();
+        
+        // Auto-restart microphone if it was listening (for continuous operation)
+        // But only if:
+        // 1. It wasn't stopped intentionally (not _stopped)
+        // 2. Navigation is not active (to prevent restart during navigation)
+        // 3. User has already interacted (required for browser security)
+        if (recognition && !isListening && !recognition._stopped && hasUserInteraction && !isNavigating) {
+            // Small delay before restart to prevent rapid restart loops
+            setTimeout(function() {
+                // Only restart if navigation is not active and not manually stopped
+                if (recognition && !isListening && !recognition._stopped && hasUserInteraction && !isNavigating) {
+                    try {
+                        recognition.start();
+                        isListening = true;
+                        console.log('🔄 Microphone auto-restarted');
+                    } catch (error) {
+                        // If restart fails (e.g., not-allowed), stop trying
+                        console.log('⚠️ Could not restart microphone:', error.message);
+                        recognition._stopped = true;
+                    }
+                } else if (isNavigating) {
+                    console.log('ℹ️ Navigation active - microphone auto-restart disabled (say "Halo" to reactivate)');
+                }
+            }, 1000);
+        } else if (isNavigating && !recognition._stopped) {
+            console.log('ℹ️ Navigation active - microphone will not auto-restart (say "Halo" to reactivate)');
+        }
     };
 }
 
@@ -840,16 +985,53 @@ function handleVoiceCommand(transcript) {
     // Show what was recognized
     updateVoiceStatus('🎤 Aku mendengar: "' + transcript + '"');
     
-    // Voice trigger commands for blind users - activate microphone
+    // Voice trigger commands - "Halo" is required to activate microphone
+    // This is the primary way to activate microphone (works even during navigation)
     if (cleanCommand === 'halo' || cleanCommand === 'hello' || cleanCommand === 'aktivasi' || cleanCommand === 'activate' || cleanCommand === 'buka mikrofon' || cleanCommand === 'aktifkan') {
+        // Mark user interaction when voice command is received (voice counts as interaction)
+        hasUserInteraction = true;
+        console.log('✅ "Halo" command detected - hasUserInteraction set to true');
+        
+        // CRITICAL: Always clear stopped flag when user says "Halo"
+        if (recognition && recognition._stopped) {
+            recognition._stopped = false;
+            console.log('🎤 Clearing stopped flag via "Halo" command');
+        }
+        
         if (!isListening) {
             if (!recognition) {
+                console.log('🔧 Initializing speech recognition...');
                 initSpeechRecognition();
             }
-            recognition.start();
-            isListening = true;
-            updateVoiceStatus('🎤 Mikrofon aktif. Sebutkan tujuan Anda.');
-            speakText('Mikrofon aktif. Sebutkan nama kota tujuan Anda', 'id-ID', true);
+            
+            // Small delay to ensure recognition object is ready
+            setTimeout(function() {
+                try {
+                    console.log('🎤 Attempting to start microphone...');
+                    recognition.start();
+                    isListening = true;
+                    console.log('✅ Microphone started successfully');
+                    
+                    // Give different messages based on navigation state
+                    if (isNavigating) {
+                        updateVoiceStatus('🎤 Mikrofon aktif kembali. Sebutkan tujuan baru.');
+                        speakText('Mikrofon aktif kembali. Sebutkan tujuan baru jika ingin mengubah rute', 'id-ID', true);
+                    } else {
+                        updateVoiceStatus('🎤 Mikrofon aktif. Sebutkan tujuan Anda.');
+                        speakText('Mikrofon aktif. Sebutkan nama kota atau lokasi tujuan Anda', 'id-ID', true);
+                    }
+                    console.log('🎤 Microphone activated via "Halo" command');
+                } catch (error) {
+                    console.error('❌ Failed to start microphone:', error);
+                    if (error.message && error.message.includes('not-allowed')) {
+                        updateVoiceStatus('⚠️ Klik layar sekali untuk mengaktifkan mikrofon');
+                        speakText('Klik layar terlebih dahulu sekali untuk mengaktifkan mikrofon', 'id-ID', true);
+                    } else {
+                        updateVoiceStatus('⚠️ Error: ' + error.message);
+                        console.error('Microphone error details:', error);
+                    }
+                }
+            }, 100); // Small delay to ensure recognition is ready
         } else {
             updateVoiceStatus('🎤 Mikrofon sudah aktif');
             speakText('Mikrofon sudah aktif', 'id-ID', true);
@@ -857,12 +1039,19 @@ function handleVoiceCommand(transcript) {
         return;
     }
     
-    // Check for navigation commands in Indonesian - MUST be checked BEFORE city check
+    // Check for navigation commands - "Navigasi" restarts microphone after destination is set
     console.log('🔍 Checking navigation command. cleanCommand:', cleanCommand);
     
     if (cleanCommand === 'navigasi' || cleanCommand === 'mulai' || 
         cleanCommand.includes('mulai rute') || cleanCommand.includes('mulai navigasi') || cleanCommand.includes('ikut rute')) {
         console.log('✅ Navigation command detected:', cleanCommand);
+        
+        // CRITICAL: Clear stopped flag when user says "Navigasi" - allows microphone restart
+        if (recognition && recognition._stopped) {
+            recognition._stopped = false;
+            console.log('🎤 Clearing stopped flag via "Navigasi" command - microphone will restart after navigation starts');
+        }
+        
         startTurnByTurnNavigation();
         return;
     }
@@ -879,7 +1068,8 @@ function handleVoiceCommand(transcript) {
         console.log('Found city:', cityKey, knownCities[cityKey]);
         const city = knownCities[cityKey];
         
-        // Stop microphone first to prevent overlap
+        // Stop microphone briefly to announce destination, then restart for "Navigasi" command
+        // Keep microphone active for 10 seconds to listen for "Navigasi" command
         if (isListening && recognition) {
             recognition.stop();
             isListening = false;
@@ -887,21 +1077,39 @@ function handleVoiceCommand(transcript) {
         
         // Announce destination for known cities
         speakText('Tujuan Anda adalah ' + city.name, 'id-ID', true, function() {
-            // After announcing destination, ask user to start navigation
+            // After announcing destination, restart microphone to listen for "Navigasi" command
             speakText('Ucapkan Navigasi untuk memulai', 'id-ID', true, function() {
-                // Activate microphone after announcement
+                // Restart microphone to listen for "Navigasi" command (window of 10 seconds)
                 setTimeout(function() {
                     if (recognition && !isListening) {
-                        recognition.start();
-                        isListening = true;
-                        updateVoiceStatus('🎤 Mikrofon aktif. Ucapkan "Navigasi" untuk mulai.');
+                        try {
+                            recognition.start();
+                            isListening = true;
+                            recognition._waitingForNavigasi = true; // Flag to mark waiting for Navigasi
+                            console.log('🎤 Microphone restarted - listening for "Navigasi" command (10 second window)');
+                            
+                            // Auto-stop after 10 seconds if "Navigasi" not said
+                            setTimeout(function() {
+                                if (recognition && recognition._waitingForNavigasi && isListening) {
+                                    recognition.stop();
+                                    recognition._stopped = true;
+                                    recognition._waitingForNavigasi = false;
+                                    isListening = false;
+                                    console.log('🔇 Microphone stopped - "Navigasi" window expired, say "Halo" to restart');
+                                    updateVoiceStatus('✅ Tujuan: ' + city.name + ' - Ucapkan "Halo" lalu "Navigasi" untuk memulai');
+                                }
+                            }, 10000); // 10 second window
+                        } catch (error) {
+                            console.error('Failed to restart microphone:', error);
+                            recognition._stopped = true;
+                        }
                     }
                 }, 500);
             });
         });
         
         updateDestination(city.lat, city.lng, city.name);
-        updateVoiceStatus('✅ Tujuan: ' + city.name);
+        updateVoiceStatus('✅ Tujuan: ' + city.name + ' - Ucapkan "Navigasi" untuk memulai');
         return;
     } else {
         console.log('City NOT found:', cityKey);
@@ -959,7 +1167,19 @@ function startTurnByTurnNavigation() {
         return;
     }
     
-    // Stop microphone to prevent overlap
+    // Clear stopped flag and waiting flag when user says "Navigasi" - allows microphone restart
+    if (recognition) {
+        if (recognition._stopped) {
+            recognition._stopped = false;
+            console.log('🎤 Clearing stopped flag - "Navigasi" command received');
+        }
+        if (recognition._waitingForNavigasi) {
+            recognition._waitingForNavigasi = false; // Clear waiting flag - we got Navigasi command
+            console.log('✅ "Navigasi" command received - canceling auto-stop timer');
+        }
+    }
+    
+    // Stop microphone briefly to process "Navigasi" command, then restart after announcements
     if (isListening && recognition) {
         recognition.stop();
         isListening = false;
@@ -970,30 +1190,59 @@ function startTurnByTurnNavigation() {
         // Announce full route summary (distance, time, and directions)
         announceRouteDirections(true, function() {
             // After route announced, announce first few instructions
-            announceFirstDirections();
+            announceFirstDirections(function() {
+                // Restart microphone after all announcements complete - user is now navigating and can say "Halo" to change destination
+                setTimeout(function() {
+                    if (recognition && !isListening) {
+                        try {
+                            recognition.start();
+                            isListening = true;
+                            recognition._stopped = false; // Clear stopped flag
+                            console.log('🎤 Microphone restarted after navigation started - ready for "Halo" command');
+                            updateVoiceStatus('📍 Navigasi aktif - Ucapkan "Halo" untuk mengubah tujuan');
+                        } catch (error) {
+                            console.error('Failed to restart microphone after navigation:', error);
+                            updateVoiceStatus('📍 Navigasi aktif - Klik layar atau ucapkan "Halo" untuk aktivasi mikrofon');
+                        }
+                    }
+                }, 1000);
+            });
             
             // Start turn-by-turn navigation
             isNavigating = true;
-            updateVoiceStatus('📍 Navigasi aktif - Mendengarkan instruksi');
         });
     });
     
-    updateVoiceStatus('📍 Navigasi dimulai');
+    updateVoiceStatus('📍 Memulai navigasi...');
 }
 
 // Announce first few navigation instructions like beginner Google Maps
-function announceFirstDirections() {
-    if (!voiceDirectionsEnabled || !route) return;
+// onComplete: callback function to call after announcement finishes
+function announceFirstDirections(onComplete = null) {
+    if (!voiceDirectionsEnabled || !route) {
+        // If no route, call callback immediately
+        if (onComplete) onComplete();
+        return;
+    }
     
     try {
         const routingContainer = document.querySelector('.leaflet-routing-alternatives-container');
-        if (!routingContainer) return;
+        if (!routingContainer) {
+            if (onComplete) onComplete();
+            return;
+        }
         
         const activeRoute = routingContainer.querySelector('.leaflet-routing-alt:not(.leaflet-routing-alt-minimized)');
-        if (!activeRoute) return;
+        if (!activeRoute) {
+            if (onComplete) onComplete();
+            return;
+        }
         
         const instructionRows = activeRoute.querySelectorAll('tbody tr');
-        if (!instructionRows.length) return;
+        if (!instructionRows.length) {
+            if (onComplete) onComplete();
+            return;
+        }
         
         let firstInstruction = null;
         
@@ -1050,10 +1299,16 @@ function announceFirstDirections() {
                 announcement = 'Setelah ' + Math.round(firstInstruction.distance) + ' meter ' + announcement;
             }
             
-            speakText(announcement, 'id-ID', true);
+            // Speak with callback - when speech ends, call onComplete
+            speakText(announcement, 'id-ID', true, onComplete);
+        } else {
+            // No instruction to announce, call callback immediately
+            if (onComplete) onComplete();
         }
     } catch (error) {
         console.error('Error in announceFirstDirections:', error);
+        // Even on error, call callback to ensure microphone restarts
+        if (onComplete) onComplete();
     }
 }
 
@@ -1176,7 +1431,8 @@ async function geocodeLocation(location, userLatLng = null) {
                 const fullName = result.display_name || result.name;
                 const shortName = shortenAddress(fullName);
                 
-                // Stop microphone first to prevent overlap
+                // Stop microphone briefly to announce destination, then restart for "Navigasi" command
+                // Keep microphone active for 10 seconds to listen for "Navigasi" command
                 if (isListening && recognition) {
                     recognition.stop();
                     isListening = false;
@@ -1184,14 +1440,32 @@ async function geocodeLocation(location, userLatLng = null) {
                 
                 // Announce shortened destination name
                 speakText('Tujuan Anda adalah ' + shortName, 'id-ID', true, function() {
-                    // After announcing destination, ask user to start navigation
+                    // After announcing destination, restart microphone to listen for "Navigasi" command
                     speakText('Ucapkan Navigasi untuk memulai', 'id-ID', true, function() {
-                        // Activate microphone after announcement
+                        // Restart microphone to listen for "Navigasi" command (window of 10 seconds)
                         setTimeout(function() {
                             if (recognition && !isListening) {
-                                recognition.start();
-                                isListening = true;
-                                updateVoiceStatus('🎤 Mikrofon aktif. Ucapkan "Navigasi" untuk mulai.');
+                                try {
+                                    recognition.start();
+                                    isListening = true;
+                                    recognition._waitingForNavigasi = true; // Flag to mark waiting for Navigasi
+                                    console.log('🎤 Microphone restarted - listening for "Navigasi" command (10 second window)');
+                                    
+                                    // Auto-stop after 10 seconds if "Navigasi" not said
+                                    setTimeout(function() {
+                                        if (recognition && recognition._waitingForNavigasi && isListening) {
+                                            recognition.stop();
+                                            recognition._stopped = true;
+                                            recognition._waitingForNavigasi = false;
+                                            isListening = false;
+                                            console.log('🔇 Microphone stopped - "Navigasi" window expired, say "Halo" to restart');
+                                            updateVoiceStatus('✅ Tujuan: ' + shortName + ' - Ucapkan "Halo" lalu "Navigasi" untuk memulai');
+                                        }
+                                    }, 10000); // 10 second window
+                                } catch (error) {
+                                    console.error('Failed to restart microphone:', error);
+                                    recognition._stopped = true;
+                                }
                             }
                         }, 500);
                     });
@@ -1199,7 +1473,7 @@ async function geocodeLocation(location, userLatLng = null) {
                 
                 // Update destination with full name
                 updateDestination(newLat, newLng, fullName);
-                updateVoiceStatus('✅ Tujuan: ' + shortName);
+                updateVoiceStatus('✅ Tujuan: ' + shortName + ' - Ucapkan "Navigasi" untuk memulai');
                 return;
             }
         } catch (nominatimError) {
@@ -1214,7 +1488,8 @@ async function geocodeLocation(location, userLatLng = null) {
         if (knownCities[cityKey]) {
             const city = knownCities[cityKey];
             
-            // Stop microphone first to prevent overlap
+            // Stop microphone briefly to announce destination, then restart for "Navigasi" command
+            // Keep microphone active for 10 seconds to listen for "Navigasi" command
             if (isListening && recognition) {
                 recognition.stop();
                 isListening = false;
@@ -1222,43 +1497,54 @@ async function geocodeLocation(location, userLatLng = null) {
             
             // Announce destination for fallback cities
             speakText('Tujuan Anda adalah ' + city.name, 'id-ID', true, function() {
-                // After announcing destination, ask user to start navigation
+                // After announcing destination, restart microphone to listen for "Navigasi" command
                 speakText('Ucapkan Navigasi untuk memulai', 'id-ID', true, function() {
-                    // Activate microphone after announcement
+                    // Restart microphone to listen for "Navigasi" command (window of 10 seconds)
                     setTimeout(function() {
                         if (recognition && !isListening) {
-                            recognition.start();
-                            isListening = true;
-                            updateVoiceStatus('🎤 Mikrofon aktif. Ucapkan "Navigasi" untuk mulai.');
+                            try {
+                                recognition.start();
+                                isListening = true;
+                                recognition._waitingForNavigasi = true; // Flag to mark waiting for Navigasi
+                                console.log('🎤 Microphone restarted - listening for "Navigasi" command (10 second window)');
+                                
+                                // Auto-stop after 10 seconds if "Navigasi" not said
+                                setTimeout(function() {
+                                    if (recognition && recognition._waitingForNavigasi && isListening) {
+                                        recognition.stop();
+                                        recognition._stopped = true;
+                                        recognition._waitingForNavigasi = false;
+                                        isListening = false;
+                                        console.log('🔇 Microphone stopped - "Navigasi" window expired, say "Halo" to restart');
+                                        updateVoiceStatus('✅ Tujuan: ' + city.name + ' - Ucapkan "Halo" lalu "Navigasi" untuk memulai');
+                                    }
+                                }, 10000); // 10 second window
+                            } catch (error) {
+                                console.error('Failed to restart microphone:', error);
+                                recognition._stopped = true;
+                            }
                         }
                     }, 500);
                 });
             });
             
             updateDestination(city.lat, city.lng, city.name);
-            updateVoiceStatus('✅ Tujuan: ' + city.name);
+            updateVoiceStatus('✅ Tujuan: ' + city.name + ' - Ucapkan "Navigasi" untuk memulai');
         } else {
             console.log('City not found:', cityKey, 'Available cities:', Object.keys(knownCities));
             
-            // Stop microphone first to prevent overlap
+            // Stop microphone and mark as stopped - user must say "Halo" to restart
             if (isListening && recognition) {
                 recognition.stop();
+                recognition._stopped = true;
                 isListening = false;
+                console.log('🔇 Microphone stopped after location not found - user must say "Halo" to restart');
             }
             
             // Announce location not found
             speakText('Lokasi tidak ditemukan: ' + location, 'id-ID', true, function() {
-                // After announcement, ask for destination again
-                speakText('Sebutkan tujuan Anda lagi', 'id-ID', true, function() {
-                    // Restart microphone after announcement finishes
-                    setTimeout(function() {
-                        if (recognition && !isListening) {
-                            recognition.start();
-                            isListening = true;
-                            updateVoiceStatus('🎤 Mikrofon aktif kembali. Sebutkan tujuan Anda.');
-                        }
-                    }, 500);
-                });
+                // After announcement, ask user to say "Halo" to try again
+                speakText('Ucapkan "Halo" dan sebutkan tujuan Anda lagi', 'id-ID', true);
             });
             
             updateVoiceStatus('❌ Lokasi tidak ditemukan: ' + location);
@@ -1285,6 +1571,15 @@ function updateDestination(lat, lng, name) {
     
     // Note: Destination announcement is handled in geocodeLocation/knownCities
     // No announcement here to avoid duplicate
+    
+    // Reset navigation state when destination changes - allows user to set new destination anytime
+    // This ensures that old navigation instructions don't interfere with new destination
+    if (isNavigating) {
+        console.log('🔄 Destination changed during navigation - resetting navigation state');
+        isNavigating = false;
+        announcedInstructions = []; // Clear old announcements
+        lastAnnouncedInstruction = null;
+    }
     
     // Reset route hash to force new announcement
     lastRouteHash = null;
@@ -1339,31 +1634,109 @@ function updateVoiceButton() {
     // Blind users control everything via voice commands
 }
 
+// Function to activate microphone after user interaction
+function activateMicrophoneAfterInteraction() {
+    if (!recognition) {
+        initSpeechRecognition();
+    }
+    
+    // Mark that user has interacted (now we can use TTS)
+    hasUserInteraction = true;
+    console.log('✅ User interaction detected (click/touch) - hasUserInteraction = true');
+    
+    // Clear stopped flag if it was set (allows reactivation during navigation)
+    if (recognition && recognition._stopped) {
+        recognition._stopped = false;
+        console.log('🎤 Clearing stopped flag - reactivating microphone via click');
+    }
+    
+    // Try to start microphone
+    if (recognition && !isListening) {
+        try {
+            console.log('🎤 Starting microphone after user interaction...');
+            recognition.start();
+            isListening = true;
+            console.log('✅ Microphone started successfully after click');
+            
+            // Now we can use speakText because user has interacted (click counts as interaction)
+            // Give different messages based on navigation state
+            if (isNavigating) {
+                updateVoiceStatus('🎤 Mikrofon aktif kembali. Sebutkan tujuan baru atau perintah lain.');
+                speakText('Senavision Siap. Mikrofon aktif kembali. Sebutkan tujuan baru jika ingin mengubah rute', 'id-ID', true);
+            } else {
+                updateVoiceStatus('🎤 Mikrofon aktif. Sebutkan tujuan Anda.');
+                // First time activation - welcome message with TTS (now allowed because user clicked)
+                speakText('Senavision Siap. Mikrofon aktif. Sebutkan nama kota atau lokasi tujuan Anda', 'id-ID', true);
+            }
+            
+            console.log('🎤 Microphone activated after user interaction');
+        } catch (error) {
+            console.error('❌ Failed to activate microphone:', error);
+            updateVoiceStatus('⚠️ Klik layar untuk mengaktifkan mikrofon');
+            // If error is "not-allowed", the onerror handler will deal with it
+        }
+    } else if (isListening) {
+        console.log('ℹ️ Microphone already listening');
+    }
+}
+
 // Initialize speech recognition on page load
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function() {
         initSpeechRecognition();
         initSpeechSynthesis();
         
+        // Add click/touch listeners to activate microphone after user interaction
+        // Browser requires user interaction before accessing microphone (security policy)
+        // CRITICAL: User MUST click once first time to activate microphone
+        // After that, voice command "Halo" will work
+        document.addEventListener('click', function activateMicrophoneOnClick() {
+            console.log('🖱️ Click detected - activating microphone...');
+            if (!hasUserInteraction) {
+                activateMicrophoneAfterInteraction();
+            } else {
+                // If already interacted but microphone not active, try to start
+                if (recognition && !isListening) {
+                    try {
+                        recognition.start();
+                        isListening = true;
+                        console.log('✅ Microphone started via click');
+                        updateVoiceStatus('🎤 Mikrofon aktif. Ucapkan "Halo" atau sebutkan tujuan.');
+                    } catch (error) {
+                        console.error('Failed to start microphone:', error);
+                    }
+                }
+            }
+        }); // Removed { once: true } so user can click again if needed
+        
+        document.addEventListener('touchstart', function activateMicrophoneOnTouch() {
+            console.log('👆 Touch detected - activating microphone...');
+            if (!hasUserInteraction) {
+                activateMicrophoneAfterInteraction();
+            } else {
+                // If already interacted but microphone not active, try to start
+                if (recognition && !isListening) {
+                    try {
+                        recognition.start();
+                        isListening = true;
+                        console.log('✅ Microphone started via touch');
+                        updateVoiceStatus('🎤 Mikrofon aktif. Ucapkan "Halo" atau sebutkan tujuan.');
+                    } catch (error) {
+                        console.error('Failed to start microphone:', error);
+                    }
+                }
+            }
+        });
+        
         // Auto-announce voice directions are ready for blind users
+        // IMPORTANT: User MUST click page ONCE first time to activate microphone
+        // After first click, voice command "Halo" will work
         setTimeout(function() {
             if (voiceDirectionsEnabled) {
-                // Activate microphone AFTER announcement completes (prevent overlap)
-                speakText('Senavision Siap. Ucapkan Tujuan Anda.', 'id-ID', true, function() {
-                    // Callback: announce "Mikrofon aktif" first
-                    console.log('First announcement completed');
-                    speakText('Mikrofon aktif', 'id-ID', true, function() {
-                        // Callback: NOW activate microphone AFTER "Mikrofon aktif" announcement finishes
-                        console.log('Mikrofon aktif announcement completed, activating microphone...');
-                        setTimeout(function() {
-                            if (recognition && !isListening) {
-                                recognition.start();
-                                isListening = true;
-                                updateVoiceStatus('🎤 Mikrofon aktif. Sebutkan tujuan Anda.');
-                            }
-                        }, 500); // Small delay after announcement to ensure clean transition
-                    });
-                });
+                // Don't use speakText here - browser blocks it without user interaction
+                // Just update status text instead
+                updateVoiceStatus('🖱️ Klik layar sekali untuk mengaktifkan mikrofon, lalu ucapkan "Halo"');
+                console.log('ℹ️ Ready - user must click page once, then say "Halo" or speak destination');
             }
         }, 2000);
     });
@@ -1371,25 +1744,50 @@ if (document.readyState === 'loading') {
     initSpeechRecognition();
     initSpeechSynthesis();
     
+    // Add click/touch listeners to activate microphone after user interaction
+    document.addEventListener('click', function activateMicrophoneOnClick() {
+        console.log('🖱️ Click detected - activating microphone...');
+        if (!hasUserInteraction) {
+            activateMicrophoneAfterInteraction();
+        } else {
+            // If already interacted but microphone not active, try to start
+            if (recognition && !isListening) {
+                try {
+                    recognition.start();
+                    isListening = true;
+                    console.log('✅ Microphone started via click');
+                    updateVoiceStatus('🎤 Mikrofon aktif. Ucapkan "Halo" atau sebutkan tujuan.');
+                } catch (error) {
+                    console.error('Failed to start microphone:', error);
+                }
+            }
+        }
+    });
+    
+    document.addEventListener('touchstart', function activateMicrophoneOnTouch() {
+        console.log('👆 Touch detected - activating microphone...');
+        if (!hasUserInteraction) {
+            activateMicrophoneAfterInteraction();
+        } else {
+            // If already interacted but microphone not active, try to start
+            if (recognition && !isListening) {
+                try {
+                    recognition.start();
+                    isListening = true;
+                    console.log('✅ Microphone started via touch');
+                    updateVoiceStatus('🎤 Mikrofon aktif. Ucapkan "Halo" atau sebutkan tujuan.');
+                } catch (error) {
+                    console.error('Failed to start microphone:', error);
+                }
+            }
+        }
+    });
+    
     // Auto-announce voice directions are ready for blind users
     setTimeout(function() {
         if (voiceDirectionsEnabled) {
-            // Activate microphone AFTER announcement completes (prevent overlap)
-            speakText('Senavision Siap. Ucapkan Tujuan Anda.', 'id-ID', true, function() {
-                // Callback: announce "Mikrofon aktif" first
-                console.log('First announcement completed');
-                speakText('Mikrofon aktif', 'id-ID', true, function() {
-                    // Callback: NOW activate microphone AFTER "Mikrofon aktif" announcement finishes
-                    console.log('Mikrofon aktif announcement completed, activating microphone...');
-                    setTimeout(function() {
-                        if (recognition && !isListening) {
-                            recognition.start();
-                            isListening = true;
-                            updateVoiceStatus('🎤 Mikrofon aktif. Sebutkan tujuan Anda.');
-                        }
-                    }, 500); // Small delay after announcement to ensure clean transition
-                });
-            });
+            updateVoiceStatus('🖱️ Klik layar sekali untuk mengaktifkan mikrofon, lalu ucapkan "Halo"');
+            console.log('ℹ️ Ready - user must click page once, then say "Halo" or speak destination');
         }
     }, 2000);
 }
