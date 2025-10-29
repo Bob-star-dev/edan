@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENAVISION - Real-Time Location Navigation</title>
+    <title>SENAVISION - Navigasi Lokasi Real-Time</title>
     <meta name="description" content="Sistem navigasi real-time dengan voice control untuk kemudahan bepergian dan tracking lokasi">
     
     <!-- Google Fonts -->
@@ -340,6 +340,47 @@
         .partner-card:hover .partner-logo {
             filter: grayscale(0%);
             transform: scale(1.05);
+        }
+        
+        /* ========== TEAM MEMBERS SECTION ========== */
+        .team-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            align-items: start;
+            justify-items: center;
+        }
+        
+        .team-member {
+            background: var(--white);
+            padding: 2.5rem 2rem;
+            border-radius: 16px;
+            transition: all 0.4s ease;
+            width: 100%;
+            max-width: 350px;
+            border: 1px solid #e2e8f0;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        }
+        
+        .team-member:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 60px rgba(79, 70, 229, 0.15);
+            border-color: var(--primary-blue);
+        }
+        
+        .team-member-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--dark);
+            margin-top: 1rem;
+            line-height: 1.5;
+        }
+        
+        .team-member-role {
+            font-size: 0.95rem;
+            color: var(--gray);
+            margin-top: 0.5rem;
         }
         
         /* ========== FEATURES SECTION ========== */
@@ -705,10 +746,10 @@
                 <span>SENAVISION</span>
             </a>
             <ul class="nav-links">
-                <li><a href="#features">Features</a></li>
-                <li><a href="#how-it-works">How It Works</a></li>
-                <li><a href="#tech">Technology</a></li>
-                <li><a href="map/map.html" class="btn-nav">Try App</a></li>
+                <li><a href="#features">Fitur</a></li>
+                <li><a href="#how-it-works">Cara Menggunakan</a></li>
+                <li><a href="#tech">Teknologi</a></li>
+                <li><a href="map/map.html" class="btn-nav">Coba Aplikasi</a></li>
             </ul>
         </div>
     </nav>
@@ -718,33 +759,52 @@
         <div class="grid-pattern"></div>
         
         <div class="hero-content">
-            <h1>Navigate with Confidence</h1>
-            <p>Real-time location tracking with intelligent voice-guided navigation. Experience seamless travel with our advanced location services.</p>
+            <h1>Navigasi dengan Percaya Diri</h1>
+            <p>Pelacakan lokasi real-time dengan navigasi berbasis suara yang cerdas. Nikmati perjalanan tanpa hambatan dengan layanan lokasi canggih kami.</p>
             <div class="cta-buttons">
-                <a href="map/map.html" class="btn btn-primary">Get Started</a>
-                <a href="#features" class="btn btn-secondary">Learn More</a>
+                <a href="map/map.html" class="btn btn-primary">Mulai Sekarang</a>
+                <a href="#features" class="btn btn-secondary">Pelajari Lebih Lanjut</a>
             </div>
         </div>
     </section>
 
-    <!-- Partners Section -->
+    <!-- Team Section -->
     <section id="partners" class="partners">
         <div class="container">
             <div class="section-title">
-                <h2>Our Trusted Partners</h2>
-                <p>Collaborating with industry leaders to deliver exceptional experiences</p>
+                <h2>Tim Pengembang</h2>
+                <p>Dikembangkan dengan dedikasi oleh tim mahasiswa berprestasi</p>
             </div>
             
-            <div class="partners-grid">
-                <div class="partner-card">
-                    <a href="https://enumatechnology.com" target="_blank" rel="noopener noreferrer">
-                        <img src="./image/enuma.png" alt="ENUMA Technology" class="partner-logo">
-                    </a>
+            <div class="team-grid">
+                <div class="team-member">
+                    <div class="team-member-name">Gideon Bagas Moliate Nababan</div>
+                    <div class="team-member-role">Pengembang</div>
                 </div>
-                <div class="partner-card">
-                    <a href="https://mersiflab.com" target="_blank" rel="noopener noreferrer">
-                        <img src="./image/mersiflab.png" alt="Mersif Lab" class="partner-logo">
-                    </a>
+                
+                <div class="team-member">
+                    <div class="team-member-name">Shofi Dwi Rahma</div>
+                    <div class="team-member-role">Pengembang</div>
+                </div>
+                
+                <div class="team-member">
+                    <div class="team-member-name">Goldwin Claudia Tongge</div>
+                    <div class="team-member-role">Pengembang</div>
+                </div>
+                
+                <div class="team-member">
+                    <div class="team-member-name">Sheila Ghassana Ulya Pratomo</div>
+                    <div class="team-member-role">Pengembang</div>
+                </div>
+                
+                <div class="team-member">
+                    <div class="team-member-name">Lidya Eirene Aritonang</div>
+                    <div class="team-member-role">Pengembang</div>
+                </div>
+                
+                <div class="team-member">
+                    <div class="team-member-name">Bintang Zahira Putri</div>
+                    <div class="team-member-role">Pengembang</div>
                 </div>
             </div>
         </div>
@@ -754,45 +814,45 @@
     <section id="features" class="features">
         <div class="container">
             <div class="section-title">
-                <h2>Powerful Features</h2>
-                <p>Everything you need for seamless navigation</p>
+                <h2>Fitur Unggulan</h2>
+                <p>Semua yang Anda butuhkan untuk navigasi tanpa hambatan</p>
             </div>
             
             <div class="features-grid">
                 <div class="feature-card">
                     <div class="feature-icon">📍</div>
-                    <h3>Real-Time Tracking</h3>
-                    <p>Monitor your location with precise GPS updates every 3 seconds. Visual indicators show your current position and accuracy zone.</p>
+                    <h3>Pelacakan Real-Time</h3>
+                    <p>Pantau lokasi Anda dengan pembaruan GPS yang tepat setiap 1 detik. Indikator visual menampilkan posisi saat ini dan zona akurasi Anda.</p>
                 </div>
                 
                 <div class="feature-card">
                     <div class="feature-icon">🗺️</div>
-                    <h3>Smart Route Planning</h3>
-                    <p>Automatic calculation of optimal routes from your location to any destination, updated in real-time as you move.</p>
+                    <h3>Perencanaan Rute Cerdas</h3>
+                    <p>Perhitungan otomatis rute optimal dari lokasi Anda ke tujuan mana pun, diperbarui secara real-time saat Anda bergerak.</p>
                 </div>
                 
                 <div class="feature-card">
                     <div class="feature-icon">🎤</div>
-                    <h3>Voice Control</h3>
-                    <p>Control your navigation using natural voice commands. Supports both Indonesian and English languages for global accessibility.</p>
+                    <h3>Kontrol Suara</h3>
+                    <p>Kontrol navigasi Anda menggunakan perintah suara alami. Mendukung Bahasa Indonesia dan Inggris untuk aksesibilitas global.</p>
                 </div>
                 
                 <div class="feature-card">
                     <div class="feature-icon">🔊</div>
-                    <h3>Audio Guidance</h3>
-                    <p>Hear detailed turn-by-turn directions in Indonesian, similar to Google Maps voice navigation for hands-free travel.</p>
+                    <h3>Panduan Audio</h3>
+                    <p>Dengarkan petunjuk arah detail tahap demi tahap dalam Bahasa Indonesia, mirip dengan navigasi suara Google Maps untuk perjalanan tanpa sentuh.</p>
                 </div>
                 
                 <div class="feature-card">
                     <div class="feature-icon">🎯</div>
-                    <h3>Multiple Destinations</h3>
-                    <p>Navigate to various Indonesian cities including Jakarta, Bandung, Yogyakarta, Surabaya, Medan, and many more.</p>
+                    <h3>Banyak Tujuan</h3>
+                    <p>Navigasi ke berbagai kota Indonesia termasuk Jakarta, Bandung, Yogyakarta, Surabaya, Medan, dan banyak lagi.</p>
                 </div>
                 
                 <div class="feature-card">
                     <div class="feature-icon">♿</div>
-                    <h3>Accessibility First</h3>
-                    <p>Designed with accessibility in mind, featuring voice directions enabled by default and an intuitive interface for all users.</p>
+                    <h3>Aksesibilitas Utama</h3>
+                    <p>Dirancang dengan aksesibilitas dalam pikiran, menampilkan panduan suara yang diaktifkan secara default dan antarmuka intuitif untuk semua pengguna.</p>
                 </div>
             </div>
         </div>
@@ -802,33 +862,33 @@
     <section id="how-it-works" class="how-it-works">
         <div class="container">
             <div class="section-title">
-                <h2>How It Works</h2>
-                <p>Getting started is simple and straightforward</p>
+                <h2>Cara Menggunakan</h2>
+                <p>Memulai sangat mudah dan sederhana</p>
             </div>
             
             <div class="steps">
                 <div class="step">
                     <div class="step-number">1</div>
-                    <h3>Enable Location</h3>
-                    <p>Grant location permissions when prompted by your browser. Your position will be displayed on the map in real-time.</p>
+                    <h3>Aktifkan Lokasi</h3>
+                    <p>Izinkan akses lokasi saat diminta oleh browser Anda. Klik tombol "Berikan Akses Lokasi". Posisi Anda akan ditampilkan di peta dan diperbarui setiap 1 detik secara real-time.</p>
                 </div>
                 
                 <div class="step">
                     <div class="step-number">2</div>
-                    <h3>Set Destination</h3>
-                    <p>Click the microphone button and speak your destination like "Jakarta" or "Bandung". Our system will find the exact location.</p>
+                    <h3>Aktifkan Kontrol Suara</h3>
+                    <p>Ucapkan "Halo" untuk mengaktifkan mikrofon. Sistem akan merespons dengan "Mikrofon aktif" sebagai konfirmasi. Anda juga dapat mengklik di mana saja pada layar terlebih dahulu jika diperlukan oleh browser Anda.</p>
                 </div>
                 
                 <div class="step">
                     <div class="step-number">3</div>
-                    <h3>Listen & Follow</h3>
-                    <p>Hear complete route information in Indonesian: distance, estimated time, and detailed turn-by-turn directions.</p>
+                    <h3>Tetapkan Tujuan</h3>
+                    <p>Ucapkan tujuan Anda dengan jelas. Anda bisa langsung menyebutkan nama kota seperti "Jakarta" atau "Bandung", atau menggunakan frasa seperti "Pergi ke Yogyakarta". Sistem akan mencari lokasi dan mengumumkannya kembali kepada Anda.</p>
                 </div>
                 
                 <div class="step">
                     <div class="step-number">4</div>
-                    <h3>Navigate</h3>
-                    <p>Follow the audio guidance provided. Routes update automatically every 3 seconds to match your movement.</p>
+                    <h3>Mulai Navigasi</h3>
+                    <p>Ucapkan "Navigasi" untuk memulai navigasi turn-by-turn. Sistem akan mengumumkan detail rute lengkap dalam Bahasa Indonesia: jarak total, perkiraan waktu, dan petunjuk arah detail secara bertahap. Rute diperbarui secara otomatis setiap 1 detik saat Anda bergerak.</p>
                 </div>
             </div>
         </div>
@@ -837,9 +897,9 @@
     <!-- Showcase Section -->
     <section class="showcase">
         <div class="showcase-content">
-            <h2>Ready to Transform Your Navigation Experience?</h2>
-            <p>With cutting-edge technology and an intuitive interface, SENAVISION delivers smooth and effortless navigation. Voice control makes it incredibly easy to use, even without looking at the screen.</p>
-            <a href="map/map.html" class="btn btn-primary showcase-btn" style="margin-top: 2rem;">Start Your Journey</a>
+            <h2>Siap Mengubah Pengalaman Navigasi Anda?</h2>
+            <p>Dengan teknologi canggih dan antarmuka yang intuitif, SENAVISION memberikan navigasi yang mulus dan mudah. Kontrol suara membuatnya sangat mudah digunakan, bahkan tanpa melihat layar.</p>
+            <a href="map/map.html" class="btn btn-primary showcase-btn" style="margin-top: 2rem;">Mulai Perjalanan Anda</a>
         </div>
     </section>
 
@@ -847,45 +907,45 @@
     <section id="tech" class="technology">
         <div class="container">
             <div class="section-title">
-                <h2>Built with Modern Technology</h2>
-                <p>Powered by industry-leading platforms and APIs</p>
+                <h2>Dibangun dengan Teknologi Modern</h2>
+                <p>Didukung oleh platform dan API terdepan di industri</p>
             </div>
             
             <div class="tech-grid">
                 <div class="tech-item">
                     <span class="tech-icon">🍃</span>
                     <h4>Leaflet.js</h4>
-                    <p>Open-source mapping library</p>
+                    <p>Pustaka pemetaan open-source</p>
                 </div>
                 
                 <div class="tech-item">
                     <span class="tech-icon">🛣️</span>
                     <h4>Routing Machine</h4>
-                    <p>Accurate route calculation</p>
+                    <p>Perhitungan rute yang akurat</p>
                 </div>
                 
                 <div class="tech-item">
                     <span class="tech-icon">🎤</span>
                     <h4>Web Speech API</h4>
-                    <p>Speech recognition & synthesis</p>
+                    <p>Pengenalan dan sintesis suara</p>
                 </div>
                 
                 <div class="tech-item">
                     <span class="tech-icon">🌐</span>
                     <h4>OpenStreetMap</h4>
-                    <p>Open mapping data</p>
+                    <p>Data pemetaan terbuka</p>
                 </div>
                 
                 <div class="tech-item">
                     <span class="tech-icon">🔍</span>
                     <h4>Geocoding API</h4>
-                    <p>Smart location search</p>
+                    <p>Pencarian lokasi cerdas</p>
                 </div>
                 
                 <div class="tech-item">
                     <span class="tech-icon">🌍</span>
                     <h4>Geolocation API</h4>
-                    <p>Real-time location tracking</p>
+                    <p>Pelacakan lokasi real-time</p>
                 </div>
             </div>
         </div>
@@ -897,47 +957,47 @@
             <div class="footer-top">
                 <div class="footer-column">
                     <h4>SENAVISION</h4>
-                    <p>Your intelligent navigation companion. Empowering visually impaired individuals to navigate the world with confidence and independence.</p>
-                    <p style="font-size: 0.85rem; opacity: 0.8;">Making every journey accessible to everyone.</p>
+                    <p>Pendamping navigasi cerdas Anda. Memberdayakan individu tunanetra untuk menjelajahi dunia dengan percaya diri dan mandiri.</p>
+                    <p style="font-size: 0.85rem; opacity: 0.8;">Membuat setiap perjalanan dapat diakses oleh semua orang.</p>
                 </div>
                 
                 <div class="footer-column">
-                    <h4>Quick Links</h4>
+                    <h4>Tautan Cepat</h4>
                     <ul>
-                        <li><a href="#features">Features</a></li>
-                        <li><a href="#how-it-works">How It Works</a></li>
-                        <li><a href="#tech">Technology</a></li>
-                        <li><a href="map/map.html">Try App</a></li>
+                        <li><a href="#features">Fitur</a></li>
+                        <li><a href="#how-it-works">Cara Menggunakan</a></li>
+                        <li><a href="#tech">Teknologi</a></li>
+                        <li><a href="map/map.html">Coba Aplikasi</a></li>
                     </ul>
                 </div>
                 
                 <div class="footer-column">
-                    <h4>Resources</h4>
+                    <h4>Sumber Daya</h4>
                     <ul>
-                        <li><a href="#features">Getting Started</a></li>
-                        <li><a href="#how-it-works">User Guide</a></li>
-                        <li><a href="#tech">Technical Docs</a></li>
-                        <li><a href="#partners">Our Partners</a></li>
+                        <li><a href="#features">Memulai</a></li>
+                        <li><a href="#how-it-works">Panduan Pengguna</a></li>
+                        <li><a href="#tech">Dokumentasi Teknis</a></li>
+                        <li><a href="#partners">Tim Kami</a></li>
                     </ul>
                 </div>
                 
                 <div class="footer-column">
-                    <h4>Support</h4>
+                    <h4>Dukungan</h4>
                     <ul>
-                        <li><a href="#partners">Contact Us</a></li>
-                        <li><a href="#features">Help Center</a></li>
-                        <li><a href="map/map.html">Accessibility</a></li>
-                        <li><a href="#tech">Privacy Policy</a></li>
+                        <li><a href="#partners">Tim Kami</a></li>
+                        <li><a href="#features">Pusat Bantuan</a></li>
+                        <li><a href="map/map.html">Aksesibilitas</a></li>
+                        <li><a href="#tech">Kebijakan Privasi</a></li>
                     </ul>
                 </div>
             </div>
             
             <div class="footer-bottom">
-                <p>© 2024 SENAVISION. All rights reserved.</p>
+                <p>© 2024 SENAVISION. Hak cipta dilindungi.</p>
                 <div class="footer-links">
-                    <a href="#">Privacy Policy</a>
-                    <a href="#">Terms of Service</a>
-                    <a href="#">Accessibility Statement</a>
+                    <a href="#">Kebijakan Privasi</a>
+                    <a href="#">Syarat Layanan</a>
+                    <a href="#">Pernyataan Aksesibilitas</a>
                 </div>
             </div>
         </div>
