@@ -16,6 +16,11 @@ let hasPermission = false;
 let locationInterval = null;
 let isFirstLocationUpdate = true; // Track if this is the first location update
 
+// CRITICAL: Track the BEST GPS location (highest accuracy)
+// This prevents default/cached locations from overwriting accurate GPS data
+let bestGPSLocation = null; // Store { lat, lng, accuracy }
+const MAX_ACCEPTABLE_ACCURACY = 500; // Only accept GPS locations with accuracy < 500m
+
 // Configuration for location update interval
 // Options: 500ms (very fast), 1000ms (1s - realtime), 2000ms (2s), 3000ms (3s), 5000ms (5s)
 // Note: Faster updates = more battery/data usage
@@ -54,6 +59,45 @@ function onLocationFound(e) {
     // Hide permission popup when location is found
     hidePermissionPopup();
     
+    // CRITICAL: Verifikasi lokasi GPS sebelum digunakan
+    const lat = e.latlng.lat;
+    const lng = e.latlng.lng;
+    const accuracy = e.accuracy || 50000; // Default jika tidak ada accuracy
+    
+    // Deteksi lokasi default/cached yang tidak akurat
+    const isNearSurakarta = lat > -7.6 && lat < -7.5 && lng > 110.8 && lng < 110.9;
+    const isLowAccuracy = accuracy > 10000; // Accuracy > 10km biasanya tidak akurat
+    const isUnacceptableAccuracy = accuracy > MAX_ACCEPTABLE_ACCURACY; // Accuracy > 500m tidak diterima
+    
+    // CRITICAL: BLOCK lokasi default/cached - jangan update marker jika lokasi tidak akurat
+    if (isNearSurakarta && isLowAccuracy) {
+        console.warn('⚠️ WARNING: Possible default/cached location detected - IGNORING!');
+        console.warn('📍 Lat:', lat.toFixed(6), 'Lng:', lng.toFixed(6), 'Accuracy:', accuracy.toFixed(0), 'm');
+        console.warn('💡 Make sure GPS is enabled on your device and allow location access');
+        
+        // CRITICAL: Jangan update marker jika lokasi tidak akurat dan sudah ada lokasi yang lebih baik
+        if (bestGPSLocation && bestGPSLocation.accuracy < accuracy) {
+            console.log('🔒 Keeping existing accurate GPS location - ignoring default/cached location');
+            return; // BLOCK update - jangan lanjutkan jika lokasi lebih buruk
+        }
+    } else if (isUnacceptableAccuracy) {
+        console.warn('⚠️ WARNING: GPS accuracy too low (' + accuracy.toFixed(0) + 'm) - checking if better than existing...');
+        
+        // Hanya update jika tidak ada lokasi yang lebih baik, atau lokasi baru lebih akurat
+        if (bestGPSLocation && bestGPSLocation.accuracy < accuracy) {
+            console.log('🔒 Keeping existing accurate GPS location - ignoring low accuracy location');
+            return; // BLOCK update
+        }
+    } else {
+        console.log('✅ GPS location received:', lat.toFixed(6), lng.toFixed(6), 'Accuracy:', accuracy.toFixed(0), 'm');
+        
+        // Simpan lokasi GPS terbaik (akurasi tertinggi)
+        if (!bestGPSLocation || accuracy < bestGPSLocation.accuracy) {
+            bestGPSLocation = { lat: lat, lng: lng, accuracy: accuracy };
+            console.log('✅ Best GPS location updated:', lat.toFixed(6), lng.toFixed(6), 'Accuracy:', accuracy.toFixed(0), 'm');
+        }
+    }
+    
     // Update status display - REAL-TIME UPDATE setiap user bergerak
     const statusEl = document.getElementById('status');
     const coordsEl = document.getElementById('coordinates');
@@ -63,14 +107,16 @@ function onLocationFound(e) {
     if (statusEl) {
         const now = new Date();
         const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        statusEl.textContent = `✅ Location updated: ${timeStr}`;
+        if (isNearSurakarta && isLowAccuracy) {
+            statusEl.textContent = `⚠️ Location may not be accurate: ${timeStr}`;
+        } else {
+            statusEl.textContent = `✅ Location updated: ${timeStr}`;
+        }
     }
     
     // Update koordinat secara real-time setiap user bergerak
     if (coordsEl) {
-        const lat = e.latlng.lat.toFixed(6);
-        const lng = e.latlng.lng.toFixed(6);
-        coordsEl.textContent = `Lat: ${lat}, Lng: ${lng}`;
+        coordsEl.textContent = `Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`;
         // Tambahkan highlight effect untuk menunjukkan update
         coordsEl.style.transition = 'background-color 0.3s';
         coordsEl.style.backgroundColor = '#e8f5e9';
@@ -80,9 +126,17 @@ function onLocationFound(e) {
     }
     
     // Calculate accuracy dan update
-    const radius = e.accuracy / 2;
+    // Accuracy dari GPS (bisa sangat besar, misal 41904m)
+    const actualAccuracy = e.accuracy / 2;
+    
+    // CRITICAL: Radius lingkaran accuracy Maksimal 1 kilometer (1000 meter)
+    // Batasi radius lingkaran agar tidak terlalu besar dan tetap praktis
+    const MAX_ACCURACY_RADIUS = 1000; // 1 kilometer
+    const radius = Math.min(actualAccuracy, MAX_ACCURACY_RADIUS);
+    
     if (accuracyEl) {
-        accuracyEl.textContent = `Accuracy: ${radius.toFixed(0)}m`;
+        // Tampilkan accuracy aktual dari GPS di UI (bisa > 1000m)
+        accuracyEl.textContent = `Accuracy: ${actualAccuracy.toFixed(0)}m`;
         // Highlight accuracy juga untuk menunjukkan update
         accuracyEl.style.transition = 'background-color 0.3s';
         accuracyEl.style.backgroundColor = '#e8f5e9';
@@ -91,14 +145,63 @@ function onLocationFound(e) {
         }, 300);
     }
     
-    // Update markers secara efisien (jangan hapus dan buat ulang)
-    // Update marker yang sudah ada untuk smooth transition
+    // CRITICAL: Marker biru HARUS selalu berada di titik lokasi GPS yang AKURAT
+    // Update markers HANYA jika lokasi akurat - JANGAN update dengan lokasi default/cached
     if (currentUserPosition) {
-        // Update existing marker position (lebih efisien dari hapus/buat ulang)
+        // CRITICAL: Jangan update marker jika lokasi tidak akurat (default/cached)
+        // Hanya update jika lokasi baru lebih akurat atau sudah sangat akurat
+        const shouldUpdate = !isUnacceptableAccuracy || !bestGPSLocation || accuracy < bestGPSLocation.accuracy;
+        
+        if (!shouldUpdate) {
+            console.log('🔒 Blocking marker update - keeping accurate GPS location');
+            // Gunakan lokasi GPS terbaik yang sudah ada
+            if (bestGPSLocation) {
+                const bestLatLng = L.latLng(bestGPSLocation.lat, bestGPSLocation.lng);
+                currentUserPosition.setLatLng(bestLatLng);
+                currentUserPosition.setPopupContent("📍 Lokasi Anda (Akurasi GPS: " + bestGPSLocation.accuracy.toFixed(0) + "m)");
+                
+                // Update koordinat di UI dengan lokasi terbaik
+                if (coordsEl) {
+                    coordsEl.textContent = `Lat: ${bestGPSLocation.lat.toFixed(6)}, Lng: ${bestGPSLocation.lng.toFixed(6)}`;
+                }
+                
+                // Update accuracy circle juga
+                if (currentAccuracy) {
+                    currentAccuracy.setLatLng(bestLatLng);
+                    const bestRadius = Math.min(bestGPSLocation.accuracy / 2, 1000);
+                    currentAccuracy.setRadius(bestRadius);
+                }
+            }
+            return; // JANGAN lanjutkan - block update dari lokasi tidak akurat
+        }
+        
+        // Update existing marker position ke lokasi saat ini (REAL-TIME)
+        // setLatLng() memastikan marker selalu bergerak mengikuti lokasi GPS AKURAT
+        const oldLatLng = currentUserPosition.getLatLng();
         currentUserPosition.setLatLng(e.latlng);
-        currentUserPosition.setPopupContent("📍 Lokasi Anda (Akurasi: " + radius.toFixed(0) + "m)");
+        // Tampilkan accuracy aktual di popup, bukan radius terbatas
+        currentUserPosition.setPopupContent("📍 Lokasi Anda (Akurasi GPS: " + actualAccuracy.toFixed(0) + "m)");
+        
+        // Log untuk debugging - memastikan marker selalu update
+        const distanceMoved = oldLatLng ? oldLatLng.distanceTo(e.latlng) : 0;
+        if (distanceMoved > 1) { // Hanya log jika bergerak lebih dari 1 meter
+            console.log('📍 Marker updated - moved ' + distanceMoved.toFixed(1) + 'm to:', e.latlng.lat.toFixed(6) + ', ' + e.latlng.lng.toFixed(6));
+        }
+        
+        // Verifikasi marker benar-benar di posisi yang benar
+        const currentMarkerPos = currentUserPosition.getLatLng();
+        if (Math.abs(currentMarkerPos.lat - e.latlng.lat) > 0.000001 || 
+            Math.abs(currentMarkerPos.lng - e.latlng.lng) > 0.000001) {
+            console.warn('⚠️ Marker position mismatch detected - correcting...');
+            currentUserPosition.setLatLng(e.latlng); // Force update jika ada mismatch
+        }
     } else {
-        // Create marker hanya jika belum ada
+        // Create marker untuk pertama kali - PASTIKAN menggunakan lokasi GPS AKURAT
+        // Jika ada lokasi GPS terbaik, gunakan yang terbaik; jika tidak, gunakan yang saat ini (jika akurat)
+        const markerLocation = (bestGPSLocation && !isUnacceptableAccuracy) ? 
+            L.latLng(bestGPSLocation.lat, bestGPSLocation.lng) : 
+            (isUnacceptableAccuracy ? (bestGPSLocation ? L.latLng(bestGPSLocation.lat, bestGPSLocation.lng) : e.latlng) : e.latlng);
+        
         const customIcon = L.divIcon({
             className: 'custom-user-marker',
             html: '<div style="background: #3b49df; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 10px rgba(0,0,0,0.3);"></div>',
@@ -106,30 +209,72 @@ function onLocationFound(e) {
             iconAnchor: [10, 10]
         });
         
-        currentUserPosition = L.marker(e.latlng, {icon: customIcon}).addTo(map)
-            .bindPopup("📍 Lokasi Anda (Akurasi: " + radius.toFixed(0) + "m)").openPopup();
+        // Buat marker tepat di lokasi GPS AKURAT
+        currentUserPosition = L.marker(markerLocation, {
+            icon: customIcon,
+            draggable: false, // Tidak bisa digeser - selalu ikut GPS
+            autoPan: false // Tidak auto-pan saat update
+        }).addTo(map);
+        
+        const markerAccuracy = bestGPSLocation ? bestGPSLocation.accuracy : actualAccuracy;
+        currentUserPosition.bindPopup("📍 Lokasi Anda (Akurasi GPS: " + markerAccuracy.toFixed(0) + "m)");
+        
+        console.log('✅ Marker biru dibuat di lokasi GPS:', markerLocation.lat.toFixed(6) + ', ' + markerLocation.lng.toFixed(6));
     }
+    
+    // Update accuracy circle HANYA jika lokasi akurat atau menggunakan lokasi GPS terbaik
+    const circleLocation = (bestGPSLocation && isUnacceptableAccuracy) ? 
+        L.latLng(bestGPSLocation.lat, bestGPSLocation.lng) : 
+        e.latlng;
+    const circleRadius = (bestGPSLocation && isUnacceptableAccuracy) ? 
+        Math.min(bestGPSLocation.accuracy / 2, 1000) : 
+        radius;
     
     if (currentAccuracy) {
-        // Update existing accuracy circle
-        currentAccuracy.setLatLng(e.latlng);
-        currentAccuracy.setRadius(radius);
+        // Update existing accuracy circle dengan lokasi GPS AKURAT
+        currentAccuracy.setLatLng(circleLocation);
+        currentAccuracy.setRadius(circleRadius); // radius sudah dibatasi maksimal 1000m
+        if (!isUnacceptableAccuracy || (bestGPSLocation && accuracy < bestGPSLocation.accuracy)) {
+            console.log('📍 Accuracy circle updated - radius:', circleRadius.toFixed(0) + 'm (max 1km)');
+        }
     } else {
-        // Create accuracy circle hanya jika belum ada
-        currentAccuracy = L.circle(e.latlng, radius, {
+        // Create accuracy circle dengan lokasi GPS AKURAT
+        currentAccuracy = L.circle(circleLocation, circleRadius, {
             color: '#ffd700',
             fillColor: '#ffd700',
-            fillOpacity: 0.2
+            fillOpacity: 0.2,
+            stroke: true,
+            weight: 3,
+            strokeColor: '#ffd700',
+            strokeOpacity: 1
         }).addTo(map);
+        console.log('✅ Accuracy circle created - radius:', circleRadius.toFixed(0) + 'm (max 1km, actual GPS accuracy: ' + actualAccuracy.toFixed(0) + 'm)');
     }
-    
-    // Markers sudah dibuat/diupdate di atas, tidak perlu dibuat ulang
     
     // Auto-center map to user location (only first time)
     // This makes the map automatically zoom to user's position when opened
     if (isFirstLocationUpdate) {
         map.setView(e.latlng, 16);
         isFirstLocationUpdate = false; // Reset flag after first update
+    }
+    
+    // PASTIKAN marker biru selalu di lokasi saat ini - verifikasi dan pan map jika perlu
+    // Ini memastikan marker selalu terlihat dan di posisi yang benar selama navigasi
+    if (currentUserPosition) {
+        const markerLatLng = currentUserPosition.getLatLng();
+        const distanceMoved = e.latlng.distanceTo(markerLatLng);
+        
+        // Jika marker terlalu jauh dari lokasi GPS (lebih dari 50m), force update
+        if (distanceMoved > 50) {
+            console.warn('⚠️ Marker terlalu jauh dari GPS (' + distanceMoved.toFixed(0) + 'm) - force update');
+            currentUserPosition.setLatLng(e.latlng);
+        }
+        
+        // Auto-pan map untuk mengikuti marker saat navigasi aktif
+        // Hanya pan jika user bergerak cukup jauh (lebih dari 50m) untuk menghindari gerakan halus berlebihan
+        if (isNavigating && distanceMoved > 50) {
+            map.panTo(e.latlng, { duration: 0.5 }); // Smooth pan mengikuti marker
+        }
     }
     
     // Don't create route automatically - wait for user to set destination
@@ -267,6 +412,28 @@ function forceUpdateRoute(userLatLng) {
         console.log('✅✅✅ NEW ROUTE FOUND FOR NEW DESTINATION!');
         console.log('📍 Route distance:', e.routes[0].summary.totalDistance / 1000, 'km');
         console.log('⏱️ Route time:', e.routes[0].summary.totalTime / 60, 'minutes');
+        
+        // CRITICAL: Pastikan marker biru tetap di lokasi GPS user saat ini
+        // JANGAN biarkan route creation mengubah marker position
+        if (currentUserPosition && navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(function(position) {
+                const currentGPSLocation = L.latLng(position.coords.latitude, position.coords.longitude);
+                const markerLocation = currentUserPosition.getLatLng();
+                const distance = currentGPSLocation.distanceTo(markerLocation);
+                
+                // Jika marker bergeser dari GPS location (> 10 meter), force kembali ke GPS
+                if (distance > 10) {
+                    console.warn('⚠️ Route found - marker shifted ' + distance.toFixed(0) + 'm from GPS, correcting...');
+                    currentUserPosition.setLatLng(currentGPSLocation);
+                    console.log('✅ Marker corrected to GPS location:', currentGPSLocation.lat.toFixed(6) + ', ' + currentGPSLocation.lng.toFixed(6));
+                } else {
+                    console.log('✅ Marker verified - still at GPS location');
+                }
+            }, function(error) {
+                console.warn('⚠️ Could not verify marker position:', error);
+                // Fallback: gunakan last known GPS location dari onLocationFound
+            }, { enableHighAccuracy: true, timeout: 5000, maximumAge: 1000 });
+        }
         
         // Save route data for navigation tracking
         currentRouteData = e.routes[0];
@@ -483,6 +650,25 @@ function updateRoute(userLatLng) {
                             console.log('📍 Route distance:', e.routes[0].summary.totalDistance / 1000, 'km');
                             console.log('⏱️ Route time:', e.routes[0].summary.totalTime / 60, 'minutes');
                             
+                            // CRITICAL: Pastikan marker biru tetap di lokasi GPS user saat ini
+                            // JANGAN biarkan route creation mengubah marker position
+                            if (currentUserPosition && navigator.geolocation) {
+                                navigator.geolocation.getCurrentPosition(function(position) {
+                                    const currentGPSLocation = L.latLng(position.coords.latitude, position.coords.longitude);
+                                    const markerLocation = currentUserPosition.getLatLng();
+                                    const distance = currentGPSLocation.distanceTo(markerLocation);
+                                    
+                                    // Jika marker bergeser dari GPS location (> 10 meter), force kembali ke GPS
+                                    if (distance > 10) {
+                                        console.warn('⚠️ Route found (destination change) - marker shifted ' + distance.toFixed(0) + 'm from GPS, correcting...');
+                                        currentUserPosition.setLatLng(currentGPSLocation);
+                                        console.log('✅ Marker corrected to GPS location:', currentGPSLocation.lat.toFixed(6) + ', ' + currentGPSLocation.lng.toFixed(6));
+                                    }
+                                }, function(error) {
+                                    console.warn('⚠️ Could not verify marker position:', error);
+                                }, { enableHighAccuracy: true, timeout: 5000, maximumAge: 1000 });
+                            }
+                            
                             // Save route data for navigation tracking
                             currentRouteData = e.routes[0];
                             currentLegIndex = 0;
@@ -538,18 +724,62 @@ map.on('locationfound', onLocationFound);
 map.on('locationerror', onLocationError);
 
 // Function to request location permission
+// CRITICAL: Selalu request GPS fresh location, jangan gunakan cached/default
 function requestLocation() {
     const statusEl = document.getElementById('status');
-    if (statusEl) statusEl.textContent = '⏳ Requesting location...';
+    if (statusEl) statusEl.textContent = '⏳ Requesting GPS location...';
     
-    // Request location with options
+    // Request location with options - SELALU dapatkan GPS fresh
     navigator.geolocation.getCurrentPosition(
         function(position) {
-            // Success - trigger locationfound event
-            map.fire('locationfound', {
-                latlng: L.latLng(position.coords.latitude, position.coords.longitude),
-                accuracy: position.coords.accuracy
-            });
+            // CRITICAL: Verifikasi bahwa lokasi ini adalah GPS aktual, bukan default/cached
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+            
+            // Deteksi jika lokasi adalah default location (misalnya Surakarta default)
+            // Koordinat Surakarta umum: sekitar -7.575, 110.824
+            const isNearSurakarta = lat > -7.6 && lat < -7.5 && lng > 110.8 && lng < 110.9;
+            
+            // Jika accuracy sangat besar (> 5000m) dan di area Surakarta, kemungkinan default location
+            if (isNearSurakarta && accuracy > 5000) {
+                console.warn('⚠️ WARNING: Detected possible default/cached location in Surakarta area');
+                console.warn('📍 Coordinates:', lat, lng, 'Accuracy:', accuracy, 'm');
+                console.warn('🔄 Attempting to get fresh GPS location...');
+                
+                // Request fresh location lagi dengan timeout lebih lama
+                if (statusEl) statusEl.textContent = '⚠️ Getting fresh GPS location (please allow GPS access)...';
+                
+                navigator.geolocation.getCurrentPosition(
+                    function(freshPosition) {
+                        console.log('✅ Fresh GPS location received:', freshPosition.coords.latitude, freshPosition.coords.longitude);
+                        map.fire('locationfound', {
+                            latlng: L.latLng(freshPosition.coords.latitude, freshPosition.coords.longitude),
+                            accuracy: freshPosition.coords.accuracy
+                        });
+                    },
+                    function(error) {
+                        console.error('❌ Failed to get fresh GPS:', error);
+                        // Fallback: gunakan location yang ada tapi warn user
+                        if (statusEl) statusEl.textContent = '⚠️ Using available location (may not be accurate)';
+                        map.fire('locationfound', {
+                            latlng: L.latLng(lat, lng),
+                            accuracy: accuracy
+                        });
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 20000, // Timeout lebih lama untuk GPS
+                        maximumAge: 0 // SELALU fresh
+                    }
+                );
+            } else {
+                // Lokasi tampak valid - langsung gunakan
+                map.fire('locationfound', {
+                    latlng: L.latLng(lat, lng),
+                    accuracy: accuracy
+                });
+            }
         },
         function(error) {
             // Error - trigger locationerror event
@@ -558,9 +788,9 @@ function requestLocation() {
             });
         },
         {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 0
+            enableHighAccuracy: true, // SELALU gunakan GPS high accuracy
+            timeout: 15000, // Timeout lebih lama untuk GPS
+            maximumAge: 0 // JANGAN gunakan cached - SELALU request fresh GPS
         }
     );
 }
@@ -580,13 +810,15 @@ function startLocationTracking() {
 }
 
 // Function to locate user using Leaflet
+// CRITICAL: Selalu request GPS fresh, jangan gunakan cached location
 function locate() {
     map.locate({
         setView: false, // Don't auto center - let user control
         watch: false,
         maxZoom: 16,
-        enableHighAccuracy: true,
-        timeout: 10000
+        enableHighAccuracy: true, // Gunakan GPS aktual, bukan network location
+        timeout: 15000, // Timeout lebih lama untuk mendapatkan GPS akurat
+        maximumAge: 0 // JANGAN gunakan cached location - selalu request fresh GPS
     });
 }
 
@@ -1593,8 +1825,29 @@ function updateDestination(lat, lng, name) {
         forceUpdateRoute(userLatLng);
     }
     
-    // Pan to new destination
+    // Pan to new destination (jangan pan ke user location - biarkan user lihat rute)
+    // TAPI: PASTIKAN marker biru tetap di lokasi GPS user, tidak ikut pan ke destination
     map.setView(latLngB, 13);
+    
+    // CRITICAL: Setelah pan ke destination, PASTIKAN marker biru tetap di GPS location
+    // Jangan biarkan marker ikut ke destination
+    if (currentUserPosition && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function(position) {
+            const currentGPSLocation = L.latLng(position.coords.latitude, position.coords.longitude);
+            const markerLocation = currentUserPosition.getLatLng();
+            const distance = currentGPSLocation.distanceTo(markerLocation);
+            
+            // Jika marker tidak di GPS location, paksa kembali
+            if (distance > 1) {
+                console.warn('⚠️ Destination set - marker not at GPS, correcting...');
+                currentUserPosition.setLatLng(currentGPSLocation);
+                console.log('✅ Marker forced to GPS location:', currentGPSLocation.lat.toFixed(6) + ', ' + currentGPSLocation.lng.toFixed(6));
+            }
+        }, function(error) {
+            // Jika GPS tidak bisa diakses, hanya log warning
+            console.warn('⚠️ Could not verify marker after destination set:', error);
+        }, { enableHighAccuracy: true, timeout: 3000, maximumAge: 1000 });
+    }
 }
 
 // Toggle voice listening
