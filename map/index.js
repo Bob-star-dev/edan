@@ -304,6 +304,11 @@ function onLocationFound(e) {
         setTimeout(function() {
             announceNextDirection();
         }, 500);
+        
+        // Update real-time instructions: jarak berkurang dan hapus yang sudah dilewati
+        setTimeout(function() {
+            updateRealTimeInstructions(e.latlng);
+        }, 600);
     }
 }
 
@@ -2626,4 +2631,157 @@ function parseDistance(distanceText) {
     }
     
     return 0;
+}
+
+// Format distance untuk display (meter ke "150 m" atau "1.5 km")
+function formatDistance(meters) {
+    if (meters >= 1000) {
+        const km = (meters / 1000).toFixed(1);
+        return km + ' km';
+    } else {
+        return Math.round(meters) + ' m';
+    }
+}
+
+// Update real-time instructions: jarak berkurang dan hapus yang sudah dilewati
+function updateRealTimeInstructions(userLatLng) {
+    if (!isNavigating || !currentRouteData || !route) {
+        return;
+    }
+    
+    try {
+        // Get route instructions from DOM
+        const routingContainer = document.querySelector('.leaflet-routing-alternatives-container');
+        if (!routingContainer) return;
+        
+        const activeRoute = routingContainer.querySelector('.leaflet-routing-alt:not(.leaflet-routing-alt-minimized)');
+        if (!activeRoute) return;
+        
+        const instructionRows = activeRoute.querySelectorAll('tbody tr');
+        if (!instructionRows.length) return;
+        
+        // Get route coordinates - ini adalah array semua titik di route
+        const routeCoordinates = currentRouteData.coordinates;
+        if (!routeCoordinates || routeCoordinates.length === 0) return;
+        
+        // Cari coordinate terdekat dengan user position di route
+        let nearestRouteIndex = 0;
+        let minDistance = Infinity;
+        
+        for (let i = 0; i < routeCoordinates.length; i++) {
+            const coord = routeCoordinates[i];
+            const coordLatLng = L.latLng(coord.lat, coord.lng);
+            const distance = userLatLng.distanceTo(coordLatLng);
+            if (distance < minDistance) {
+                minDistance = distance;
+                nearestRouteIndex = i;
+            }
+        }
+        
+        // Hitung jarak kumulatif dari start ke nearest point (posisi user di route)
+        let distanceTraveled = 0;
+        for (let i = 1; i <= nearestRouteIndex && i < routeCoordinates.length; i++) {
+            const prevCoord = routeCoordinates[i - 1];
+            const currentCoord = routeCoordinates[i];
+            distanceTraveled += L.latLng(prevCoord.lat, prevCoord.lng)
+                .distanceTo(L.latLng(currentCoord.lat, currentCoord.lng));
+        }
+        
+        // CRITICAL: Simpan jarak kumulatif untuk setiap instruction row
+        // Setiap instruction memiliki jarak dari start ke instruction point tersebut
+        // Kita perlu menyimpan jarak original saat pertama kali route ditemukan
+        // Atau hitung ulang berdasarkan route coordinates dan instruction points
+        
+        // Get instructions dari route data jika tersedia
+        const routeInstructions = currentRouteData.instructions || [];
+        
+        // Hitung jarak kumulatif ke setiap instruction point
+        let cumulativeDist = 0;
+        const instructionCumulativeDistances = [];
+        
+        for (let i = 0; i < routeInstructions.length; i++) {
+            const instruction = routeInstructions[i];
+            const instructionIndex = instruction.index;
+            
+            // Hitung jarak kumulatif dari start ke instruction point ini
+            if (instructionIndex > 0 && instructionIndex < routeCoordinates.length) {
+                // Hitung jarak dari previous instruction (atau start) ke instruction ini
+                const prevIndex = i > 0 ? routeInstructions[i - 1].index : 0;
+                for (let j = prevIndex + 1; j <= instructionIndex; j++) {
+                    if (j < routeCoordinates.length) {
+                        const prevCoord = routeCoordinates[j - 1];
+                        const currCoord = routeCoordinates[j];
+                        cumulativeDist += L.latLng(prevCoord.lat, prevCoord.lng)
+                            .distanceTo(L.latLng(currCoord.lat, currCoord.lng));
+                    }
+                }
+            }
+            
+            instructionCumulativeDistances.push(cumulativeDist);
+        }
+        
+        // Update setiap instruction row di DOM
+        const PASSED_THRESHOLD = 50; // Hapus instruction jika sudah dilewati < 50 meter
+        
+        instructionRows.forEach(function(row, rowIndex) {
+            // Skip jika row sudah di-hide
+            if (row.style.display === 'none') return;
+            
+            // Get distance cell
+            let instructionDistance = row.querySelector('.leaflet-routing-instruction-distance');
+            const cells = row.querySelectorAll('td');
+            if (!instructionDistance && cells.length >= 3) {
+                instructionDistance = cells[2];
+            }
+            
+            if (!instructionDistance) return;
+            
+            // Baca jarak original dari DOM (jarak dari start ke instruction point ini)
+            const currentDistanceText = instructionDistance.textContent.trim();
+            let originalDistanceFromStart = parseDistance(currentDistanceText);
+            
+            // Jika tidak bisa parse, gunakan data dari route instructions
+            if (originalDistanceFromStart === 0 && rowIndex > 0 && rowIndex <= instructionCumulativeDistances.length) {
+                originalDistanceFromStart = instructionCumulativeDistances[rowIndex - 1];
+            }
+            
+            // Hitung jarak tersisa (remaining distance) dari user ke instruction point ini
+            // Jarak tersisa = jarak kumulatif ke instruction - jarak yang sudah ditempuh user
+            let remainingDistance = 0;
+            
+            if (rowIndex === 0) {
+                // Depart instruction - user sudah di start atau sudah melewati
+                // Jarak tersisa = 0 jika sudah melewati, atau jarak ke start jika belum
+                remainingDistance = Math.max(0, -distanceTraveled); // Negative = sudah melewati
+                if (distanceTraveled > PASSED_THRESHOLD) {
+                    remainingDistance = 0; // Sudah melewati start point
+                }
+            } else {
+                // Instruction lainnya - jarak tersisa = jarak ke instruction point - jarak yang sudah ditempuh
+                remainingDistance = Math.max(0, originalDistanceFromStart - distanceTraveled);
+            }
+            
+            // Update jarak di DOM dengan jarak tersisa yang sudah disesuaikan
+            instructionDistance.textContent = formatDistance(Math.max(0, remainingDistance));
+            
+            // Hapus instruction jika sudah dilewati (< 50 meter)
+            if (remainingDistance < PASSED_THRESHOLD && remainingDistance >= 0) {
+                row.style.display = 'none';
+                console.log('✅ Hiding instruction row', rowIndex, '- already passed (remaining:', Math.round(remainingDistance), 'm)');
+            } else {
+                // Pastikan row visible jika masih ada jarak tersisa
+                row.style.display = '';
+            }
+        });
+        
+        // Log untuk debugging (hanya jika user dekat dengan route)
+        if (minDistance < 100) {
+            console.log('📍 Real-time update - nearest route point:', nearestRouteIndex, 
+                '/', routeCoordinates.length, 'distance to route:', Math.round(minDistance), 'm',
+                'distance traveled:', Math.round(distanceTraveled), 'm');
+        }
+        
+    } catch (error) {
+        console.error('❌ Error in updateRealTimeInstructions:', error);
+    }
 }
