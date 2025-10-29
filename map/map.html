@@ -23,56 +23,91 @@
 <body>
 <div id="map"></div>
 
-<!-- Permission Request Popup -->
-<div id="permissionPopup" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 10px; z-index: 10000; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-width: 400px; text-align: center; display: block;">
-  <h2 style="margin-top: 0; color: #3b49df;">Akses Lokasi Diperlukan</h2>
-  <p style="font-size: 16px; color: #666;">Aplikasi ini memerlukan akses ke lokasi Anda saat ini untuk menampilkan:</p>
-  <ul style="text-align: left; margin: 20px 0;">
-    <li>📍 Lokasi Anda saat ini di peta</li>
-    <li>🗺️ Rute dari lokasi Anda ke tujuan</li>
-    <li>📍 Update lokasi setiap 1 detik (realtime)</li>
-  </ul>
-  <button id="requestPermissionBtn" onclick="requestLocationPermission()" style="background: #3b49df; color: white; border: none; padding: 12px 30px; font-size: 16px; border-radius: 5px; cursor: pointer; margin: 10px;">
-    Berikan Akses Lokasi
-  </button>
-  <p style="font-size: 12px; color: #999; margin-top: 15px;">Setelah mengklik, browser akan meminta izin akses lokasi</p>
+<!-- Permission Request Popup - Modern Design -->
+<div id="permissionPopup" class="permission-popup">
+  <div class="permission-content">
+    <div class="permission-icon">📍</div>
+    <h2>Akses Lokasi Diperlukan</h2>
+    <p>Aplikasi ini memerlukan akses ke lokasi Anda saat ini untuk menampilkan:</p>
+    <ul>
+      <li>📍 Lokasi Anda saat ini di peta</li>
+      <li>🗺️ Rute dari lokasi Anda ke tujuan</li>
+      <li>📍 Update lokasi setiap 1 detik (realtime)</li>
+    </ul>
+    <button id="requestPermissionBtn" onclick="requestLocationPermission()" class="permission-btn">
+      Berikan Akses Lokasi
+    </button>
+    <p class="permission-hint">Setelah mengklik, browser akan meminta izin akses lokasi</p>
+  </div>
 </div>
 
+<!-- Mobile Toggle Button (shown only on mobile) -->
+<button id="mobileToggleBtn" class="mobile-toggle-btn" onclick="toggleStatusPanel()">
+  📍 Info Lokasi
+</button>
+
+<!-- Debug Console Toggle Button -->
+<button id="debugToggleBtn" class="debug-toggle-btn" onclick="toggleDebugPanel()" title="Toggle Debug Console">
+  🐛 Debug
+</button>
+
 <!-- Status Panel -->
-<div style="position: absolute; top: 10px; left: 10px; background: white; padding: 15px; border-radius: 5px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.3); max-width: 300px;">
-  <h3 style="margin-top: 0;">📍 Track Your Location</h3>
-  <p style="font-size: 14px; margin: 5px 0;" id="status">Waiting for location...</p>
-  <p style="font-size: 14px; margin: 5px 0;" id="coordinates">Lat: -, Lng: -</p>
-  <p style="font-size: 12px; margin: 5px 0; color: #666;" id="accuracy">Accuracy: -</p>
+<div id="statusPanel" class="status-panel">
+  <!-- Close button for mobile (shown only on mobile) -->
+  <button id="closePanelBtn" class="close-panel-btn" onclick="toggleStatusPanel()" style="display: none;" aria-label="Tutup panel">✖️</button>
   
-  <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
-    <h4 style="margin-top: 0; font-size: 16px;">Live Route Tracking</h4>
-    <p style="font-size: 12px; color: #666;">Shows route from your current location to destination</p>
-    <p style="font-size: 11px; color: #999;">Route updates every 1 second (realtime)</p>
+  <h3><span class="icon">📍</span> Track Your Location</h3>
+  <p id="status">Waiting for location...</p>
+  <p id="coordinates">Lat: -, Lng: -</p>
+  <p id="accuracy">Accuracy: -</p>
+  
+  <div class="route-info">
+    <h4>Live Route Tracking</h4>
+    <p>Shows route from your current location to destination</p>
+    <p class="route-update-info">Route updates every 1 second (realtime)</p>
   </div>
   
-  <button id="retryBtn" style="margin-top: 10px; background: #28a745; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-size: 14px; width: 100%; display: none;">
-    🔄 Coba Lagi
+  <button id="retryBtn" class="retry-button">
+    <span class="btn-icon">🔄</span>
+    <span>Coba Lagi</span>
   </button>
+</div>
+
+<!-- Debug Console Panel -->
+<div id="debugPanel" class="debug-panel">
+  <!-- Close button for mobile (shown only on mobile) -->
+  <button id="closeDebugBtn" class="close-panel-btn" onclick="toggleDebugPanel()" style="display: none;" aria-label="Tutup debug panel">✖️</button>
+  
+  <div class="debug-header">
+    <h3><span class="icon">🐛</span> Debug Console</h3>
+    <div class="debug-controls">
+      <button id="clearDebugBtn" class="clear-debug-btn" onclick="clearDebugLogs()" title="Clear logs">🗑️ Clear</button>
+      <button id="toggleAutoScrollBtn" class="auto-scroll-btn" onclick="toggleAutoScroll()" title="Toggle auto-scroll">📜 Auto</button>
+    </div>
+  </div>
+  
+  <div id="debugLogs" class="debug-logs">
+    <p class="debug-placeholder">Console logs will appear here...</p>
+  </div>
 </div>
 
 <!-- Voice Control Panel -->
-<div style="position: absolute; bottom: 10px; left: 10px; background: white; padding: 15px; border-radius: 5px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.3); max-width: 300px;">
-  <h4 style="margin-top: 0; font-size: 16px;">🎤 Navigasi Suara</h4>
-  <p style="font-size: 12px; color: #666; margin: 5px 0;">Ucapkan tujuan Anda untuk bernavigasi</p>
+<div class="voice-panel">
+  <h4>🎤 Navigasi Suara</h4>
+  <p>Ucapkan tujuan Anda untuk bernavigasi</p>
   
   <!-- Hidden button for voice control - accessible via screen reader -->
   <button id="voiceBtn" onclick="toggleVoiceListening()" style="display: none;" aria-label="Toggle voice listening" role="button" tabindex="-1">
     🎤 Aktifkan Mikrofon
   </button>
   
-  <p id="voiceStatus" style="font-size: 12px; color: #666; margin: 10px 0 0 0; min-height: 30px; font-style: italic;">
+  <p id="voiceStatus" class="voice-status-text">
     Senavision Siap. Ucapkan Tujuan Anda.
   </p>
   
-  <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
-    <p style="font-size: 11px; color: #999; margin: 0;">
-      💡 Percobaan perintah suara:<br>
+  <div class="voice-examples">
+    <p class="voice-examples-title">💡 Percobaan perintah suara:</p>
+    <p class="voice-examples-list">
       • "Jakarta" (langsung sebutkan kota)<br>
       • "Pergi ke Bandung" juga bisa<br>
       • "Mulai" (setelah tujuan ditetapkan)

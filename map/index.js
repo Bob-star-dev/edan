@@ -54,6 +54,313 @@ let isNavigating = false; // Track if user is actively navigating
 let announcedInstructions = []; // Track all instructions that have been announced
 let shouldAnnounceRoute = false; // Flag to control when route should be announced
 
+// Debug Console Variables
+let debugAutoScroll = true; // Auto-scroll to bottom when new logs are added
+let debugLogs = []; // Store logs for filtering/searching if needed
+const MAX_DEBUG_LOGS = 500; // Maximum number of log entries to keep
+
+// Debug Console Functions
+// Toggle debug panel visibility - similar to status panel toggle
+function toggleDebugPanel() {
+    const debugPanel = document.getElementById('debugPanel');
+    const toggleBtn = document.getElementById('debugToggleBtn');
+    
+    if (debugPanel && toggleBtn) {
+        const isActive = debugPanel.classList.contains('active');
+        
+        if (isActive) {
+            // Close panel
+            debugPanel.classList.remove('active');
+            toggleBtn.textContent = '🐛 Debug';
+        } else {
+            // Open panel
+            debugPanel.classList.add('active');
+            toggleBtn.textContent = '✖️ Tutup';
+        }
+    }
+}
+
+// Clear all debug logs from the panel
+function clearDebugLogs() {
+    const debugLogsContainer = document.getElementById('debugLogs');
+    if (debugLogsContainer) {
+        debugLogsContainer.innerHTML = '<p class="debug-placeholder">Console logs will appear here...</p>';
+        debugLogs = []; // Clear stored logs
+    }
+}
+
+// Toggle auto-scroll feature
+function toggleAutoScroll() {
+    debugAutoScroll = !debugAutoScroll;
+    const autoScrollBtn = document.getElementById('toggleAutoScrollBtn');
+    if (autoScrollBtn) {
+        if (debugAutoScroll) {
+            autoScrollBtn.classList.add('active');
+            autoScrollBtn.textContent = '📜 Auto';
+        } else {
+            autoScrollBtn.classList.remove('active');
+            autoScrollBtn.textContent = '📜 Manual';
+        }
+    }
+}
+
+// Add log entry to debug panel
+// This function formats and displays console logs in the debug panel
+function addDebugLog(type, args) {
+    const debugLogsContainer = document.getElementById('debugLogs');
+    if (!debugLogsContainer) return;
+    
+    // Remove placeholder if it exists
+    const placeholder = debugLogsContainer.querySelector('.debug-placeholder');
+    if (placeholder) {
+        placeholder.remove();
+    }
+    
+    // Create timestamp
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('id-ID', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit',
+        fractionalSecondDigits: 3
+    });
+    
+    // Create log entry element
+    const logEntry = document.createElement('div');
+    logEntry.className = `debug-log-entry ${type}`;
+    
+    // Format log message - handle multiple arguments
+    let message = '';
+    try {
+        // Convert arguments to string, handling objects
+        message = Array.from(args).map(arg => {
+            if (typeof arg === 'object' && arg !== null) {
+                return JSON.stringify(arg, null, 2);
+            }
+            return String(arg);
+        }).join(' ');
+    } catch (e) {
+        message = String(args);
+    }
+    
+    // Create HTML structure
+    logEntry.innerHTML = `
+        <span class="debug-log-time">[${timeStr}]</span>
+        <span class="debug-log-message">${escapeHtml(message)}</span>
+    `;
+    
+    // Add to container
+    debugLogsContainer.appendChild(logEntry);
+    
+    // Store log (for potential filtering/searching)
+    debugLogs.push({ type, message, time: now });
+    
+    // Limit number of logs to prevent memory issues
+    if (debugLogs.length > MAX_DEBUG_LOGS) {
+        const firstEntry = debugLogsContainer.firstElementChild;
+        if (firstEntry && firstEntry.classList.contains('debug-log-entry')) {
+            firstEntry.remove();
+        }
+        debugLogs.shift();
+    }
+    
+    // Auto-scroll to bottom if enabled
+    if (debugAutoScroll) {
+        debugLogsContainer.scrollTop = debugLogsContainer.scrollHeight;
+    }
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Intercept console methods and display in debug panel
+// This captures all console.log, console.warn, console.error, etc. calls
+(function() {
+    // Store original console methods
+    const originalLog = console.log;
+    const originalInfo = console.info;
+    const originalWarn = console.warn;
+    const originalError = console.error;
+    const originalDebug = console.debug;
+    
+    // Override console.log
+    console.log = function(...args) {
+        originalLog.apply(console, args); // Call original
+        addDebugLog('log', args);
+    };
+    
+    // Override console.info
+    console.info = function(...args) {
+        originalInfo.apply(console, args); // Call original
+        addDebugLog('info', args);
+    };
+    
+    // Override console.warn
+    console.warn = function(...args) {
+        originalWarn.apply(console, args); // Call original
+        addDebugLog('warn', args);
+    };
+    
+    // Override console.error
+    console.error = function(...args) {
+        originalError.apply(console, args); // Call original
+        addDebugLog('error', args);
+    };
+    
+    // Override console.debug
+    console.debug = function(...args) {
+        originalDebug.apply(console, args); // Call original
+        addDebugLog('log', args); // Use 'log' style for debug
+    };
+    
+    // Add initial log message
+    setTimeout(() => {
+        console.log('🐛 Debug console initialized. All console logs will appear here.');
+    }, 100);
+})();
+
+// Mobile UI Toggle Function - Toggle status panel visibility on mobile
+// This function is called when the mobile toggle button is clicked
+// It shows/hides the status panel on mobile devices
+function toggleStatusPanel() {
+    const statusPanel = document.getElementById('statusPanel');
+    const toggleBtn = document.getElementById('mobileToggleBtn');
+    
+    if (statusPanel && toggleBtn) {
+        // Toggle active class to show/hide panel
+        const isActive = statusPanel.classList.contains('active');
+        
+        if (isActive) {
+            // Close panel
+            statusPanel.classList.remove('active');
+            toggleBtn.textContent = '📍 Info Lokasi';
+            toggleBtn.style.background = '#3b49df'; // Blue when closed
+        } else {
+            // Open panel
+            statusPanel.classList.add('active');
+            toggleBtn.textContent = '✖️ Tutup';
+            toggleBtn.style.background = '#dc3545'; // Red when open
+        }
+    }
+}
+
+// Close status panel when clicking outside of it on mobile
+// This improves user experience by allowing users to close panel by clicking map
+document.addEventListener('DOMContentLoaded', function() {
+    // Add click event listener to close panel when clicking on map (mobile only)
+    const mapContainer = document.getElementById('map');
+    const statusPanel = document.getElementById('statusPanel');
+    const toggleBtn = document.getElementById('mobileToggleBtn');
+    const debugPanel = document.getElementById('debugPanel');
+    const debugToggleBtn = document.getElementById('debugToggleBtn');
+    
+    // Initialize debug panel auto-scroll button state
+    const autoScrollBtn = document.getElementById('toggleAutoScrollBtn');
+    if (autoScrollBtn && debugAutoScroll) {
+        autoScrollBtn.classList.add('active');
+    }
+    
+    // Function to handle window resize - show panel on desktop, hide button
+    function handleResize() {
+        const closeBtn = document.getElementById('closePanelBtn');
+        const closeDebugBtn = document.getElementById('closeDebugBtn');
+        
+        if (window.innerWidth > 768) {
+            // Desktop: Show panels, hide toggle buttons, hide close buttons
+            if (statusPanel) {
+                statusPanel.classList.add('active');
+                statusPanel.style.display = 'block';
+            }
+            if (debugPanel) {
+                // Debug panel stays hidden by default on desktop unless manually opened
+                // User can toggle it using the debug button
+            }
+            if (toggleBtn) {
+                toggleBtn.style.display = 'none';
+            }
+            if (debugToggleBtn) {
+                // Debug button always visible on desktop for easy access
+                debugToggleBtn.style.display = 'block';
+            }
+            if (closeBtn) {
+                closeBtn.style.display = 'none';
+            }
+            if (closeDebugBtn) {
+                closeDebugBtn.style.display = 'none';
+            }
+        } else {
+            // Mobile: Hide panels by default, show toggle buttons, show close buttons
+            if (statusPanel) {
+                statusPanel.classList.remove('active');
+            }
+            if (debugPanel) {
+                debugPanel.classList.remove('active');
+            }
+            if (toggleBtn) {
+                toggleBtn.style.display = 'block';
+            }
+            if (debugToggleBtn) {
+                debugToggleBtn.style.display = 'block';
+            }
+            if (closeBtn) {
+                closeBtn.style.display = 'flex';
+            }
+            if (closeDebugBtn) {
+                closeDebugBtn.style.display = 'flex';
+            }
+        }
+    }
+    
+    // Handle initial load
+    handleResize();
+    
+    // Handle window resize events
+    window.addEventListener('resize', handleResize);
+    
+    // Only add click-outside behavior on mobile devices
+    if (mapContainer && statusPanel && toggleBtn) {
+        mapContainer.addEventListener('click', function(e) {
+            // Only apply this on mobile
+            if (window.innerWidth <= 768) {
+                // Handle status panel
+                if (statusPanel.classList.contains('active')) {
+                    const clickedElement = e.target;
+                    const isClickOnPanel = statusPanel.contains(clickedElement);
+                    const isClickOnButton = toggleBtn.contains(clickedElement);
+                    
+                    // Close panel if clicking on map (not panel or button)
+                    if (!isClickOnPanel && !isClickOnButton) {
+                        statusPanel.classList.remove('active');
+                        if (toggleBtn) {
+                            toggleBtn.textContent = '📍 Info Lokasi';
+                            toggleBtn.style.background = '#3b49df';
+                        }
+                    }
+                }
+                
+                // Handle debug panel
+                if (debugPanel && debugPanel.classList.contains('active')) {
+                    const clickedElement = e.target;
+                    const isClickOnDebugPanel = debugPanel.contains(clickedElement);
+                    const isClickOnDebugButton = debugToggleBtn && debugToggleBtn.contains(clickedElement);
+                    
+                    // Close debug panel if clicking on map (not panel or button)
+                    if (!isClickOnDebugPanel && !isClickOnDebugButton) {
+                        debugPanel.classList.remove('active');
+                        if (debugToggleBtn) {
+                            debugToggleBtn.textContent = '🐛 Debug';
+                        }
+                    }
+                }
+            }
+        });
+    }
+});
+
 // Function to handle when user's location is found
 function onLocationFound(e) {
     // Hide permission popup when location is found
