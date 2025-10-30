@@ -54,6 +54,10 @@ let isNavigating = false; // Track if user is actively navigating
 let announcedInstructions = []; // Track all instructions that have been announced
 let shouldAnnounceRoute = false; // Flag to control when route should be announced
 
+// Firebase / Firestore integration state
+let firebaseDb = null; // Firestore db instance when available
+let deviceId = null; // Stable per-device id (used when no auth)
+
 // Debug Console Variables
 let debugAutoScroll = true; // Auto-scroll to bottom when new logs are added
 let debugLogs = []; // Store logs for filtering/searching if needed
@@ -1636,6 +1640,19 @@ async function initializeSavedRoutes() {
     
     // Render route list setelah inisialisasi
     renderRouteList();
+
+    // Try Firestore sync (non-blocking): if available, load cloud routes and refresh UI
+    initializeFirestoreIfAvailable();
+    loadRoutesFromFirestore().then(function(loaded) {
+        if (loaded) {
+            saveRoutesToLocalStorage();
+            renderRouteList();
+            console.log('✅ Routes synchronized from Firestore');
+        }
+    }).catch(function(err){
+        // Silent fail, keep local cache
+        console.warn('⚠️ Firestore load failed (using local cache):', err && err.message ? err.message : err);
+    });
 }
 
 // Simpan rute ke localStorage
@@ -1648,16 +1665,95 @@ function saveRoutesToLocalStorage() {
     }
 }
 
-// Simpan rute ke Firestore (jika tersedia)
-function saveRoutesToCloud() {
-    if (window.saveUserSavedRoutes) {
-        try {
-            window.saveUserSavedRoutes(savedRoutes);
-            console.log('✅ Saved routes to Firestore');
-        } catch (e) {
-            console.warn('⚠️ Failed to save routes to Firestore:', e);
+// ===== Firestore Helpers for Routes (Cloud Sync) =====
+function initializeFirestoreIfAvailable() {
+    try {
+        if (window.firebase && firebase.apps && firebase.apps.length) {
+            if (!firebaseDb) {
+                firebaseDb = firebase.firestore();
+                console.log('✅ Firestore ready');
+            }
         }
+    } catch (e) {
+        console.warn('⚠️ Firestore init skipped:', e && e.message ? e.message : e);
     }
+}
+
+function getDeviceId() {
+    try {
+        if (!deviceId) {
+            deviceId = localStorage.getItem('senavision_device_id');
+            if (!deviceId) {
+                deviceId = 'device-' + Math.random().toString(36).slice(2, 10);
+                localStorage.setItem('senavision_device_id', deviceId);
+            }
+        }
+        return deviceId;
+    } catch (e) {
+        // Fallback if localStorage fails
+        return 'device-' + Math.random().toString(36).slice(2, 10);
+    }
+}
+
+function getRoutesCollectionRef() {
+    if (!firebaseDb) return null;
+    const uid = getDeviceId();
+    return firebaseDb.collection('users').doc(uid).collection('routes');
+}
+
+async function loadRoutesFromFirestore() {
+    const col = getRoutesCollectionRef();
+    if (!col) return false;
+    try {
+        const snapshot = await col.get();
+        // Start with 6 empty slots
+        const cloudRoutes = [
+            { id: 1, name: 'Rute 1', start: null, end: null },
+            { id: 2, name: 'Rute 2', start: null, end: null },
+            { id: 3, name: 'Rute 3', start: null, end: null },
+            { id: 4, name: 'Rute 4', start: null, end: null },
+            { id: 5, name: 'Rute 5', start: null, end: null },
+            { id: 6, name: 'Rute 6', start: null, end: null }
+        ];
+        snapshot.forEach(function(doc){
+            const data = doc.data() || {};
+            const idNum = parseInt(doc.id, 10);
+            if (idNum >= 1 && idNum <= 6) {
+                cloudRoutes[idNum - 1] = {
+                    id: idNum,
+                    name: data.name || ('Rute ' + idNum),
+                    start: data.start || null,
+                    end: data.end || null
+                };
+            }
+        });
+        savedRoutes = cloudRoutes;
+        return true;
+    } catch (e) {
+        console.warn('⚠️ Failed to load routes from Firestore:', e && e.message ? e.message : e);
+        return false;
+    }
+}
+
+async function saveRouteToFirestore(route) {
+    const col = getRoutesCollectionRef();
+    if (!col) return;
+    const docRef = col.doc(String(route.id));
+    const payload = {
+        id: route.id,
+        name: route.name || ('Rute ' + route.id),
+        start: route.start || null,
+        end: route.end || null,
+        updatedAt: new Date().toISOString()
+    };
+    await docRef.set(payload, { merge: true });
+}
+
+async function deleteRouteFromFirestore(routeId) {
+    const col = getRoutesCollectionRef();
+    if (!col) return;
+    const docRef = col.doc(String(routeId));
+    await docRef.delete();
 }
 
 // Ambil rute berdasarkan ID
@@ -1672,7 +1768,10 @@ function setRoute(routeId, startLocation, endLocation) {
         route.start = startLocation;
         route.end = endLocation;
         saveRoutesToLocalStorage();
-        saveRoutesToCloud();
+        // Also persist to Firestore if available (best-effort)
+        saveRouteToFirestore(route).catch(function(err){
+            console.warn('⚠️ Firestore save failed:', err && err.message ? err.message : err);
+        });
         console.log('✅ Route', routeId, 'updated:', startLocation.name, '→', endLocation.name);
         
         // Update UI if panel is open
@@ -2055,7 +2154,10 @@ function deleteRoute(routeId) {
     route.start = null;
     route.end = null;
     saveRoutesToLocalStorage();
-    saveRoutesToCloud();
+    // Remove from Firestore if available (best-effort)
+    deleteRouteFromFirestore(routeId).catch(function(err){
+        console.warn('⚠️ Firestore delete failed:', err && err.message ? err.message : err);
+    });
     
     // Refresh route list
     renderRouteList();
