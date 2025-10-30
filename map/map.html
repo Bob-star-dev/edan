@@ -175,6 +175,36 @@
 <!-- Leaflet Routing Machine JS -->
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
+  <!-- Firebase SDK (Compat) - App & Firestore -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+  <!-- Firebase Init: Replace with your config -->
+  <script>
+  (function(){
+    // IMPORTANT: Replace the placeholder below with your Firebase project config
+    // Get it from Firebase Console > Project settings > General > Your apps (Web app)
+    window.FIREBASE_CONFIG = window.FIREBASE_CONFIG || {
+      apiKey: "AIzaSyDrKWMsQvJgtgGRvE2FEHPTnpq7MrKLQTQ",
+      authDomain: "senavision-id.firebaseapp.com",
+      projectId: "senavision-id",
+      storageBucket: "senavision-id.firebasestorage.app",
+      messagingSenderId: "1073477417711",
+      appId: "1:1073477417711:web:681c33a68733fc2b35391a"
+      // measurementId optional; not required for Firestore
+    };
+
+    try {
+      if (window.firebase && !firebase.apps.length) {
+        firebase.initializeApp(window.FIREBASE_CONFIG);
+        console.log('✅ Firebase initialized');
+      }
+    } catch (e) {
+      console.error('❌ Firebase init error:', e);
+    }
+  })();
+  </script>
+
 <!-- Custom JS -->
 <script src="index.js"></script>
 </body>
