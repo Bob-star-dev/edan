@@ -1516,6 +1516,525 @@ const knownCities = {
     'kuta': { lat: -8.7074, lng: 115.1749, name: 'Kuta, Bali, Indonesia' }
 };
 
+// ========== SAVED ROUTES SYSTEM ==========
+// System untuk menyimpan dan memuat rute-rute yang sudah ditetapkan
+// Total 6 slot rute (Rute 1-6), Rute 1 adalah default, Rute 2-6 kosong dan bisa diisi user
+
+// Struktur data rute:
+// {
+//   id: 1,
+//   name: "Rute 1",
+//   start: { lat: -7.5720, lng: 110.8280, name: "SMA Negeri 1 Surakarta" },
+//   end: { lat: -7.5600, lng: 110.8569, name: "Universitas Sebelas Maret" }
+// }
+
+// Inisialisasi daftar rute dengan Rute 1 sebagai default
+let savedRoutes = [];
+
+// Initialize saved routes pada saat page load
+function initializeSavedRoutes() {
+    // Coba load dari localStorage
+    const savedRoutesData = localStorage.getItem('senavision_saved_routes');
+    
+    if (savedRoutesData) {
+        try {
+            savedRoutes = JSON.parse(savedRoutesData);
+            console.log('✅ Loaded saved routes from localStorage:', savedRoutes.length, 'routes');
+        } catch (error) {
+            console.error('❌ Error loading saved routes:', error);
+            savedRoutes = [];
+        }
+    }
+    
+    // Inisialisasi dengan semua rute kosong (semua rute bisa diisi user, termasuk Rute 1)
+    if (savedRoutes.length === 0) {
+        // Semua rute kosong dan bisa diisi user
+        savedRoutes = [
+            { id: 1, name: 'Rute 1', start: null, end: null },
+            { id: 2, name: 'Rute 2', start: null, end: null },
+            { id: 3, name: 'Rute 3', start: null, end: null },
+            { id: 4, name: 'Rute 4', start: null, end: null },
+            { id: 5, name: 'Rute 5', start: null, end: null },
+            { id: 6, name: 'Rute 6', start: null, end: null }
+        ];
+        
+        // Simpan ke localStorage
+        saveRoutesToLocalStorage();
+        console.log('✅ Initialized empty routes (all 6 routes are empty and can be filled by user)');
+    } else {
+        // Pastikan selalu ada 6 rute (isi yang kosong jika kurang)
+        while (savedRoutes.length < 6) {
+            savedRoutes.push({
+                id: savedRoutes.length + 1,
+                name: 'Rute ' + (savedRoutes.length + 1),
+                start: null,
+                end: null
+            });
+        }
+        saveRoutesToLocalStorage();
+    }
+    
+    // Render route list setelah inisialisasi
+    renderRouteList();
+}
+
+// Simpan rute ke localStorage
+function saveRoutesToLocalStorage() {
+    try {
+        localStorage.setItem('senavision_saved_routes', JSON.stringify(savedRoutes));
+        console.log('✅ Saved routes to localStorage');
+    } catch (error) {
+        console.error('❌ Error saving routes to localStorage:', error);
+    }
+}
+
+// Ambil rute berdasarkan ID
+function getRouteById(routeId) {
+    return savedRoutes.find(r => r.id === routeId);
+}
+
+// Set rute berdasarkan ID (untuk update/edit rute)
+function setRoute(routeId, startLocation, endLocation) {
+    const route = getRouteById(routeId);
+    if (route) {
+        route.start = startLocation;
+        route.end = endLocation;
+        saveRoutesToLocalStorage();
+        console.log('✅ Route', routeId, 'updated:', startLocation.name, '→', endLocation.name);
+        
+        // Update UI if panel is open
+        const routePanel = document.getElementById('routeManagementPanel');
+        if (routePanel && routePanel.classList.contains('active')) {
+            renderRouteList();
+        }
+        
+        return true;
+    }
+    return false;
+}
+
+// Handle command "Rute X" untuk memilih rute yang sudah disimpan
+function handleRouteCommand(routeId) {
+    const route = getRouteById(routeId);
+    
+    if (!route) {
+        speakText('Rute ' + routeId + ' tidak ditemukan', 'id-ID', true);
+        updateVoiceStatus('❌ Rute ' + routeId + ' tidak ditemukan');
+        return;
+    }
+    
+    // Check jika rute sudah diisi (start dan end tidak null)
+    if (!route.start || !route.end) {
+        speakText('Rute ' + routeId + ' belum diisi. Untuk membuat rute baru, ucapkan "Buat Rute ' + routeId + ' dari [lokasi start] ke [lokasi tujuan]"', 'id-ID', true);
+        updateVoiceStatus('⚠️ Rute ' + routeId + ' masih kosong');
+        return;
+    }
+    
+    // Stop microphone untuk announcement
+    if (isListening && recognition) {
+        recognition.stop();
+        isListening = false;
+    }
+    
+    // Announce rute yang dipilih dengan format yang jelas
+    // Format: "Rute X dengan Tujuan [destination], dan Anda dari [start]"
+    const announcement = 'Rute ' + routeId + ' dengan tujuan ' + route.end.name + 
+        ', dan Anda dari ' + route.start.name + '.';
+    
+    speakText(announcement, 'id-ID', true, function() {
+        // Set destination dan start location
+        // Note: start location digunakan untuk informasi saja, 
+        // karena user akan memulai dari lokasi GPS mereka saat ini
+        
+        // Set destination
+        updateDestination(route.end.lat, route.end.lng, route.end.name);
+        
+        // Set start marker jika belum ada (untuk visual reference)
+        // Tapi user akan memulai dari GPS location mereka sendiri
+        
+        // Restart microphone untuk mendengarkan "Navigasi" command
+        setTimeout(function() {
+            if (recognition && !isListening) {
+                try {
+                    recognition.start();
+                    isListening = true;
+                    recognition._waitingForNavigasi = true;
+                    console.log('🎤 Microphone restarted - listening for "Navigasi" command');
+                    
+                    // Auto-stop after 10 seconds if "Navigasi" not said
+                    setTimeout(function() {
+                        if (recognition && recognition._waitingForNavigasi && isListening) {
+                            recognition.stop();
+                            recognition._stopped = true;
+                            recognition._waitingForNavigasi = false;
+                            isListening = false;
+                            console.log('🔇 Microphone stopped - "Navigasi" window expired');
+                            updateVoiceStatus('✅ Rute ' + routeId + ' dipilih - Ucapkan "Halo" lalu "Navigasi" untuk memulai');
+                        }
+                    }, 10000);
+                } catch (error) {
+                    console.error('Failed to restart microphone:', error);
+                    recognition._stopped = true;
+                }
+            }
+        }, 500);
+    });
+    
+    updateVoiceStatus('✅ Rute ' + routeId + ' dipilih: ' + route.start.name + ' → ' + route.end.name);
+}
+
+// Handle command untuk membuat rute baru
+// Format: "Buat Rute X dari [lokasi start] ke [lokasi tujuan]"
+function handleCreateRouteCommand(routeId, startLocationName, endLocationName) {
+    console.log('🔨 Creating route:', routeId, 'from', startLocationName, 'to', endLocationName);
+    
+    // Geocode start location
+    geocodeLocationForRoute(startLocationName, function(startLocation) {
+        if (!startLocation) {
+            speakText('Lokasi awal tidak ditemukan: ' + startLocationName, 'id-ID', true);
+            updateVoiceStatus('❌ Lokasi awal tidak ditemukan: ' + startLocationName);
+            return;
+        }
+        
+        // Geocode end location
+        geocodeLocationForRoute(endLocationName, function(endLocation) {
+            if (!endLocation) {
+                speakText('Lokasi tujuan tidak ditemukan: ' + endLocationName, 'id-ID', true);
+                updateVoiceStatus('❌ Lokasi tujuan tidak ditemukan: ' + endLocationName);
+                return;
+            }
+            
+            // Set route
+            if (setRoute(routeId, startLocation, endLocation)) {
+                const route = getRouteById(routeId);
+                const announcement = 'Rute ' + routeId + ' berhasil dibuat. Dari ' + 
+                    startLocation.name + ' ke ' + endLocation.name + 
+                    '. Ucapkan "Rute ' + routeId + '" untuk menggunakan rute ini.';
+                
+                speakText(announcement, 'id-ID', true);
+                updateVoiceStatus('✅ Rute ' + routeId + ' dibuat: ' + startLocation.name + ' → ' + endLocation.name);
+            } else {
+                speakText('Gagal membuat Rute ' + routeId, 'id-ID', true);
+                updateVoiceStatus('❌ Gagal membuat Rute ' + routeId);
+            }
+        });
+    });
+}
+
+// Helper function untuk geocoding location untuk route creation
+// Mirip dengan geocodeLocation tapi dengan callback
+async function geocodeLocationForRoute(locationName, callback) {
+    try {
+        // Cek dulu di knownCities
+        const cityKey = locationName.toLowerCase().trim().replace(/[.,;:!?]/g, '');
+        if (knownCities[cityKey]) {
+            const city = knownCities[cityKey];
+            callback({
+                lat: city.lat,
+                lng: city.lng,
+                name: city.name
+            });
+            return;
+        }
+        
+        // Jika tidak ada, coba geocode dengan Nominatim
+        const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=json&limit=1&countrycodes=id&accept-language=id`;
+        
+        const response = await fetch(geocodeUrl);
+        const data = await response.json();
+        
+        if (data && data.length > 0) {
+            const result = data[0];
+            callback({
+                lat: parseFloat(result.lat),
+                lng: parseFloat(result.lon),
+                name: shortenAddress(result.display_name || result.name)
+            });
+        } else {
+            callback(null);
+        }
+    } catch (error) {
+        console.error('Geocoding error for route:', error);
+        callback(null);
+    }
+}
+
+// ========== ROUTE MANAGEMENT UI FUNCTIONS ==========
+
+// Toggle route management panel visibility
+function toggleRouteManagementPanel() {
+    const routePanel = document.getElementById('routeManagementPanel');
+    const toggleBtn = document.getElementById('routeManagementToggleBtn');
+    const closeBtn = document.getElementById('closeRoutePanelBtn');
+    
+    if (routePanel && toggleBtn) {
+        const isActive = routePanel.classList.contains('active');
+        
+        if (isActive) {
+            // Close panel
+            routePanel.classList.remove('active');
+            toggleBtn.textContent = '🗺️ Kelola Rute';
+            if (closeBtn) closeBtn.style.display = 'none';
+        } else {
+            // Open panel
+            routePanel.classList.add('active');
+            toggleBtn.textContent = '✖️ Tutup';
+            if (closeBtn && window.innerWidth <= 768) {
+                closeBtn.style.display = 'block';
+            }
+            // Refresh route list when opening
+            renderRouteList();
+        }
+    }
+}
+
+// Render route list in the UI
+function renderRouteList() {
+    const routeListContainer = document.getElementById('routeListContainer');
+    if (!routeListContainer) return;
+    
+    // Clear existing content
+    routeListContainer.innerHTML = '';
+    
+    // Render each route
+    savedRoutes.forEach(function(route) {
+        const routeItem = document.createElement('div');
+        routeItem.className = 'route-item' + (route.start && route.end ? '' : ' empty');
+        
+        const isEmpty = !route.start || !route.end;
+        
+        routeItem.innerHTML = `
+            <div class="route-item-header">
+                <span class="route-item-name">${route.name}</span>
+                <div class="route-item-actions">
+                    <button class="route-item-btn" onclick="editRoute(${route.id})" title="Edit rute">✏️ Edit</button>
+                    ${!isEmpty ? `<button class="route-item-btn delete" onclick="deleteRoute(${route.id})" title="Hapus rute">🗑️ Hapus</button>` : ''}
+                </div>
+            </div>
+            <div class="route-item-content ${isEmpty ? 'empty-content' : ''}">
+                ${isEmpty 
+                    ? '<em>Rute kosong - Klik Edit untuk mengisi</em>' 
+                    : `<div class="route-item-path"><strong>Dari:</strong> ${route.start.name}<br><strong>Ke:</strong> ${route.end.name}</div>`
+                }
+            </div>
+        `;
+        
+        routeListContainer.appendChild(routeItem);
+    });
+}
+
+// Edit route - load form with route data
+function editRoute(routeId) {
+    const route = getRouteById(routeId);
+    if (!route) {
+        console.error('Route not found:', routeId);
+        return;
+    }
+    
+    // Show form container
+    const formContainer = document.getElementById('routeFormContainer');
+    const formTitle = document.getElementById('routeFormTitle');
+    const formId = document.getElementById('routeFormId');
+    const formStart = document.getElementById('routeStart');
+    const formEnd = document.getElementById('routeEnd');
+    const formStatus = document.getElementById('routeFormStatus');
+    
+    if (!formContainer || !formTitle || !formId || !formStart || !formEnd) {
+        console.error('Route form elements not found');
+        return;
+    }
+    
+    // Set form values
+    formId.value = routeId;
+    formTitle.textContent = `Edit ${route.name}`;
+    formStart.value = route.start ? route.start.name : '';
+    formEnd.value = route.end ? route.end.name : '';
+    formStatus.innerHTML = '';
+    
+    // Show form and scroll to it
+    formContainer.style.display = 'block';
+    formContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    
+    // Focus on first input
+    setTimeout(function() {
+        formStart.focus();
+    }, 100);
+}
+
+// Cancel route form
+function cancelRouteForm() {
+    const formContainer = document.getElementById('routeFormContainer');
+    if (formContainer) {
+        formContainer.style.display = 'none';
+        
+        // Reset form
+        const form = document.getElementById('routeForm');
+        if (form) form.reset();
+        
+        const formStatus = document.getElementById('routeFormStatus');
+        if (formStatus) formStatus.innerHTML = '';
+    }
+}
+
+// Save route from form
+async function saveRouteFromForm(event) {
+    event.preventDefault();
+    
+    const formId = document.getElementById('routeFormId');
+    const formStart = document.getElementById('routeStart');
+    const formEnd = document.getElementById('routeEnd');
+    const formStatus = document.getElementById('routeFormStatus');
+    
+    if (!formId || !formStart || !formEnd || !formStatus) {
+        console.error('Form elements not found');
+        return;
+    }
+    
+    const routeId = parseInt(formId.value);
+    const startName = formStart.value.trim();
+    const endName = formEnd.value.trim();
+    
+    if (!startName || !endName) {
+        formStatus.innerHTML = 'Lokasi awal dan tujuan harus diisi!';
+        formStatus.className = 'route-form-status error';
+        return;
+    }
+    
+    // Show loading status
+    formStatus.innerHTML = '⏳ Mencari lokasi...';
+    formStatus.className = 'route-form-status loading';
+    
+    // Disable form
+    const form = document.getElementById('routeForm');
+    if (form) {
+        const inputs = form.querySelectorAll('input, button');
+        inputs.forEach(function(input) {
+            input.disabled = true;
+        });
+    }
+    
+    try {
+        // Geocode start location
+        const startLocation = await geocodeLocationPromise(startName);
+        if (!startLocation) {
+            throw new Error('Lokasi awal tidak ditemukan: ' + startName);
+        }
+        
+        // Geocode end location
+        const endLocation = await geocodeLocationPromise(endName);
+        if (!endLocation) {
+            throw new Error('Lokasi tujuan tidak ditemukan: ' + endName);
+        }
+        
+        // Save route
+        if (setRoute(routeId, startLocation, endLocation)) {
+            // Success
+            formStatus.innerHTML = '✅ Rute berhasil disimpan!';
+            formStatus.className = 'route-form-status success';
+            
+            // Refresh route list
+            renderRouteList();
+            
+            // Hide form after 1.5 seconds
+            setTimeout(function() {
+                cancelRouteForm();
+                
+                // Show success message in voice
+                const route = getRouteById(routeId);
+                if (route) {
+                    speakText(route.name + ' berhasil disimpan. Dari ' + startLocation.name + ' ke ' + endLocation.name, 'id-ID', true);
+                }
+            }, 1500);
+        } else {
+            throw new Error('Gagal menyimpan rute');
+        }
+    } catch (error) {
+        console.error('Error saving route:', error);
+        formStatus.innerHTML = '❌ ' + error.message;
+        formStatus.className = 'route-form-status error';
+    } finally {
+        // Re-enable form
+        if (form) {
+            const inputs = form.querySelectorAll('input, button');
+            inputs.forEach(function(input) {
+                input.disabled = false;
+            });
+        }
+    }
+}
+
+// Delete route
+function deleteRoute(routeId) {
+    const route = getRouteById(routeId);
+    if (!route) {
+        console.error('Route not found:', routeId);
+        return;
+    }
+    
+    // Confirm deletion
+    if (!confirm('Apakah Anda yakin ingin menghapus ' + route.name + '?\n\n' + 
+                'Dari: ' + route.start.name + '\n' + 
+                'Ke: ' + route.end.name)) {
+        return;
+    }
+    
+    // Clear route data
+    route.start = null;
+    route.end = null;
+    saveRoutesToLocalStorage();
+    
+    // Refresh route list
+    renderRouteList();
+    
+    // Announce deletion
+    speakText(route.name + ' telah dihapus', 'id-ID', true);
+    console.log('✅ Route', routeId, 'deleted');
+}
+
+// Helper function: Geocode location and return Promise
+function geocodeLocationPromise(locationName) {
+    return new Promise(function(resolve, reject) {
+        // Check known cities first
+        const cityKey = locationName.toLowerCase().trim().replace(/[.,;:!?]/g, '');
+        if (knownCities[cityKey]) {
+            const city = knownCities[cityKey];
+            resolve({
+                lat: city.lat,
+                lng: city.lng,
+                name: city.name
+            });
+            return;
+        }
+        
+        // Try geocoding with Nominatim
+        const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=json&limit=1&countrycodes=id&accept-language=id`;
+        
+        fetch(geocodeUrl)
+            .then(function(response) {
+                return response.json();
+            })
+            .then(function(data) {
+                if (data && data.length > 0) {
+                    const result = data[0];
+                    resolve({
+                        lat: parseFloat(result.lat),
+                        lng: parseFloat(result.lon),
+                        name: shortenAddress(result.display_name || result.name)
+                    });
+                } else {
+                    reject(new Error('Lokasi tidak ditemukan: ' + locationName));
+                }
+            })
+            .catch(function(error) {
+                console.error('Geocoding error:', error);
+                reject(new Error('Error saat mencari lokasi: ' + error.message));
+            });
+    });
+}
+
+// Initialize routes saat page load
+initializeSavedRoutes();
+
 // Handle voice commands
 function handleVoiceCommand(transcript) {
     // Convert transcript to lowercase and clean up for easier matching
@@ -1558,11 +2077,11 @@ function handleVoiceCommand(transcript) {
                     
                     // Give different messages based on navigation state
                     if (isNavigating) {
-                        updateVoiceStatus('🎤 Mikrofon aktif kembali. Sebutkan tujuan baru.');
-                        speakText('Mikrofon aktif kembali. Sebutkan tujuan baru jika ingin mengubah rute', 'id-ID', true);
+                        updateVoiceStatus('🎤 Mikrofon aktif kembali. Sebutkan tujuan baru atau ucapkan nama rute.');
+                        speakText('Mikrofon aktif kembali. Sebutkan tujuan baru atau ucapkan nama rute untuk mengubah rute', 'id-ID', true);
                     } else {
-                        updateVoiceStatus('🎤 Mikrofon aktif. Sebutkan tujuan Anda.');
-                        speakText('Mikrofon aktif. Sebutkan nama kota atau lokasi tujuan Anda', 'id-ID', true);
+                        updateVoiceStatus('🎤 Mikrofon aktif. Ucapkan nama rute atau sebutkan tujuan Anda.');
+                        speakText('Mikrofon aktif. Ucapkan nama rute seperti "Rute Satu" atau sebutkan nama kota atau lokasi tujuan Anda', 'id-ID', true);
                     }
                     console.log('🎤 Microphone activated via "Halo" command');
                 } catch (error) {
@@ -1581,6 +2100,66 @@ function handleVoiceCommand(transcript) {
             speakText('Mikrofon sudah aktif', 'id-ID', true);
         }
         return;
+    }
+    
+    // Check for route commands - "Rute X" untuk memilih rute yang sudah disimpan
+    // Pattern: "rute 1", "rute satu", "rute 2", "rute dua", dll.
+    // Support both numbers (1-6) and Indonesian words (satu, dua, tiga, empat, lima, enam)
+    const routeNumberMap = {
+        'satu': 1, '1': 1,
+        'dua': 2, '2': 2,
+        'tiga': 3, '3': 3,
+        'empat': 4, '4': 4,
+        'lima': 5, '5': 5,
+        'enam': 6, '6': 6
+    };
+    
+    // Try to match "rute [number or word]"
+    const routeMatch = cleanCommand.match(/^rute\s+(satu|dua|tiga|empat|lima|enam|\d+)$/);
+    if (routeMatch) {
+        const routeWord = routeMatch[1].toLowerCase();
+        const routeId = routeNumberMap[routeWord];
+        
+        if (routeId) {
+            console.log('✅ Route command detected: Rute', routeId);
+            handleRouteCommand(routeId);
+            return;
+        }
+    }
+    
+    // Also try simple number pattern as fallback
+    const routeMatchNumber = cleanCommand.match(/^rute\s*(\d+)$/);
+    if (routeMatchNumber) {
+        const routeId = parseInt(routeMatchNumber[1]);
+        console.log('✅ Route command detected (number): Rute', routeId);
+        if (routeId >= 1 && routeId <= 6) {
+            handleRouteCommand(routeId);
+            return;
+        } else {
+            speakText('Rute hanya tersedia dari Rute Satu sampai Rute Enam', 'id-ID', true);
+            updateVoiceStatus('❌ Rute hanya 1-6');
+            return;
+        }
+    }
+    
+    // Check for create route commands - "Buat Rute X dari [start] ke [end]"
+    // Pattern: "buat rute 2 dari jakarta ke bandung" or "buat rute dua dari jakarta ke bandung"
+    const createRouteMatch = cleanCommand.match(/^buat\s+rute\s+(satu|dua|tiga|empat|lima|enam|\d+)\s+dari\s+(.+?)\s+ke\s+(.+)$/);
+    if (createRouteMatch) {
+        const routeWord = createRouteMatch[1].toLowerCase();
+        const routeId = routeNumberMap[routeWord] || parseInt(routeWord);
+        const startLocation = createRouteMatch[2].trim();
+        const endLocation = createRouteMatch[3].trim();
+        console.log('✅ Create route command detected: Rute', routeId, 'from', startLocation, 'to', endLocation);
+        
+        if (routeId >= 1 && routeId <= 6) {
+            handleCreateRouteCommand(routeId, startLocation, endLocation);
+            return;
+        } else {
+            speakText('Rute hanya tersedia dari Rute Satu sampai Rute Enam', 'id-ID', true);
+            updateVoiceStatus('❌ Rute hanya 1-6');
+            return;
+        }
     }
     
     // Check for navigation commands - "Navigasi" will STOP microphone
@@ -2235,10 +2814,12 @@ function announceWelcomeGuide() {
     }
     
     const welcomeText = 'SENAVISION siap. Berikut panduan cara menggunakan aplikasi. ' +
-        'Pertama, sebutkan nama kota atau lokasi tujuan Anda. Misalnya Jakarta atau Bandung. ' +
-        'Kedua, setelah tujuan ditetapkan, ucapkan kata "Navigasi" untuk memulai navigasi. ' +
-        'Ketiga, ikuti panduan suara yang akan membimbing Anda menuju tujuan. ' +
-        'Aplikasi siap digunakan. Silakan sebutkan tujuan Anda.';
+        'Aplikasi memiliki sistem rute yang bisa Anda kelola sendiri. Ada enam slot rute yang tersedia, yaitu Rute Satu sampai Rute Enam. ' +
+        'Semua rute bisa Anda isi melalui tombol "Kelola Rute" di kanan atas, atau melalui suara dengan mengatakan "Buat Rute [nomor] dari [lokasi awal] ke [lokasi tujuan]". ' +
+        'Untuk menggunakan rute yang sudah Anda buat, ucapkan nama rutenya. Misalnya ucapkan "Rute Satu". ' +
+        'Setelah rute dipilih, ucapkan kata "Navigasi" untuk memulai perjalanan. ' +
+        'Aplikasi akan memberikan panduan suara yang akan membimbing Anda menuju tujuan. ' +
+        'Aplikasi siap digunakan. Silakan buat rute terlebih dahulu melalui tombol "Kelola Rute" atau sebutkan tujuan Anda secara langsung.';
     
     console.log('📢 Starting welcome guide announcement');
     updateVoiceStatus('📢 Memutar panduan penggunaan...');

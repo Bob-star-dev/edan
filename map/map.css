@@ -212,7 +212,7 @@
 .mobile-toggle-btn {
     display: none;
     position: fixed;
-    top: 16px;
+    top: 124px; /* Positioned below route management button with spacing */
     right: 16px;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
@@ -613,7 +613,7 @@
     display: block;
     position: fixed;
     top: 16px;
-    right: 16px; /* Position at top-right, will be adjusted for desktop in media query */
+    right: 16px; /* Position at top-right */
     background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
     color: white;
     border: none;
@@ -858,12 +858,26 @@
     .debug-toggle-btn {
         right: 16px;
         top: 16px;
-        padding: 12px 20px;
+        padding: 12px 18px;
+        font-size: 14px;
+    }
+    
+    .route-management-toggle-btn {
+        top: 70px; /* 54px spacing from debug button */
+        right: 16px;
+        padding: 12px 18px;
         font-size: 14px;
     }
     
     .mobile-toggle-btn {
         display: none; /* Hide on desktop as status panel is always visible */
+    }
+    
+    /* Adjust route management panel position on desktop */
+    .route-management-panel {
+        top: 180px; /* Below all buttons */
+        right: 16px;
+        max-height: calc(100vh - 200px);
     }
     
     /* When status panel exists, position debug panel to the right */
@@ -879,5 +893,351 @@
     /* Better spacing for voice panel on desktop */
     .voice-panel {
         max-width: 340px;
+    }
+}
+
+/* ========== ROUTE MANAGEMENT PANEL ========== */
+.route-management-panel {
+    position: fixed;
+    top: 180px; /* Start below all toggle buttons */
+    right: 16px;
+    width: 380px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 200px); /* Account for buttons above and margin */
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 16px;
+    padding: 20px;
+    z-index: 998; /* Below toggle buttons but above map */
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 
+                0 4px 16px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: none;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.route-management-panel.active {
+    display: flex;
+}
+
+.route-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid rgba(0, 0, 0, 0.08);
+}
+
+.route-panel-header h3 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: #1a1a1a;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.route-panel-header .icon {
+    font-size: 24px;
+}
+
+.route-toggle-btn {
+    background: transparent;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: background 0.2s;
+    color: #666;
+}
+
+.route-toggle-btn:hover {
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.route-panel-description {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.route-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.route-item {
+    background: rgba(255, 255, 255, 0.8);
+    border: 2px solid rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+    padding: 14px;
+    transition: all 0.2s;
+    cursor: pointer;
+}
+
+.route-item:hover {
+    border-color: #3b49df;
+    box-shadow: 0 4px 12px rgba(59, 73, 223, 0.15);
+    transform: translateY(-2px);
+}
+
+.route-item.empty {
+    background: rgba(0, 0, 0, 0.03);
+    border-style: dashed;
+    opacity: 0.7;
+}
+
+.route-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.route-item-name {
+    font-weight: 600;
+    font-size: 16px;
+    color: #1a1a1a;
+}
+
+.route-item-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.route-item-btn {
+    background: rgba(59, 73, 223, 0.1);
+    border: 1px solid rgba(59, 73, 223, 0.2);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #3b49df;
+}
+
+.route-item-btn:hover {
+    background: rgba(59, 73, 223, 0.2);
+}
+
+.route-item-btn.delete {
+    background: rgba(220, 53, 69, 0.1);
+    border-color: rgba(220, 53, 69, 0.2);
+    color: #dc3545;
+}
+
+.route-item-btn.delete:hover {
+    background: rgba(220, 53, 69, 0.2);
+}
+
+.route-item-content {
+    font-size: 13px;
+    color: #666;
+    line-height: 1.6;
+}
+
+.route-item-content.empty-content {
+    font-style: italic;
+    color: #999;
+}
+
+.route-item-path {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #888;
+}
+
+.route-item-path strong {
+    color: #3b49df;
+}
+
+/* Route Form Styles */
+.route-form-container {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 2px solid rgba(0, 0, 0, 0.08);
+}
+
+.route-form-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: #1a1a1a;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: #333;
+}
+
+.route-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 2px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    font-size: 14px;
+    transition: all 0.2s;
+    background: white;
+}
+
+.route-input:focus {
+    outline: none;
+    border-color: #3b49df;
+    box-shadow: 0 0 0 3px rgba(59, 73, 223, 0.1);
+}
+
+.form-hint {
+    display: block;
+    font-size: 11px;
+    color: #999;
+    margin-top: 4px;
+}
+
+.form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.btn-save-route,
+.btn-cancel-route {
+    flex: 1;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-save-route {
+    background: #3b49df;
+    color: white;
+}
+
+.btn-save-route:hover {
+    background: #2d39b3;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 73, 223, 0.3);
+}
+
+.btn-cancel-route {
+    background: rgba(0, 0, 0, 0.05);
+    color: #666;
+}
+
+.btn-cancel-route:hover {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.route-form-status {
+    margin-top: 12px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    text-align: center;
+}
+
+.route-form-status.success {
+    background: rgba(40, 167, 69, 0.1);
+    color: #28a745;
+    border: 1px solid rgba(40, 167, 69, 0.2);
+}
+
+.route-form-status.error {
+    background: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+    border: 1px solid rgba(220, 53, 69, 0.2);
+}
+
+.route-form-status.loading {
+    background: rgba(59, 73, 223, 0.1);
+    color: #3b49df;
+    border: 1px solid rgba(59, 73, 223, 0.2);
+}
+
+/* Route Management Toggle Button */
+.route-management-toggle-btn {
+    position: fixed;
+    top: 70px; /* Positioned below debug button with spacing */
+    right: 16px;
+    background: linear-gradient(135deg, #3b49df 0%, #5a67d8 100%);
+    color: white;
+    border: none;
+    border-radius: 50px;
+    padding: 12px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    z-index: 1000;
+    box-shadow: 0 8px 24px rgba(59, 73, 223, 0.4),
+                0 4px 12px rgba(90, 103, 216, 0.3);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.route-management-toggle-btn:hover {
+    background: linear-gradient(135deg, #2d39b3 0%, #4348ca 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(59, 73, 223, 0.5),
+                0 6px 16px rgba(67, 72, 202, 0.4);
+}
+
+/* Mobile styles for route management panel */
+@media screen and (max-width: 768px) {
+    .route-management-panel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        max-width: 100%;
+        max-height: 100%;
+        border-radius: 0;
+        top: 0; /* Full screen on mobile */
+    }
+    
+    .route-management-toggle-btn {
+        top: 64px; /* Below debug button on mobile */
+        right: 16px;
+        padding: 10px 16px;
+        font-size: 13px;
+    }
+    
+    .mobile-toggle-btn {
+        top: 118px; /* Below route management button on mobile */
+        right: 16px;
+    }
+    
+    .debug-toggle-btn {
+        top: 16px;
+        right: 16px;
+        padding: 10px 16px;
+        font-size: 13px;
+    }
+    
+    .close-route-panel-btn {
+        display: block !important;
     }
 }

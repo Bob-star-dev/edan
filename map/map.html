@@ -91,6 +91,60 @@
   </div>
 </div>
 
+<!-- Route Management Panel -->
+<div id="routeManagementPanel" class="route-management-panel">
+  <!-- Close button for mobile -->
+  <button id="closeRoutePanelBtn" class="close-panel-btn" onclick="toggleRouteManagementPanel()" style="display: none;" aria-label="Tutup panel rute">✖️</button>
+  
+  <div class="route-panel-header">
+    <h3><span class="icon">🗺️</span> Kelola Rute</h3>
+    <button id="routePanelToggleBtn" class="route-toggle-btn" onclick="toggleRouteManagementPanel()" title="Tutup/Buka panel">✖️</button>
+  </div>
+  
+  <div class="route-panel-content">
+    <p class="route-panel-description">
+      Atur 6 slot rute yang bisa digunakan untuk navigasi. Semua rute tersimpan di device Anda.
+    </p>
+    
+    <!-- Route List Container -->
+    <div id="routeListContainer" class="route-list-container">
+      <!-- Route items will be dynamically generated here -->
+    </div>
+    
+    <!-- Add Route Form (shown when editing) -->
+    <div id="routeFormContainer" class="route-form-container" style="display: none;">
+      <h4 id="routeFormTitle" class="route-form-title">Edit Rute</h4>
+      <form id="routeForm" onsubmit="saveRouteFromForm(event)">
+        <input type="hidden" id="routeFormId" />
+        
+        <div class="form-group">
+          <label for="routeStart">📍 Lokasi Awal:</label>
+          <input type="text" id="routeStart" class="route-input" placeholder="Contoh: SMA Negeri 1 Surakarta" required />
+          <small class="form-hint">Masukkan nama lokasi awal</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="routeEnd">🎯 Lokasi Tujuan:</label>
+          <input type="text" id="routeEnd" class="route-input" placeholder="Contoh: Universitas Sebelas Maret" required />
+          <small class="form-hint">Masukkan nama lokasi tujuan</small>
+        </div>
+        
+        <div class="form-actions">
+          <button type="submit" class="btn-save-route">💾 Simpan Rute</button>
+          <button type="button" class="btn-cancel-route" onclick="cancelRouteForm()">❌ Batal</button>
+        </div>
+      </form>
+      
+      <div id="routeFormStatus" class="route-form-status"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Route Management Toggle Button -->
+<button id="routeManagementToggleBtn" class="route-management-toggle-btn" onclick="toggleRouteManagementPanel()" title="Kelola Rute">
+  🗺️ Kelola Rute
+</button>
+
 <!-- Voice Control Panel -->
 <div class="voice-panel">
   <h4>🎤 Navigasi Suara</h4>
