@@ -339,6 +339,8 @@
         top: 75px;
         position: fixed;
         animation: slideInMobile 0.3s ease-out;
+        max-height: calc(100vh - 160px); /* Avoid overlapping bottom content */
+        overflow: auto; /* Scroll within panel on small screens */
     }
     
     @keyframes slideInMobile {
@@ -374,15 +376,40 @@
         display: flex !important;
     }
     
-    /* Adjust voice panel for mobile */
+    /* Voice panel: compact and tidy on phones */
     .voice-panel {
         max-width: calc(100% - 32px);
         left: 16px;
         right: 16px;
         bottom: 16px;
         position: fixed;
-        padding: 18px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.10), 0 3px 10px rgba(0,0,0,0.06);
+        max-height: 28vh; /* keep small footprint */
+        overflow: auto; /* scroll inside if content grows */
     }
+
+    .voice-panel h4 {
+        font-size: 16px;
+        margin-bottom: 6px;
+    }
+
+    .voice-panel p {
+        font-size: 12px;
+        margin: 6px 0;
+        line-height: 1.5;
+    }
+
+    .voice-status-text {
+        font-size: 12px;
+        min-height: 0;
+        padding: 8px 10px;
+        margin-top: 6px;
+    }
+
+    /* Hide examples on small screens to reduce clutter */
+    .voice-examples { display: none; }
     
     /* Debug toggle button styling on mobile */
     .debug-toggle-btn {
@@ -1219,14 +1246,14 @@
     }
     
     .route-management-toggle-btn {
-        top: 64px; /* Below debug button on mobile */
+        top: 76px; /* Below debug button with more spacing on mobile */
         right: 16px;
         padding: 10px 16px;
         font-size: 13px;
     }
     
     .mobile-toggle-btn {
-        top: 118px; /* Below route management button on mobile */
+        top: 136px; /* Below route management button with more spacing on mobile */
         right: 16px;
     }
     
