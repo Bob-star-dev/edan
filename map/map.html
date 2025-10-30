@@ -21,6 +21,14 @@
     </style>
 </head>
 <body>
+<script src="firebase-app.js"></script>
+<script>
+  // Require authentication before loading the heavy map script
+  if (window.requireAuth) {
+    window.requireAuth();
+  }
+  // Optionally, we could delay initializing map until auth is ready, but index.js is safe regardless
+</script>
 <div id="map"></div>
 
 <!-- Permission Request Popup - Modern Design -->

@@ -755,6 +755,23 @@ function forceUpdateRoute(userLatLng) {
         isNavigating = false; // Not navigating yet - wait for user command
         shouldAnnounceRoute = false; // Don't auto-announce route yet
         
+        // Save route summary to Firestore (if available)
+        if (window.saveUserRouteUpdate) {
+            try {
+                const sum = e.routes[0].summary;
+                window.saveUserRouteUpdate({
+                    type: 'route_calculated',
+                    summary: {
+                        totalDistanceMeters: sum.totalDistance,
+                        totalTimeSeconds: sum.totalTime
+                    },
+                    destination: latLngB ? { lat: latLngB[0], lng: latLngB[1] } : null
+                });
+            } catch (er) {
+                console.warn('Failed to save route summary:', er);
+            }
+        }
+        
         const routeHash = JSON.stringify(e.routes[0].coordinates);
         
         // Don't auto-announce route - wait for user to say "Navigasi"
@@ -988,6 +1005,23 @@ function updateRoute(userLatLng) {
                             announcedInstructions = []; // Reset announced instructions
                             isNavigating = false; // Not navigating yet - wait for user command
                             shouldAnnounceRoute = false; // Don't auto-announce route yet
+                            
+                            // Save route summary to Firestore (if available)
+                            if (window.saveUserRouteUpdate) {
+                                try {
+                                    const sum2 = e.routes[0].summary;
+                                    window.saveUserRouteUpdate({
+                                        type: 'route_calculated',
+                                        summary: {
+                                            totalDistanceMeters: sum2.totalDistance,
+                                            totalTimeSeconds: sum2.totalTime
+                                        },
+                                        destination: latLngB ? { lat: latLngB[0], lng: latLngB[1] } : null
+                                    });
+                                } catch (er2) {
+                                    console.warn('Failed to save route summary:', er2);
+                                }
+                            }
                             
                             const routeHash = JSON.stringify(e.routes[0].coordinates);
                             
@@ -1532,10 +1566,33 @@ const knownCities = {
 let savedRoutes = [];
 
 // Initialize saved routes pada saat page load
-function initializeSavedRoutes() {
-    // Coba load dari localStorage
-    const savedRoutesData = localStorage.getItem('senavision_saved_routes');
-    
+async function initializeSavedRoutes() {
+    // 1) Coba load dari Firestore jika user sudah login
+    let loadedFromCloud = false;
+    if (window.loadUserSavedRoutes && window.onAuthReady) {
+        await new Promise(function(resolve) {
+            window.onAuthReady(async function(user) {
+                try {
+                    if (user) {
+                        const cloudRoutes = await window.loadUserSavedRoutes();
+                        if (Array.isArray(cloudRoutes) && cloudRoutes.length > 0) {
+                            savedRoutes = cloudRoutes;
+                            loadedFromCloud = true;
+                            console.log('✅ Loaded saved routes from Firestore:', savedRoutes.length, 'routes');
+                        }
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Failed to load saved routes from Firestore:', e);
+                } finally {
+                    resolve();
+                }
+            });
+        });
+    }
+
+    // 2) Jika belum ada, coba load dari localStorage
+    if (!loadedFromCloud) {
+        const savedRoutesData = localStorage.getItem('senavision_saved_routes');
     if (savedRoutesData) {
         try {
             savedRoutes = JSON.parse(savedRoutesData);
@@ -1543,6 +1600,7 @@ function initializeSavedRoutes() {
         } catch (error) {
             console.error('❌ Error loading saved routes:', error);
             savedRoutes = [];
+            }
         }
     }
     
@@ -1558,8 +1616,9 @@ function initializeSavedRoutes() {
             { id: 6, name: 'Rute 6', start: null, end: null }
         ];
         
-        // Simpan ke localStorage
+        // Simpan ke localStorage dan Firestore
         saveRoutesToLocalStorage();
+        if (typeof saveRoutesToCloud === 'function') saveRoutesToCloud();
         console.log('✅ Initialized empty routes (all 6 routes are empty and can be filled by user)');
     } else {
         // Pastikan selalu ada 6 rute (isi yang kosong jika kurang)
@@ -1572,6 +1631,7 @@ function initializeSavedRoutes() {
             });
         }
         saveRoutesToLocalStorage();
+        if (typeof saveRoutesToCloud === 'function') saveRoutesToCloud();
     }
     
     // Render route list setelah inisialisasi
@@ -1588,6 +1648,18 @@ function saveRoutesToLocalStorage() {
     }
 }
 
+// Simpan rute ke Firestore (jika tersedia)
+function saveRoutesToCloud() {
+    if (window.saveUserSavedRoutes) {
+        try {
+            window.saveUserSavedRoutes(savedRoutes);
+            console.log('✅ Saved routes to Firestore');
+        } catch (e) {
+            console.warn('⚠️ Failed to save routes to Firestore:', e);
+        }
+    }
+}
+
 // Ambil rute berdasarkan ID
 function getRouteById(routeId) {
     return savedRoutes.find(r => r.id === routeId);
@@ -1600,6 +1672,7 @@ function setRoute(routeId, startLocation, endLocation) {
         route.start = startLocation;
         route.end = endLocation;
         saveRoutesToLocalStorage();
+        saveRoutesToCloud();
         console.log('✅ Route', routeId, 'updated:', startLocation.name, '→', endLocation.name);
         
         // Update UI if panel is open
@@ -1982,6 +2055,7 @@ function deleteRoute(routeId) {
     route.start = null;
     route.end = null;
     saveRoutesToLocalStorage();
+    saveRoutesToCloud();
     
     // Refresh route list
     renderRouteList();
@@ -2680,6 +2754,18 @@ function updateDestination(lat, lng, name) {
     latLngB = [lat, lng];
     destinationMarker = L.marker(latLngB).addTo(map)
         .bindPopup(name || 'Destination').openPopup();
+    
+    // Save destination change to Firestore (if available)
+    if (window.saveUserRouteUpdate) {
+        try {
+            window.saveUserRouteUpdate({
+                type: 'destination_set',
+                destination: { lat: lat, lng: lng, name: name || null }
+            });
+        } catch (e) {
+            console.warn('Failed to save destination to Firestore:', e);
+        }
+    }
     
     // Note: Destination announcement is handled in geocodeLocation/knownCities
     // No announcement here to avoid duplicate
