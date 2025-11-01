@@ -4,12 +4,32 @@
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      "mode-2-react/**"
     ],
     "rewrites": [
       {
+        "source": "mode-detector/**",
+        "destination": "/mode-detector/index.html"
+      },
+      {
+        "source": "map/**",
+        "destination": "/map/map.html"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Access-Control-Allow-Origin",
+            "value": "*"
+          }
+        ]
       }
     ]
   }

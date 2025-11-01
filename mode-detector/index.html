@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Object Detection - Native JS</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🤖 Real-Time Object Detection</h1>
+      <p class="subtitle">YOLO Model Inference in Browser</p>
+    </header>
+
+    <!-- Camera Container -->
+    <div class="camera-section">
+      <div id="camera-container" class="camera-container">
+        <!-- Loading Indicator -->
+        <div id="loading-indicator" class="loading">
+          <div class="spinner"></div>
+          <p id="loading-text">Initializing camera...</p>
+        </div>
+
+        <!-- Error Message -->
+        <div id="error-message" class="error-message" style="display: none;"></div>
+
+        <!-- Video Element (Webcam) -->
+        <video id="video-element" autoplay playsinline muted style="display: none;"></video>
+
+        <!-- Image Element (ESP32-CAM) -->
+        <img id="esp32-img" crossorigin="anonymous" style="display: none;">
+
+        <!-- Canvas Overlay for Detection Results -->
+        <canvas id="canvas-overlay"></canvas>
+      </div>
+    </div>
+
+    <!-- Controls Panel -->
+    <div class="controls-panel">
+      <!-- Main Controls -->
+      <div class="control-group">
+        <h3>Controls</h3>
+        <div class="button-grid">
+          <button id="capture-btn" class="btn btn-primary">
+            <span class="btn-icon">📸</span>
+            <span>Capture</span>
+          </button>
+          <button id="live-detection-btn" class="btn btn-primary">
+            <span class="btn-icon">▶️</span>
+            <span>Live Detection</span>
+          </button>
+          <button id="switch-camera-btn" class="btn btn-secondary" disabled>
+            <span class="btn-icon">🔄</span>
+            <span>Switch</span>
+          </button>
+          <button id="reset-btn" class="btn btn-secondary">
+            <span class="btn-icon">🔄</span>
+            <span>Reset</span>
+          </button>
+          <button id="model-btn" class="btn btn-secondary">
+            <span class="btn-icon">🤖</span>
+            <span>Model</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Camera Source Selection -->
+      <div class="control-group">
+        <h3>Camera Source</h3>
+        <div class="button-group">
+          <button id="webcam-btn" class="btn btn-toggle active">
+            📹 Webcam
+          </button>
+          <button id="esp32-btn" class="btn btn-toggle">
+            📡 ESP32-CAM
+          </button>
+        </div>
+        <div id="esp32-info" style="display: none; margin-top: 10px;">
+          <p class="info-text">IP: <span id="esp32-ip">192.168.1.19</span></p>
+          <div class="button-group" style="margin-top: 8px;">
+            <button id="esp32-stream-btn" class="btn btn-toggle active" style="font-size: 11px; padding: 6px 12px;">
+              Stream
+            </button>
+            <button id="esp32-capture-btn" class="btn btn-toggle" style="font-size: 11px; padding: 6px 12px;">
+              Capture
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Model Info -->
+      <div class="control-group">
+        <h3>Model Information</h3>
+        <div class="info-box">
+          <p class="info-label">Model:</p>
+          <p id="model-name" class="info-value">-</p>
+        </div>
+        <div class="info-box">
+          <p class="info-label">Resolution:</p>
+          <p id="model-resolution" class="info-value">-</p>
+        </div>
+      </div>
+
+      <!-- Performance Stats -->
+      <div class="control-group">
+        <h3>Performance</h3>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <p class="stat-label">Inference</p>
+            <p class="stat-value" id="inference-time">0</p>
+            <p class="stat-unit">ms</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-label">Total</p>
+            <p class="stat-value" id="total-time">0</p>
+            <p class="stat-unit">ms</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-label">FPS</p>
+            <p class="stat-value" id="fps">0</p>
+            <p class="stat-unit">fps</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-label">Model FPS</p>
+            <p class="stat-value" id="model-fps">0</p>
+            <p class="stat-unit">fps</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-label">Efficiency</p>
+            <p class="stat-value" id="efficiency">0</p>
+            <p class="stat-unit">%</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-label">Overhead</p>
+            <p class="stat-value" id="overhead">0</p>
+            <p class="stat-unit">ms</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- External Libraries -->
+  <!-- Configure ONNX Runtime BEFORE loading -->
+  <script>
+    // Configure ONNX Runtime environment BEFORE the library loads
+    // This ensures settings are applied before any auto-detection happens
+    window.ONNXRUNTIME_ENV_CONFIG = {
+      wasm: {
+        simd: false,
+        numThreads: 1,
+        proxy: false,
+        // Don't set wasmPaths - let it auto-detect or use CDN
+      }
+    };
+  </script>
+  <!-- ONNX Runtime Web -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  <!-- Apply configuration immediately after ONNX Runtime loads -->
+  <script>
+    // Apply configuration as soon as ONNX Runtime is available
+    if (typeof ort !== 'undefined') {
+      ort.env.wasm.simd = false;
+      ort.env.wasm.numThreads = 1;
+      ort.env.wasm.proxy = false;
+      if (typeof ort.env.wasm.threaded !== 'undefined') {
+        ort.env.wasm.threaded = false;
+      }
+      console.log('🔧 ONNX Runtime configured immediately after load:', {
+        simd: ort.env.wasm.simd,
+        numThreads: ort.env.wasm.numThreads,
+        proxy: ort.env.wasm.proxy
+      });
+    }
+  </script>
+  
+  <!-- NDArray for tensor operations -->
+  <script src="https://cdn.jsdelivr.net/npm/ndarray@1/dist/ndarray.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ndarray-ops@1/dist/ndarray-ops.js"></script>
+
+  <!-- Application Scripts -->
+  <script src="js/yoloClasses.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/distance.js"></script>
+  <script src="js/preprocessing.js"></script>
+  <script src="js/postprocessing.js"></script>
+  <script src="js/model.js"></script>
+  <script src="js/camera.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
+

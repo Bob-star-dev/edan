@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Object Detection - Vanilla JS Example</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    
+    .camera-container {
+      position: relative;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 20px;
+      padding: 20px;
+      min-height: 400px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    #video-element,
+    #esp32-img {
+      width: 100%;
+      max-width: 640px;
+      height: auto;
+      border-radius: 15px;
+      display: none;
+    }
+    
+    #canvas-overlay {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      pointer-events: none;
+      border-radius: 15px;
+    }
+    
+    .loading {
+      color: #fff;
+      font-size: 18px;
+      text-align: center;
+      display: none;
+    }
+    
+    .controls {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 15px;
+      padding: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+    
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    }
+    
+    button.active {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+    
+    .stats {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 15px;
+      padding: 20px;
+      display: flex;
+      justify-content: space-around;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    
+    .stat-item {
+      text-align: center;
+      color: white;
+    }
+    
+    .stat-label {
+      display: block;
+      font-size: 12px;
+      opacity: 0.8;
+      margin-bottom: 5px;
+    }
+    
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+    }
+    
+    .error {
+      background: rgba(255, 0, 0, 0.2);
+      color: #ff6b6b;
+      padding: 15px;
+      border-radius: 10px;
+      margin: 10px 0;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 style="text-align: center; color: white; margin-bottom: 20px;">
+      Object Detection - Vanilla JavaScript
+    </h1>
+    
+    <!-- Camera Container -->
+    <div class="camera-container">
+      <div id="loading-indicator" class="loading">
+        <div>Initializing camera...</div>
+      </div>
+      <div id="error-message" class="error"></div>
+      <video id="video-element" autoplay playsinline muted></video>
+      <img id="esp32-img" crossorigin="anonymous">
+      <canvas id="canvas-overlay"></canvas>
+    </div>
+    
+    <!-- Controls -->
+    <div class="controls">
+      <button id="capture-btn">📸 Capture</button>
+      <button id="live-detection-btn">▶️ Live Detection</button>
+      <button id="switch-camera-btn">🔄 Switch Camera</button>
+      <button id="reset-btn">🔄 Reset</button>
+      <button id="model-btn">🤖 Change Model</button>
+      
+      <!-- Camera Source -->
+      <div style="width: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2);">
+        <div style="text-align: center; color: white; margin-bottom: 10px; font-size: 12px;">Camera Source</div>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+          <button id="webcam-btn" class="active">📹 Webcam</button>
+          <button id="esp32-btn">📡 ESP32-CAM</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Stats -->
+    <div class="stats">
+      <div class="stat-item">
+        <span class="stat-label">Inference Time</span>
+        <span class="stat-value" id="inference-time">0</span>ms
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Total Time</span>
+        <span class="stat-value" id="total-time">0</span>ms
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">FPS</span>
+        <span class="stat-value" id="fps">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Model</span>
+        <span class="stat-value" id="model-name" style="font-size: 14px;">-</span>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Scripts -->
+  <!-- ONNX Runtime Web -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  
+  <!-- Application Scripts -->
+  <script src="app.js"></script>
+</body>
+</html>
+
