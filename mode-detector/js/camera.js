@@ -210,23 +210,63 @@ function setESP32Mode(mode) {
  */
 function captureFrame() {
   const canvas = document.getElementById('canvas-overlay');
-  if (!canvas) return null;
+  if (!canvas) {
+    console.warn('❌ Canvas element not found');
+    return null;
+  }
+
+  // Validate canvas dimensions
+  if (canvas.width === 0 || canvas.height === 0) {
+    console.warn('❌ Canvas has zero dimensions:', canvas.width, 'x', canvas.height);
+    console.warn('Canvas may not be initialized. Waiting for camera to set canvas size...');
+    return null;
+  }
 
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    console.error('❌ Failed to get canvas context');
+    return null;
+  }
 
   if (cameraState.source !== 'webcam') {
     // ESP32 mode: use buffer
     if (!espBufferCanvas || !espBufferHasFrame) {
+      console.warn('❌ ESP32 buffer not ready:', {
+        bufferExists: !!espBufferCanvas,
+        hasFrame: espBufferHasFrame
+      });
       return null;
     }
+    
+    // Validate buffer dimensions
+    if (espBufferCanvas.width === 0 || espBufferCanvas.height === 0) {
+      console.warn('❌ ESP32 buffer has zero dimensions');
+      return null;
+    }
+    
     ctx.drawImage(espBufferCanvas, 0, 0, canvas.width, canvas.height);
+    console.log('✅ Frame captured from ESP32-CAM buffer');
   } else {
     // Webcam mode
     const video = document.getElementById('video-element');
-    if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
+    if (!video) {
+      console.warn('❌ Video element not found');
       return null;
     }
+    
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+      console.warn('❌ Video not ready. ReadyState:', video.readyState);
+      return null;
+    }
+    
+    // Validate video dimensions
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      console.warn('❌ Video has zero dimensions:', video.videoWidth, 'x', video.videoHeight);
+      return null;
+    }
+    
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    console.log('✅ Frame captured from webcam');
   }
 
   return ctx;
