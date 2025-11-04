@@ -63,11 +63,11 @@ function applyNMS(detections, iouThreshold) {
 
 /**
  * Postprocess YOLOv7 output
- * Format: [det_num, 7] - [batch_id, x0, y0, x1, y1, class_id, confidence]
+ * Format: [det_num, 7] - [batch_id, x0, y0, x1, y1, class_id, confidence]      
  */
-function postprocessYolov7(ctx, modelResolution, tensor, conf2color, focalLength) {
+function postprocessYolov7(ctx, modelResolution, tensor, conf2color, focalLength) {                                                                             
   if (focalLength === undefined) {
-    focalLength = typeof DEFAULT_FOCAL_LENGTH !== 'undefined' ? DEFAULT_FOCAL_LENGTH : 800;
+    focalLength = typeof DEFAULT_FOCAL_LENGTH !== 'undefined' ? DEFAULT_FOCAL_LENGTH : 800;                                                                     
   }
   const dx = ctx.canvas.width / modelResolution[0];
   const dy = ctx.canvas.height / modelResolution[1];
@@ -76,6 +76,11 @@ function postprocessYolov7(ctx, modelResolution, tensor, conf2color, focalLength
 
   const numDetections = tensor.dims[0];
   const data = tensor.data;
+  
+  console.log(' [YOLOv7] Starting postprocessing:', { numDetections });
+  
+  // Array to collect detections for voice navigation
+  const detectionsForVoice = [];
 
   for (let i = 0; i < numDetections; i++) {
     const offset = i * 7;
@@ -89,6 +94,12 @@ function postprocessYolov7(ctx, modelResolution, tensor, conf2color, focalLength
 
     // Filter by confidence threshold
     if (confidence < 0.25) continue;
+    
+    console.log(` [YOLOv7] Detection ${i} passed threshold:`, {
+      classId,
+      className: yoloClasses[classId] || `Class ${classId}`,
+      confidence: (confidence * 100).toFixed(1) + '%'
+    });
 
     // Scale to canvas size
     const scaledX0 = x0 * dx;
@@ -115,6 +126,21 @@ function postprocessYolov7(ctx, modelResolution, tensor, conf2color, focalLength
     const label = `${capitalize(className)} ${score}%`;
     const color = conf2color(confidence);
 
+    // Collect detection info for voice navigation
+    detectionsForVoice.push({
+      classId: classId,
+      distance: distance,
+      className: className,
+      confidence: confidence
+    });
+    
+    console.log(` [YOLOv7] Added detection ${i} to voice array:`, {
+      className,
+      distance: distance.toFixed(1) + 'cm',
+      confidence: (confidence * 100).toFixed(1) + '%',
+      currentArrayLength: detectionsForVoice.length
+    });
+    
     // Draw bounding box
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
@@ -134,8 +160,26 @@ function postprocessYolov7(ctx, modelResolution, tensor, conf2color, focalLength
     ctx.fillText(distanceText, scaledX0 + 5, scaledY0 - 10);
 
     // Fill with transparent color
-    ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba');
+    ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba');        
     ctx.fillRect(scaledX0, scaledY0, bboxWidth, bboxHeight);
+  }
+  
+  // Process detections for voice navigation (if function exists)
+  console.log(' [Postprocess] Checking voice navigation...', {
+    functionExists: typeof processDetectionsForVoice === 'function',
+    detectionsCount: detectionsForVoice.length,
+    detections: detectionsForVoice.map(d => ({ class: d.className, distance: d.distance.toFixed(1) + 'cm' }))
+  });
+
+  if (typeof processDetectionsForVoice === 'function') {
+    if (detectionsForVoice.length > 0) {
+      console.log(' [Postprocess] Calling processDetectionsForVoice with', detectionsForVoice.length, 'detections');
+      processDetectionsForVoice(detectionsForVoice);
+    } else {
+      console.log(' [Postprocess] No detections to announce (detectionsForVoice is empty)');
+    }
+  } else {
+    console.warn(' [Postprocess] processDetectionsForVoice function not found! Make sure voiceNavigation.js is loaded.');
   }
 }
 
@@ -143,9 +187,9 @@ function postprocessYolov7(ctx, modelResolution, tensor, conf2color, focalLength
  * Postprocess YOLOv10 output
  * Format: [1, all_boxes, 6] - [x0, y0, x1, y1, confidence, class_id]
  */
-function postprocessYolov10(ctx, modelResolution, tensor, conf2color, focalLength) {
+function postprocessYolov10(ctx, modelResolution, tensor, conf2color, focalLength) {                                                                            
   if (focalLength === undefined) {
-    focalLength = typeof DEFAULT_FOCAL_LENGTH !== 'undefined' ? DEFAULT_FOCAL_LENGTH : 800;
+    focalLength = typeof DEFAULT_FOCAL_LENGTH !== 'undefined' ? DEFAULT_FOCAL_LENGTH : 800;                                                                     
   }
   const dx = ctx.canvas.width / modelResolution[0];
   const dy = ctx.canvas.height / modelResolution[1];
@@ -154,6 +198,9 @@ function postprocessYolov10(ctx, modelResolution, tensor, conf2color, focalLengt
 
   const data = tensor.data;
   const numBoxes = tensor.dims[1];
+  
+  // Array to collect detections for voice navigation
+  const detectionsForVoice = [];
 
   for (let i = 0; i < numBoxes; i += 6) {
     const x0 = data[i];
@@ -191,6 +238,21 @@ function postprocessYolov10(ctx, modelResolution, tensor, conf2color, focalLengt
     const label = `${capitalize(className)} ${score}%`;
     const color = conf2color(confidence);
 
+    // Collect detection info for voice navigation
+    detectionsForVoice.push({
+      classId: classId,
+      distance: distance,
+      className: className,
+      confidence: confidence
+    });
+    
+    console.log(` [YOLOv7] Added detection ${i} to voice array:`, {
+      className,
+      distance: distance.toFixed(1) + 'cm',
+      confidence: (confidence * 100).toFixed(1) + '%',
+      currentArrayLength: detectionsForVoice.length
+    });
+    
     // Draw bounding box
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
@@ -210,8 +272,26 @@ function postprocessYolov10(ctx, modelResolution, tensor, conf2color, focalLengt
     ctx.fillText(distanceText, scaledX0 + 5, scaledY0 - 10);
 
     // Fill with transparent color
-    ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba');
+    ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba');        
     ctx.fillRect(scaledX0, scaledY0, bboxWidth, bboxHeight);
+  }
+  
+  // Process detections for voice navigation (if function exists)
+  console.log(' [Postprocess] Checking voice navigation...', {
+    functionExists: typeof processDetectionsForVoice === 'function',
+    detectionsCount: detectionsForVoice.length,
+    detections: detectionsForVoice.map(d => ({ class: d.className, distance: d.distance.toFixed(1) + 'cm' }))
+  });
+
+  if (typeof processDetectionsForVoice === 'function') {
+    if (detectionsForVoice.length > 0) {
+      console.log(' [Postprocess] Calling processDetectionsForVoice with', detectionsForVoice.length, 'detections');
+      processDetectionsForVoice(detectionsForVoice);
+    } else {
+      console.log(' [Postprocess] No detections to announce (detectionsForVoice is empty)');
+    }
+  } else {
+    console.warn(' [Postprocess] processDetectionsForVoice function not found! Make sure voiceNavigation.js is loaded.');
   }
 }
 
@@ -273,8 +353,11 @@ function postprocessYolov11(ctx, modelResolution, tensor, conf2color, focalLengt
     }
   }
 
-  // Apply NMS
+    // Apply NMS
   const nmsDetections = applyNMS(detections, 0.4);
+  
+  // Array to collect detections for voice navigation
+  const detectionsForVoice = [];
 
   // Draw detections
   for (const detection of nmsDetections) {
@@ -298,10 +381,25 @@ function postprocessYolov11(ctx, modelResolution, tensor, conf2color, focalLengt
 
     // Create label
     const score = round(detection.confidence * 100, 1);
-    const className = yoloClasses[detection.classId] || `Class ${detection.classId}`;
+    const className = yoloClasses[detection.classId] || `Class ${detection.classId}`;                                                                           
     const label = `${capitalize(className)} ${score}%`;
     const color = conf2color(detection.confidence);
 
+    // Collect detection info for voice navigation
+    detectionsForVoice.push({
+      classId: detection.classId,
+      distance: distance,
+      className: className,
+      confidence: detection.confidence
+    });
+    
+    console.log(` [YOLOv11] Added detection to voice array:`, {
+      className,
+      distance: distance.toFixed(1) + 'cm',
+      confidence: (detection.confidence * 100).toFixed(1) + '%',
+      currentArrayLength: detectionsForVoice.length
+    });
+    
     // Draw bounding box
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
@@ -321,8 +419,26 @@ function postprocessYolov11(ctx, modelResolution, tensor, conf2color, focalLengt
     ctx.fillText(distanceText, x0 + 5, y0 - 10);
 
     // Fill with transparent color
-    ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba');
+    ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba');        
     ctx.fillRect(x0, y0, bboxWidth, bboxHeight);
+  }
+  
+  // Process detections for voice navigation (if function exists)
+  console.log(' [Postprocess] Checking voice navigation...', {
+    functionExists: typeof processDetectionsForVoice === 'function',
+    detectionsCount: detectionsForVoice.length,
+    detections: detectionsForVoice.map(d => ({ class: d.className, distance: d.distance.toFixed(1) + 'cm' }))
+  });
+
+  if (typeof processDetectionsForVoice === 'function') {
+    if (detectionsForVoice.length > 0) {
+      console.log(' [Postprocess] Calling processDetectionsForVoice with', detectionsForVoice.length, 'detections');
+      processDetectionsForVoice(detectionsForVoice);
+    } else {
+      console.log(' [Postprocess] No detections to announce (detectionsForVoice is empty)');
+    }
+  } else {
+    console.warn(' [Postprocess] processDetectionsForVoice function not found! Make sure voiceNavigation.js is loaded.');
   }
 }
 

@@ -169,9 +169,33 @@ function startLiveDetection() {
   function loop() {
     if (!appState.liveDetection) return;
 
+    // For ESP32 mode, ensure we wait a bit for frame to be ready
+    // This prevents race conditions where detection runs before frame is loaded
+    if (cameraState.source !== 'webcam' && typeof isESP32FrameReady === 'function' && !isESP32FrameReady()) {
+      // Wait a bit and retry if frame not ready
+      setTimeout(() => {
+        if (appState.liveDetection) {
+          appState.liveDetectionFrame = requestAnimationFrame(loop);
+        }
+      }, 50);
+      return;
+    }
+
     runDetection().then(() => {
       if (appState.liveDetection) {
         appState.liveDetectionFrame = requestAnimationFrame(loop);
+      }
+    }).catch((error) => {
+      // Handle errors gracefully and continue loop
+      console.warn('Detection error in loop, continuing...', error);
+      if (appState.liveDetection) {
+        // Add small delay before retry to avoid overwhelming ESP32
+        const retryDelay = cameraState.source === 'webcam' ? 0 : 100;
+        setTimeout(() => {
+          if (appState.liveDetection) {
+            appState.liveDetectionFrame = requestAnimationFrame(loop);
+          }
+        }, retryDelay);
       }
     });
   }

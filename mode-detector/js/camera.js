@@ -14,7 +14,13 @@ const cameraState = {
 };
 
 // ESP32 Configuration
-const ESP32_IP = '192.168.1.19';
+// Update IP address sesuai ESP32-S3 CAM Anda
+const ESP32_IP = '192.168.1.75';
+// ESP32-S3 CAM biasanya menggunakan endpoint langsung
+// Jika menggunakan proxy server, ganti dengan URL proxy Anda
+const ESP32_STREAM_URL = `http://${ESP32_IP}:81/stream`;  // Port 81 untuk stream
+const ESP32_CAPTURE_URL = `http://${ESP32_IP}/capture`;   // Port 80 untuk capture
+// Fallback jika proxy digunakan (ganti dengan URL proxy jika ada)
 const ESP32_PROXY_STREAM_URL = `/api/esp32-stream`;
 const ESP32_PROXY_CAPTURE_URL = `/api/esp32-capture`;
 
@@ -83,6 +89,7 @@ async function initWebcam() {
 
 /**
  * Initialize ESP32-CAM
+ * Supports ESP32-S3 CAM dengan konfigurasi IP dan endpoint
  */
 function initESP32() {
   if (cameraState.source === 'webcam') return;
@@ -95,31 +102,48 @@ function initESP32() {
     espBufferCanvas = document.createElement('canvas');
   }
 
-  showLoading('Connecting to ESP32-CAM...');
+  showLoading(`Connecting to ESP32-S3 CAM (${ESP32_IP})...`);
   cameraState.isStreamReady = true;
   cameraState.espErrorCount = 0;
 
   function setNextSrc() {
     if (!img) return;
+    // Gunakan URL langsung ke ESP32-S3 CAM
+    // ESP32-S3 CAM biasanya menggunakan:
+    // - Stream: http://IP:81/stream (MJPEG stream)
+    // - Capture: http://IP/capture (Single JPEG frame)
+    // Tambahkan timestamp untuk menghindari cache browser
+    const timestamp = Date.now();
     const url = cameraState.espEndpointMode === 'stream'
-      ? `${ESP32_PROXY_STREAM_URL}?t=${Date.now()}`
-      : `${ESP32_PROXY_CAPTURE_URL}?t=${Date.now()}`;
+      ? `${ESP32_STREAM_URL}?t=${timestamp}`
+      : `${ESP32_CAPTURE_URL}?t=${timestamp}`;
+    
+    console.log(`📡 Connecting to ESP32-S3 CAM: ${url}`);
     img.src = url;
   }
 
   img.onload = () => {
-    console.log('✅ ESP32 frame loaded');
+    console.log('✅ ESP32-S3 CAM frame loaded');
+    console.log(`Frame dimensions: ${img.naturalWidth}x${img.naturalHeight}`);
     hideLoading();
     hideError();
 
-    // Update buffer
+    // Update buffer immediately when new frame arrives
+    // This ensures buffer always has latest frame for detection
     if (img.naturalWidth && img.naturalHeight) {
+      // Ensure buffer canvas exists
+      if (!espBufferCanvas) {
+        espBufferCanvas = document.createElement('canvas');
+      }
+      
       espBufferCanvas.width = img.naturalWidth;
       espBufferCanvas.height = img.naturalHeight;
       const ctx = espBufferCanvas.getContext('2d');
       if (ctx) {
+        // Copy latest frame to buffer for fallback use
         ctx.drawImage(img, 0, 0);
         espBufferHasFrame = true;
+        console.log(`📸 Buffer updated: ${espBufferCanvas.width}x${espBufferCanvas.height}`);
       }
     }
 
@@ -128,23 +152,29 @@ function initESP32() {
     document.getElementById('video-element').style.display = 'none';
 
     // Schedule next frame
+    // Use slightly longer delay to ensure frame is fully processed
     const delay = cameraState.espEndpointMode === 'stream' ? 70 : 180;
     if (espPollingTimer) clearTimeout(espPollingTimer);
     espPollingTimer = setTimeout(setNextSrc, delay);
   };
 
   img.onerror = () => {
-    console.error('ESP32 frame error');
+    console.error('❌ ESP32-S3 CAM frame error');
+    console.error(`Failed to load from: ${cameraState.espEndpointMode === 'stream' ? ESP32_STREAM_URL : ESP32_CAPTURE_URL}`);
     cameraState.espErrorCount += 1;
 
     // Auto fallback to capture mode after 3 errors in stream mode
     if (cameraState.espEndpointMode === 'stream' && cameraState.espErrorCount >= 3) {
-      console.warn('Switching ESP32 to capture mode');
+      console.warn('⚠️ Switching ESP32-S3 CAM to capture mode (stream failed)');
       cameraState.espEndpointMode = 'capture';
       updateESP32Buttons();
     }
 
-    showError('ESP32-CAM connection failed. Retrying...');
+    const errorMsg = cameraState.espErrorCount <= 3
+      ? `ESP32-S3 CAM connection failed (${cameraState.espErrorCount}/3). Retrying...`
+      : `ESP32-S3 CAM connection failed. Check IP ${ESP32_IP} and endpoint.`;
+    showError(errorMsg);
+    
     const delay = cameraState.espEndpointMode === 'stream' ? 350 : 500;
     if (espPollingTimer) clearTimeout(espPollingTimer);
     espPollingTimer = setTimeout(setNextSrc, delay);
@@ -205,6 +235,23 @@ function setESP32Mode(mode) {
 }
 
 /**
+ * Check if ESP32 frame is ready for detection
+ * @returns {boolean} True if frame is available
+ */
+function isESP32FrameReady() {
+  if (cameraState.source === 'webcam') return true;
+  
+  const img = document.getElementById('esp32-img');
+  // Check if img element has a valid frame
+  if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+    return true;
+  }
+  // Fallback: check buffer
+  return espBufferHasFrame && espBufferCanvas && 
+         espBufferCanvas.width > 0 && espBufferCanvas.height > 0;
+}
+
+/**
  * Capture frame from camera
  * @returns {CanvasRenderingContext2D|null} Canvas context or null
  */
@@ -229,11 +276,25 @@ function captureFrame() {
   }
 
   if (cameraState.source !== 'webcam') {
-    // ESP32 mode: use buffer
+    // ESP32 mode: try to get frame from img element first (always latest)
+    // Fallback to buffer if img element is not ready
+    const img = document.getElementById('esp32-img');
+    
+    // Method 1: Try to capture directly from img element (most up-to-date)
+    if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      // Draw directly from img element to get latest frame
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      console.log('✅ Frame captured from ESP32-S3 CAM (direct from img)');
+      return ctx;
+    }
+    
+    // Method 2: Fallback to buffer if img element not ready
     if (!espBufferCanvas || !espBufferHasFrame) {
-      console.warn('❌ ESP32 buffer not ready:', {
+      console.warn('❌ ESP32-S3 CAM buffer not ready:', {
         bufferExists: !!espBufferCanvas,
-        hasFrame: espBufferHasFrame
+        hasFrame: espBufferHasFrame,
+        imgReady: img && img.complete,
+        imgDimensions: img ? `${img.naturalWidth}x${img.naturalHeight}` : 'N/A'
       });
       return null;
     }
@@ -244,8 +305,9 @@ function captureFrame() {
       return null;
     }
     
+    // Use buffer as fallback
     ctx.drawImage(espBufferCanvas, 0, 0, canvas.width, canvas.height);
-    console.log('✅ Frame captured from ESP32-CAM buffer');
+    console.log('✅ Frame captured from ESP32-S3 CAM buffer');
   } else {
     // Webcam mode
     const video = document.getElementById('video-element');
