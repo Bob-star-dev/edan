@@ -32,7 +32,7 @@ const collisionWarningState = {
 
 // Mapping class names ke Bahasa Indonesia (tanpa double quotes di dalam string)
 const classNamesIndonesian = {
-  'person': 'manusia',
+  'person': 'orang',
   'bicycle': 'sepeda',
   'car': 'mobil',
   'motorbike': 'sepeda motor',
@@ -82,23 +82,114 @@ const classNamesIndonesian = {
 
 /**
  * Get Indonesian class name from English class name
- * @param {string} className - English class name
+ * Handles various formats including "person / halangan", "person halangan", etc.
+ * @param {string} className - English class name (can be mixed format)
  * @returns {string} Indonesian class name
  */
 function getIndonesianClassName(className) {
   if (!className) return className;
+  
   const lowerClassName = className.toLowerCase().trim();
-  const indonesianName = classNamesIndonesian[lowerClassName];
-  // Log untuk debugging
-  if (!indonesianName) {
-    console.warn(`[Voice] No Indonesian translation for: "${className}"`);
+  
+  // Handle format like "person / halangan" or "person halangan"
+  // Split by "/" or "halangan" to get the main object name
+  let mainObjectName = lowerClassName;
+  let hasHalangan = false;
+  
+  // Check if it contains "/" separator first (e.g., "person / halangan")
+  if (lowerClassName.includes('/')) {
+    const parts = lowerClassName.split('/');
+    mainObjectName = parts[0].trim();
+    // Check if second part contains "halangan"
+    if (parts.length > 1 && parts[1].trim().includes('halangan')) {
+      hasHalangan = true;
+    }
   }
-  return indonesianName || className;
+  // Check if it contains "halangan" (e.g., "person halangan")
+  else if (lowerClassName.includes('halangan')) {
+    hasHalangan = true;
+    // Extract main object name before "halangan"
+    // Split by "halangan" and take first part
+    const parts = lowerClassName.split(/\s+halangan|halangan/);
+    mainObjectName = parts[0].trim();
+  }
+  
+  // Get Indonesian translation for main object
+  const indonesianName = classNamesIndonesian[mainObjectName];
+  
+  // If translation found, use it; otherwise use original main object name
+  const translatedMainObject = indonesianName || mainObjectName;
+  
+  // Combine with "halangan" if it was present
+  let result;
+  if (hasHalangan && translatedMainObject !== 'halangan') {
+    // Only add "halangan" if main object is not already "halangan"
+    result = `${translatedMainObject} halangan`;
+  } else {
+    result = translatedMainObject;
+  }
+  
+  // Log untuk debugging
+  if (mainObjectName !== lowerClassName || hasHalangan) {
+    console.log(`[Voice] 🔄 Translating: "${className}" -> mainObject: "${mainObjectName}" -> "${result}"`);
+  }
+  
+  // Log warning jika tidak ada translation
+  if (!indonesianName && mainObjectName !== 'halangan' && mainObjectName !== 'tembok' && mainObjectName !== 'obstacle') {
+    console.warn(`[Voice] ⚠️ No Indonesian translation for: "${mainObjectName}" (from: "${className}")`);
+  }
+  
+  return result;
 }
 
 /**
- * Speak text using Web Speech API
- * @param {string} text - Text to speak
+ * Get Indonesian voice from available voices
+ * @returns {SpeechSynthesisVoice|null} Indonesian voice or null
+ */
+function getIndonesianVoice() {
+  if (!('speechSynthesis' in window)) return null;
+  
+  const voices = window.speechSynthesis.getVoices();
+  
+  // Prioritize Indonesian voices
+  const indonesianVoices = voices.filter(voice => 
+    voice.lang.toLowerCase().includes('id') || 
+    voice.lang.toLowerCase().includes('indonesia') ||
+    voice.name.toLowerCase().includes('indonesia') ||
+    voice.name.toLowerCase().includes('indonesian')
+  );
+  
+  if (indonesianVoices.length > 0) {
+    console.log(`[Voice] ✅ Found ${indonesianVoices.length} Indonesian voice(s):`, 
+      indonesianVoices.map(v => v.name));
+    // Prefer female voice, or first available
+    const preferred = indonesianVoices.find(v => 
+      v.name.toLowerCase().includes('female') || 
+      v.name.toLowerCase().includes('zira') ||
+      v.name.toLowerCase().includes('perempuan')
+    ) || indonesianVoices[0];
+    return preferred;
+  }
+  
+  // Fallback: try to find any voice that might support Indonesian
+  // Some browsers list Indonesian support under different names
+  const fallbackVoices = voices.filter(voice => 
+    voice.lang.toLowerCase().includes('ms') || // Malay (similar to Indonesian)
+    voice.lang.toLowerCase().includes('id')
+  );
+  
+  if (fallbackVoices.length > 0) {
+    console.log(`[Voice] ⚠️ Using fallback voice for Indonesian:`, fallbackVoices[0].name);
+    return fallbackVoices[0];
+  }
+  
+  console.warn('[Voice] ⚠️ No Indonesian voice found, using default voice');
+  return null;
+}
+
+/**
+ * Speak text using Web Speech API with Indonesian language
+ * @param {string} text - Text to speak (in Indonesian)
  * @param {string} lang - Language code (default: id-ID)
  */
 function speakText(text, lang = 'id-ID') {
@@ -119,15 +210,41 @@ function speakText(text, lang = 'id-ID') {
 
   // Create utterance
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = lang;
-  utterance.rate = 0.85; // Slightly slower for clarity
+  utterance.lang = lang; // Set to Indonesian language
+  
+  // Try to get Indonesian voice
+  // Note: voices may not be loaded immediately, so we try to get them
+  // If voices are not ready, browser will use default voice with Indonesian language
+  if (window.speechSynthesis.onvoiceschanged !== undefined) {
+    // Wait for voices to load if needed
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      const indonesianVoice = getIndonesianVoice();
+      if (indonesianVoice) {
+        utterance.voice = indonesianVoice;
+        console.log(`[Voice] 🎤 Using voice: ${indonesianVoice.name} (${indonesianVoice.lang})`);
+      }
+    }
+  } else {
+    // Try to get voices directly
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      const indonesianVoice = getIndonesianVoice();
+      if (indonesianVoice) {
+        utterance.voice = indonesianVoice;
+        console.log(`[Voice] 🎤 Using voice: ${indonesianVoice.name} (${indonesianVoice.lang})`);
+      }
+    }
+  }
+  
+  utterance.rate = 0.85; // Slightly slower for clarity in Indonesian
   utterance.pitch = 1.0;
   utterance.volume = 1.0;
 
   // Event handlers
   utterance.onstart = () => {
     voiceNavigationState.isSpeaking = true;
-    console.log('[Voice] 🔊 Speaking:', text);
+    console.log(`[Voice] 🔊 Speaking in Indonesian: "${text}"`);
   };
 
   utterance.onend = () => {
@@ -143,7 +260,7 @@ function speakText(text, lang = 'id-ID') {
   // Speak
   try {
     window.speechSynthesis.speak(utterance);
-    console.log('[Voice] 📢 Started speaking:', text);
+    console.log(`[Voice] 📢 Started speaking in Indonesian: "${text}"`);
   } catch (error) {
     console.error('[Voice] ❌ Failed to speak:', error);
     voiceNavigationState.isSpeaking = false;
@@ -244,19 +361,26 @@ function checkCollisionWarnings(detections) {
   // Update previous distance
   collisionWarningState.previousDistances.set(classId, distance);
 
-  // Determine warning level
+  // Get Indonesian name for the object
+  const indonesianName = getIndonesianClassName(className);
+  
+  // Determine warning level and message
   let warningLevel = 'warning'; // normal warning
   let warningMessage = '';
+  let objectAnnouncement = ''; // Simple object name announcement
   
   if (distance <= collisionWarningState.criticalThreshold) {
     warningLevel = 'critical'; // sangat dekat!
-    warningMessage = `Awas! ${getIndonesianClassName(className)} sangat dekat! ${Math.round(distance)} sentimeter!`;
+    warningMessage = `Awas! ${indonesianName} sangat dekat! ${Math.round(distance)} sentimeter!`;
+    objectAnnouncement = indonesianName; // Announce object name first
   } else if (isGettingCloser) {
     warningLevel = 'approaching'; // sedang mendekat
-    warningMessage = `Hati-hati! ${getIndonesianClassName(className)} mendekat! ${Math.round(distance)} sentimeter!`;
+    warningMessage = `Hati-hati! ${indonesianName} mendekat! ${Math.round(distance)} sentimeter!`;
+    objectAnnouncement = indonesianName; // Announce object name first
   } else {
     warningLevel = 'warning'; // normal warning
-    warningMessage = `Peringatan! ${getIndonesianClassName(className)} di depan! ${Math.round(distance)} sentimeter!`;
+    warningMessage = `Peringatan! ${indonesianName} di depan! ${Math.round(distance)} sentimeter!`;
+    objectAnnouncement = indonesianName; // Announce object name first
   }
 
   // Skip jika sedang menjauh
@@ -269,8 +393,73 @@ function checkCollisionWarnings(detections) {
     return; // Skip jika sudah warning dan tidak semakin dekat
   }
 
-  // Speak warning
-  console.log(`[Collision] ${warningLevel.toUpperCase()}: ${warningMessage} (distance: ${distance.toFixed(1)}cm)`);
+  // First, announce object name in Indonesian (simple announcement)
+  // This ensures user knows what object is detected
+  if (objectAnnouncement) {
+    console.log(`[Collision] 🎯 Announcing object: ${objectAnnouncement} (distance: ${distance.toFixed(1)}cm)`);
+    
+    // Cancel any ongoing speech to prioritize collision warning
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      voiceNavigationState.isSpeaking = false;
+    }
+    
+    // Speak object name first (simple announcement)
+    const objectUtterance = new SpeechSynthesisUtterance(objectAnnouncement);
+    objectUtterance.lang = 'id-ID';
+    
+    // Try to get Indonesian voice
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      const indonesianVoice = getIndonesianVoice();
+      if (indonesianVoice) {
+        objectUtterance.voice = indonesianVoice;
+      }
+    }
+    
+    objectUtterance.rate = 0.9;
+    objectUtterance.pitch = 1.0;
+    objectUtterance.volume = 1.0;
+    
+    objectUtterance.onstart = () => {
+      console.log(`[Collision] 🔊 Announcing object: "${objectAnnouncement}"`);
+    };
+    
+    objectUtterance.onend = () => {
+      // After announcing object name, speak the warning message
+      setTimeout(() => {
+        speakCollisionWarning(warningMessage, warningLevel);
+      }, 300); // Small delay between announcements
+    };
+    
+    objectUtterance.onerror = (error) => {
+      console.error(`[Collision] ❌ Error announcing object:`, error);
+      // Continue to warning message even if object announcement fails
+      speakCollisionWarning(warningMessage, warningLevel);
+    };
+    
+    try {
+      window.speechSynthesis.speak(objectUtterance);
+      collisionWarningState.lastWarningTime[classId] = now;
+      return; // Exit early, warning will be spoken after object announcement
+    } catch (error) {
+      console.error('[Collision] Failed to announce object:', error);
+      // Continue to warning message
+    }
+  }
+
+  // Speak warning message (called after object announcement or directly)
+  speakCollisionWarning(warningMessage, warningLevel);
+  collisionWarningState.lastWarningTime[classId] = now;
+}
+
+/**
+ * Speak collision warning message
+ * @param {string} warningMessage - Warning message to speak
+ * @param {string} warningLevel - Warning level ('critical', 'approaching', 'warning')
+ */
+function speakCollisionWarning(warningMessage, warningLevel) {
+  console.log(`[Collision] ${warningLevel.toUpperCase()}: ${warningMessage}`);
   
   // Cancel any ongoing speech for immediate warning
   if ('speechSynthesis' in window) {
@@ -278,12 +467,21 @@ function checkCollisionWarnings(detections) {
     voiceNavigationState.isSpeaking = false;
   }
 
-  // Speak with appropriate urgency
+  // Speak with appropriate urgency in Indonesian
   const utterance = new SpeechSynthesisUtterance(warningMessage);
-  utterance.lang = 'id-ID';
+  utterance.lang = 'id-ID'; // Ensure Indonesian language
+  
+  // Try to get Indonesian voice for warning
+  const voices = window.speechSynthesis.getVoices();
+  if (voices.length > 0) {
+    const indonesianVoice = getIndonesianVoice();
+    if (indonesianVoice) {
+      utterance.voice = indonesianVoice;
+    }
+  }
   
   if (warningLevel === 'critical') {
-    utterance.rate = 1.2; // Faster for critical
+    utterance.rate = 1.2; // Faster for critical urgency
     utterance.pitch = 1.3; // Higher pitch for urgency
     utterance.volume = 1.0;
   } else if (warningLevel === 'approaching') {
@@ -316,7 +514,6 @@ function checkCollisionWarnings(detections) {
 
   try {
     window.speechSynthesis.speak(utterance);
-    collisionWarningState.lastWarningTime[classId] = now;
   } catch (error) {
     console.error('[Collision] Failed to speak warning:', error);
     collisionWarningState.isWarning = false;
@@ -449,6 +646,7 @@ function setCollisionWarningThreshold(threshold, criticalThreshold = 30) {
 /**
  * Initialize voice navigation system
  * Check browser support and log status
+ * Set up Indonesian voice if available
  */
 function initVoiceNavigation() {
   if (!('speechSynthesis' in window)) {
@@ -457,17 +655,53 @@ function initVoiceNavigation() {
     return false;
   }
 
-  console.log('[Voice] ✅ Voice navigation initialized');
+  // Load and check available voices
+  const loadVoices = () => {
+    const voices = window.speechSynthesis.getVoices();
+    console.log(`[Voice] 📋 Available voices: ${voices.length} total`);
+    
+    // Check for Indonesian voices
+    const indonesianVoices = voices.filter(voice => 
+      voice.lang.toLowerCase().includes('id') || 
+      voice.lang.toLowerCase().includes('indonesia')
+    );
+    
+    if (indonesianVoices.length > 0) {
+      console.log(`[Voice] ✅ Found ${indonesianVoices.length} Indonesian voice(s):`);
+      indonesianVoices.forEach(voice => {
+        console.log(`[Voice]   - ${voice.name} (${voice.lang})`);
+      });
+    } else {
+      console.warn('[Voice] ⚠️ No Indonesian voice found. System will use default voice with Indonesian language.');
+      console.log('[Voice] 💡 Tip: Install Indonesian language pack in your OS for better pronunciation.');
+    }
+    
+    // List all available languages for debugging
+    const languages = [...new Set(voices.map(v => v.lang))].sort();
+    console.log(`[Voice] 📚 Available languages: ${languages.length}`, languages.slice(0, 10));
+  };
+  
+  // Try to load voices immediately
+  loadVoices();
+  
+  // Also listen for voices to be loaded (some browsers load voices asynchronously)
+  if (window.speechSynthesis.onvoiceschanged !== undefined) {
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  }
+
+  console.log('[Voice] ✅ Voice navigation initialized (Bahasa Indonesia)');
   console.log('[Voice] Settings:', {
     enabled: voiceNavigationState.enabled,
+    language: 'id-ID (Bahasa Indonesia)',
     distanceRange: `${voiceNavigationState.distanceMin}-${voiceNavigationState.distanceMax}cm`,
     minAnnounceInterval: voiceNavigationState.minAnnounceInterval + 'ms'
   });
 
   // Initialize collision warning
-  console.log('[Collision] ✅ Collision warning system initialized');
+  console.log('[Collision] ✅ Collision warning system initialized (Bahasa Indonesia)');
   console.log('[Collision] Settings:', {
     enabled: collisionWarningState.enabled,
+    language: 'id-ID (Bahasa Indonesia)',
     warningThreshold: collisionWarningState.warningThreshold + 'cm',
     criticalThreshold: collisionWarningState.criticalThreshold + 'cm',
     minWarningInterval: collisionWarningState.minWarningInterval + 'ms'
