@@ -14,8 +14,8 @@ const cameraState = {
 };
 
 // ESP32 Configuration
-// Update IP address sesuai ESP32-S3 CAM Anda
-const ESP32_IP = '192.168.1.75';
+// Update IP address sesuai ESP32-CAM Anda
+const ESP32_IP = '192.168.1.48';
 // ESP32-S3 CAM biasanya menggunakan endpoint langsung
 // Jika menggunakan proxy server, ganti dengan URL proxy Anda
 const ESP32_STREAM_URL = `http://${ESP32_IP}:81/stream`;  // Port 81 untuk stream
@@ -28,6 +28,8 @@ const ESP32_PROXY_CAPTURE_URL = `/api/esp32-capture`;
 let espBufferCanvas = null;
 let espBufferHasFrame = false;
 let espPollingTimer = null;
+let espStreamReader = null; // For MJPEG stream reading
+let espStreamAbortController = null; // For aborting stream requests
 
 /**
  * Initialize webcam
@@ -99,8 +101,175 @@ async function initWebcam() {
 }
 
 /**
+ * Stop ESP32 stream reading
+ */
+function stopESP32Stream() {
+  // Abort any ongoing stream requests
+  if (espStreamAbortController) {
+    espStreamAbortController.abort();
+    espStreamAbortController = null;
+  }
+  
+  // Close reader if exists
+  if (espStreamReader) {
+    espStreamReader.cancel();
+    espStreamReader = null;
+  }
+  
+  // Clear polling timer
+  if (espPollingTimer) {
+    clearTimeout(espPollingTimer);
+    espPollingTimer = null;
+  }
+}
+
+/**
+ * Read MJPEG stream from ESP32-CAM
+ * Uses simpler approach: directly set img.src to stream URL
+ * Browser will handle MJPEG stream automatically if supported
+ * Falls back to fast polling if direct stream doesn't work
+ */
+function readMJPEGStream() {
+  const img = document.getElementById('esp32-img');
+  if (!img) return;
+  
+  // Stop any existing stream first
+  stopESP32Stream();
+  
+  console.log(`[ESP32-CAM] 📡 Starting MJPEG stream from: ${ESP32_STREAM_URL}`);
+  
+  // Method 1: Try direct img.src approach (works in most browsers)
+  // For MJPEG stream, browser should handle it automatically
+  let streamStartTime = Date.now();
+  let frameCount = 0;
+  let lastFrameTime = 0;
+  
+  // Setup image load handler
+  img.onload = () => {
+    const now = Date.now();
+    const timeSinceLastFrame = now - lastFrameTime;
+    lastFrameTime = now;
+    frameCount++;
+    
+    // Set ready state on first successful load
+    if (!cameraState.isStreamReady) {
+      cameraState.isStreamReady = true;
+      hideLoading();
+      hideError();
+      cameraState.espErrorCount = 0;
+      
+      console.log(`[ESP32-CAM] ✅ Stream connected successfully`);
+      console.log(`[ESP32-CAM] 📐 Frame dimensions: ${img.naturalWidth}x${img.naturalHeight}`);
+      
+      if (typeof updateStatusIndicators === 'function') {
+        updateStatusIndicators();
+      }
+      
+      // Auto-start live detection
+      if (typeof startLiveDetection === 'function') {
+        startLiveDetection();
+      }
+    }
+    
+    // Update buffer
+    if (img.naturalWidth && img.naturalHeight) {
+      if (!espBufferCanvas) {
+        espBufferCanvas = document.createElement('canvas');
+      }
+      espBufferCanvas.width = img.naturalWidth;
+      espBufferCanvas.height = img.naturalHeight;
+      const ctx = espBufferCanvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+        espBufferHasFrame = true;
+      }
+    }
+    
+    setCanvasSize(img.naturalWidth || 640, img.naturalHeight || 480);
+    img.style.display = 'block';
+    document.getElementById('video-element').style.display = 'none';
+    
+    // Log frame rate occasionally
+    if (frameCount % 30 === 0) {
+      const fps = timeSinceLastFrame > 0 ? (1000 / timeSinceLastFrame).toFixed(1) : 'N/A';
+      console.log(`[ESP32-CAM] 📊 Stream running: ${frameCount} frames, ~${fps} FPS`);
+    }
+  };
+  
+  img.onerror = () => {
+    console.error(`[ESP32-CAM] ❌ Stream frame error`);
+    cameraState.espErrorCount += 1;
+    
+    // If stream doesn't work after 3 errors, try alternative method
+    if (cameraState.espErrorCount >= 3 && !img.dataset.streamMethod) {
+      console.warn(`[ESP32-CAM] ⚠️ Direct stream failed, trying alternative method...`);
+      img.dataset.streamMethod = 'polling';
+      // Switch to fast polling method
+      startStreamPolling();
+      return;
+    }
+    
+    // If still failing, fallback to capture mode
+    if (cameraState.espErrorCount >= 10) {
+      console.warn(`[ESP32-CAM] ⚠️ Stream failed repeatedly, switching to capture mode`);
+      cameraState.espEndpointMode = 'capture';
+      updateESP32Buttons();
+      initCamera();
+      return;
+    }
+    
+    const errorMsg = `ESP32-CAM stream error (${cameraState.espErrorCount}/10). Retrying...`;
+    showError(errorMsg);
+  };
+  
+  // Set stream URL directly - browser should handle MJPEG automatically
+  // Add timestamp only once to establish connection, then let stream continue
+  const streamUrl = `${ESP32_STREAM_URL}?t=${Date.now()}`;
+  console.log(`[ESP32-CAM] 📡 Setting stream URL: ${streamUrl}`);
+  img.src = streamUrl;
+  
+  // Alternative: Fast polling method if direct stream doesn't work
+  function startStreamPolling() {
+    console.log(`[ESP32-CAM] 📡 Using fast polling method for stream`);
+    
+    function pollFrame() {
+      if (cameraState.source !== 'esp32' || cameraState.espEndpointMode !== 'stream') {
+        return; // Stop if switched away
+      }
+      
+      // Fast polling: request new frame every 50-100ms
+      const timestamp = Date.now();
+      const url = `${ESP32_STREAM_URL}?t=${timestamp}&frame=${frameCount}`;
+      img.src = url;
+      
+      // Schedule next poll
+      espPollingTimer = setTimeout(pollFrame, 70);
+    }
+    
+    pollFrame();
+  }
+  
+  // Monitor if stream is working (check if frames are updating)
+  const streamMonitor = setInterval(() => {
+    if (cameraState.source !== 'esp32' || cameraState.espEndpointMode !== 'stream') {
+      clearInterval(streamMonitor);
+      return;
+    }
+    
+    // If no frames received in 5 seconds, try alternative method
+    if (frameCount === 0 && Date.now() - streamStartTime > 5000) {
+      console.warn(`[ESP32-CAM] ⚠️ No frames received, trying alternative method...`);
+      clearInterval(streamMonitor);
+      img.dataset.streamMethod = 'polling';
+      startStreamPolling();
+    }
+  }, 1000);
+}
+
+/**
  * Initialize ESP32-CAM
- * Supports ESP32-S3 CAM dengan konfigurasi IP dan endpoint
+ * Supports ESP32-CAM dengan konfigurasi IP dan endpoint
+ * Uses different methods for stream vs capture mode
  */
 function initESP32() {
   if (cameraState.source === 'webcam') return;
@@ -117,30 +286,43 @@ function initESP32() {
   cameraState.isStreamReady = false; // Set to false initially, will be true when frame loads
   cameraState.espErrorCount = 0;
   
+  console.log(`[ESP32-CAM] 🔌 Initializing ESP32-CAM connection...`);
+  console.log(`[ESP32-CAM] 📡 IP Address: ${ESP32_IP}`);
+  console.log(`[ESP32-CAM] 📡 Stream URL: ${ESP32_STREAM_URL}`);
+  console.log(`[ESP32-CAM] 📡 Capture URL: ${ESP32_CAPTURE_URL}`);
+  console.log(`[ESP32-CAM] 📡 Mode: ${cameraState.espEndpointMode}`);
+  
   // Update status
   if (typeof updateStatusIndicators === 'function') {
     updateStatusIndicators();
   }
 
+  // Use different approach for stream vs capture mode
+  if (cameraState.espEndpointMode === 'stream') {
+    // Use MJPEG stream reader for stream mode
+    readMJPEGStream();
+    return;
+  }
+  
+  // Capture mode: use simple polling with img.src
+  // Reset handlers for capture mode
+  img.onload = null;
+  img.onerror = null;
+  
   function setNextSrc() {
     if (!img) return;
-    // Gunakan URL langsung ke ESP32-S3 CAM
-    // ESP32-S3 CAM biasanya menggunakan:
-    // - Stream: http://IP:81/stream (MJPEG stream)
-    // - Capture: http://IP/capture (Single JPEG frame)
+    // Gunakan URL langsung ke ESP32-CAM untuk capture mode
     // Tambahkan timestamp untuk menghindari cache browser
     const timestamp = Date.now();
-    const url = cameraState.espEndpointMode === 'stream'
-      ? `${ESP32_STREAM_URL}?t=${timestamp}`
-      : `${ESP32_CAPTURE_URL}?t=${timestamp}`;
+    const url = `${ESP32_CAPTURE_URL}?t=${timestamp}`;
     
-    console.log(`📡 Connecting to ESP32-S3 CAM: ${url}`);
+    console.log(`[ESP32-CAM] 📡 Fetching frame: ${url}`);
     img.src = url;
   }
 
   img.onload = () => {
-    console.log('✅ ESP32-S3 CAM frame loaded');
-    console.log(`Frame dimensions: ${img.naturalWidth}x${img.naturalHeight}`);
+    console.log(`[ESP32-CAM] ✅ Frame loaded successfully`);
+    console.log(`[ESP32-CAM] 📐 Frame dimensions: ${img.naturalWidth}x${img.naturalHeight}`);
     
     // Set ready on first successful load
     if (!cameraState.isStreamReady) {
@@ -191,8 +373,11 @@ function initESP32() {
   };
 
   img.onerror = () => {
-    console.error('❌ ESP32-S3 CAM frame error');
-    console.error(`Failed to load from: ${cameraState.espEndpointMode === 'stream' ? ESP32_STREAM_URL : ESP32_CAPTURE_URL}`);
+    const errorUrl = cameraState.espEndpointMode === 'stream' ? ESP32_STREAM_URL : ESP32_CAPTURE_URL;
+    console.error(`[ESP32-CAM] ❌ Frame error`);
+    console.error(`[ESP32-CAM] ❌ Failed to load from: ${errorUrl}`);
+    console.error(`[ESP32-CAM] 📡 IP Address: ${ESP32_IP}`);
+    console.error(`[ESP32-CAM] 📡 Mode: ${cameraState.espEndpointMode}`);
     cameraState.espErrorCount += 1;
 
     // Auto fallback to capture mode after 3 errors in stream mode
@@ -245,10 +430,20 @@ function switchCamera() {
  * @param {string} source - 'webcam' or 'esp32'
  */
 function setCameraSource(source) {
-  if (source === cameraState.source) return;
+  if (source === cameraState.source) {
+    console.log(`[Camera] Source already set to: ${source}`);
+    return;
+  }
 
+  console.log(`[Camera] 🔄 Switching camera source from ${cameraState.source} to ${source}`);
   cameraState.source = source;
   updateCameraButtons();
+  
+  // If switching to ESP32-CAM, log the IP address
+  if (source === 'esp32') {
+    console.log(`[Camera] 📡 Switching to ESP32-CAM at IP: ${ESP32_IP}`);
+  }
+  
   initCamera();
 }
 
@@ -394,10 +589,9 @@ function cleanupCamera() {
     cameraState.stream.getTracks().forEach(track => track.stop());
     cameraState.stream = null;
   }
-  if (espPollingTimer) {
-    clearTimeout(espPollingTimer);
-    espPollingTimer = null;
-  }
+  
+  // Stop ESP32 stream
+  stopESP32Stream();
 }
 
 /**
