@@ -74,7 +74,10 @@ const classNamesIndonesian = {
   'vase': 'vas',
   'scissors': 'gunting',
   'teddy bear': 'boneka',
-  'toothbrush': 'sikat gigi'
+  'toothbrush': 'sikat gigi',
+  'tembok': 'tembok', // Wall
+  'halangan': 'halangan', // Obstacle
+  'obstacle': 'halangan' // Obstacle (English)
 };
 
 /**

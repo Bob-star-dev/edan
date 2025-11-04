@@ -65,6 +65,71 @@ function getObjectSize(classId) {
 }
 
 /**
+ * Estimate distance for unknown objects based on bounding box size
+ * Uses relative size heuristic: larger bounding box = closer object
+ * @param {number} focalLength - Focal length
+ * @param {number} bboxWidth - Bounding box width in pixels
+ * @param {number} bboxHeight - Bounding box height in pixels
+ * @param {number} canvasWidth - Canvas width
+ * @param {number} canvasHeight - Canvas height
+ * @returns {number} Estimated distance in cm
+ */
+function estimateDistanceForUnknownObject(focalLength, bboxWidth, bboxHeight, canvasWidth, canvasHeight) {
+  // Calculate bounding box area as percentage of canvas
+  const bboxArea = bboxWidth * bboxHeight;
+  const canvasArea = canvasWidth * canvasHeight;
+  const areaPercentage = (bboxArea / canvasArea) * 100;
+  
+  // Heuristic: larger area = closer object
+  // Based on typical object sizes and distances
+  // If bbox takes up >50% of screen, likely very close (<30cm)
+  // If bbox takes up 10-50%, likely medium distance (30-100cm)
+  // If bbox takes up <10%, likely far (>100cm)
+  
+  let estimatedDistance;
+  if (areaPercentage > 50) {
+    // Very large object - likely very close
+    estimatedDistance = 20 + (50 - areaPercentage) * 0.5; // 20-45cm
+  } else if (areaPercentage > 20) {
+    // Large object - medium distance
+    estimatedDistance = 50 + (50 - areaPercentage) * 2; // 50-110cm
+  } else if (areaPercentage > 5) {
+    // Medium object - medium-far distance
+    estimatedDistance = 100 + (20 - areaPercentage) * 5; // 100-175cm
+  } else {
+    // Small object - far distance
+    estimatedDistance = 150 + (5 - areaPercentage) * 20; // 150-250cm
+  }
+  
+  // Clamp to reasonable range
+  estimatedDistance = Math.max(10, Math.min(300, estimatedDistance));
+  
+  return Math.round(estimatedDistance * 10) / 10;
+}
+
+/**
+ * Detect if bounding box might be a wall or large obstacle
+ * Walls typically have very large bounding boxes covering significant portion of frame
+ * @param {number} bboxWidth - Bounding box width
+ * @param {number} bboxHeight - Bounding box height
+ * @param {number} canvasWidth - Canvas width
+ * @param {number} canvasHeight - Canvas height
+ * @returns {boolean} True if might be wall/large obstacle
+ */
+function isLikelyWallOrLargeObstacle(bboxWidth, bboxHeight, canvasWidth, canvasHeight) {
+  const bboxArea = bboxWidth * bboxHeight;
+  const canvasArea = canvasWidth * canvasHeight;
+  const areaPercentage = (bboxArea / canvasArea) * 100;
+  
+  // If bbox covers >30% of frame, likely wall or large obstacle
+  // Also check if it spans most of width or height
+  const widthPercentage = (bboxWidth / canvasWidth) * 100;
+  const heightPercentage = (bboxHeight / canvasHeight) * 100;
+  
+  return areaPercentage > 30 || widthPercentage > 70 || heightPercentage > 70;
+}
+
+/**
  * Calculate distance using width
  * @param {number} focalLength - Focal length in pixels
  * @param {number} realObjectWidth - Actual object width in cm
@@ -148,36 +213,52 @@ function getObjectDistance(focalLength, classId, boundingBoxWidth, boundingBoxHe
   const actualBboxWidth = boundingBoxWidth * scaleX;
   const actualBboxHeight = boundingBoxHeight * scaleY;
   
-  // Adjust focal length based on actual video resolution
-  // Focal length is typically calibrated at 640px width, so scale accordingly
-  const referenceWidth = 640;
-  const focalLengthScale = actualWidth / referenceWidth;
-  const adjustedFocalLength = focalLength * focalLengthScale;
+  // Check if this might be a wall or large obstacle
+  const isWall = isLikelyWallOrLargeObstacle(boundingBoxWidth, boundingBoxHeight, canvasDisplayWidth, canvasDisplayHeight);
   
-  // Determine which dimension to use for distance calculation
-  // Use width for wide objects, height for tall objects
-  const aspectRatio = actualBboxHeight / actualBboxWidth;
-  const objectAspectRatio = objectSize.height / objectSize.width;
-  
-  // Use the dimension that gives better accuracy
-  // For tall objects (person, etc), use height. For wide objects, use width.
-  const isTallObject = aspectRatio > 1.2 && objectAspectRatio > 1.5;
+  // If object size is unknown (default fallback) or is likely wall, use estimation
+  const isUnknownObject = !objectSizes[classId] || isWall;
   
   let distance;
-  if (isTallObject) {
-    // Use height for tall objects (person, etc.)
-    distance = calculateDistanceByHeight(
-      adjustedFocalLength,
-      objectSize.height,
-      actualBboxHeight
+  
+  if (isUnknownObject) {
+    // Use heuristic-based estimation for unknown objects or walls
+    distance = estimateDistanceForUnknownObject(
+      focalLength,
+      boundingBoxWidth,
+      boundingBoxHeight,
+      canvasDisplayWidth,
+      canvasDisplayHeight
     );
   } else {
-    // Use width for most objects
-    distance = calculateDistance(
-      adjustedFocalLength,
-      objectSize.width,
-      actualBboxWidth
-    );
+    // Use known object size calculation
+    // Adjust focal length based on actual video resolution
+    const referenceWidth = 640;
+    const focalLengthScale = actualWidth / referenceWidth;
+    const adjustedFocalLength = focalLength * focalLengthScale;
+    
+    // Determine which dimension to use for distance calculation
+    const aspectRatio = actualBboxHeight / actualBboxWidth;
+    const objectAspectRatio = objectSize.height / objectSize.width;
+    
+    // Use the dimension that gives better accuracy
+    const isTallObject = aspectRatio > 1.2 && objectAspectRatio > 1.5;
+    
+    if (isTallObject) {
+      // Use height for tall objects (person, etc.)
+      distance = calculateDistanceByHeight(
+        adjustedFocalLength,
+        objectSize.height,
+        actualBboxHeight
+      );
+    } else {
+      // Use width for most objects
+      distance = calculateDistance(
+        adjustedFocalLength,
+        objectSize.width,
+        actualBboxWidth
+      );
+    }
   }
   
   // Log for debugging (only occasionally to avoid spam)
@@ -185,13 +266,11 @@ function getObjectDistance(focalLength, classId, boundingBoxWidth, boundingBoxHe
     console.log('[Distance] Calculation:', {
       classId,
       className: typeof yoloClasses !== 'undefined' ? yoloClasses[classId] : 'unknown',
-      objectSize: `${objectSize.width}x${objectSize.height}cm`,
+      isUnknown: isUnknownObject,
+      isWall: isWall,
+      objectSize: isUnknownObject ? 'estimated' : `${objectSize.width}x${objectSize.height}cm`,
       bboxCanvas: `${boundingBoxWidth.toFixed(1)}x${boundingBoxHeight.toFixed(1)}px`,
-      bboxActual: `${actualBboxWidth.toFixed(1)}x${actualBboxHeight.toFixed(1)}px`,
-      videoRes: `${actualWidth}x${actualHeight}`,
-      focalLength: adjustedFocalLength.toFixed(1),
-      distance: distance.toFixed(1) + 'cm',
-      usingHeight: isTallObject
+      distance: distance.toFixed(1) + 'cm'
     });
   }
   

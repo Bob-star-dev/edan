@@ -92,8 +92,9 @@ function postprocessYolov7(ctx, modelResolution, tensor, conf2color, focalLength
     const classId = Math.round(data[offset + 5]);
     const confidence = data[offset + 6];
 
-    // Filter by confidence threshold
-    if (confidence < 0.25) continue;
+    // Filter by confidence threshold - lowered to detect more objects including walls
+    // Lower threshold helps detect objects that might be partially visible or walls
+    if (confidence < 0.15) continue;
     
     console.log(` [YOLOv7] Detection ${i} passed threshold:`, {
       classId,
@@ -122,22 +123,40 @@ function postprocessYolov7(ctx, modelResolution, tensor, conf2color, focalLength
 
     // Create label
     const score = round(confidence * 100, 1);
-    const className = yoloClasses[classId] || `Class ${classId}`;
+    let className = yoloClasses[classId] || `Class ${classId}`;
+    
+    // Check if this might be a wall or large obstacle
+    const isWall = typeof isLikelyWallOrLargeObstacle === 'function' && 
+                   isLikelyWallOrLargeObstacle(bboxWidth, bboxHeight, ctx.canvas.width, ctx.canvas.height);
+    
+    // If likely wall or unknown object with large bbox, label it appropriately
+    if (isWall && !yoloClasses[classId]) {
+      className = 'tembok'; // Wall in Indonesian
+    } else if (isWall && yoloClasses[classId]) {
+      className = `${className} / halangan`; // Add "obstacle" label
+    } else if (!yoloClasses[classId]) {
+      className = 'halangan'; // Unknown object = obstacle
+    }
+    
     const label = `${capitalize(className)} ${score}%`;
     const color = conf2color(confidence);
 
-    // Collect detection info for voice navigation
+    // Collect detection info for voice navigation - include ALL detections
     detectionsForVoice.push({
       classId: classId,
       distance: distance,
       className: className,
-      confidence: confidence
+      confidence: confidence,
+      isWall: isWall,
+      isUnknown: !yoloClasses[classId]
     });
     
     console.log(` [YOLOv7] Added detection ${i} to voice array:`, {
       className,
       distance: distance.toFixed(1) + 'cm',
       confidence: (confidence * 100).toFixed(1) + '%',
+      isWall: isWall,
+      isUnknown: !yoloClasses[classId],
       currentArrayLength: detectionsForVoice.length
     });
     
@@ -210,8 +229,8 @@ function postprocessYolov10(ctx, modelResolution, tensor, conf2color, focalLengt
     const confidence = data[i + 4];
     const classId = Math.round(data[i + 5]);
 
-    // Filter by confidence threshold
-    if (confidence < 0.25) break;
+    // Filter by confidence threshold - lowered to detect more objects
+    if (confidence < 0.15) break;
 
     // Scale to canvas size
     const scaledX0 = x0 * dx;
@@ -234,22 +253,40 @@ function postprocessYolov10(ctx, modelResolution, tensor, conf2color, focalLengt
 
     // Create label
     const score = round(confidence * 100, 1);
-    const className = yoloClasses[classId] || `Class ${classId}`;
+    let className = yoloClasses[classId] || `Class ${classId}`;
+    
+    // Check if this might be a wall or large obstacle
+    const isWall = typeof isLikelyWallOrLargeObstacle === 'function' && 
+                   isLikelyWallOrLargeObstacle(bboxWidth, bboxHeight, ctx.canvas.width, ctx.canvas.height);
+    
+    // If likely wall or unknown object with large bbox, label it appropriately
+    if (isWall && !yoloClasses[classId]) {
+      className = 'tembok'; // Wall in Indonesian
+    } else if (isWall && yoloClasses[classId]) {
+      className = `${className} / halangan`; // Add "obstacle" label
+    } else if (!yoloClasses[classId]) {
+      className = 'halangan'; // Unknown object = obstacle
+    }
+    
     const label = `${capitalize(className)} ${score}%`;
     const color = conf2color(confidence);
 
-    // Collect detection info for voice navigation
+    // Collect detection info for voice navigation - include ALL detections
     detectionsForVoice.push({
       classId: classId,
       distance: distance,
       className: className,
-      confidence: confidence
+      confidence: confidence,
+      isWall: isWall,
+      isUnknown: !yoloClasses[classId]
     });
     
-    console.log(` [YOLOv7] Added detection ${i} to voice array:`, {
+    console.log(` [YOLOv10] Added detection to voice array:`, {
       className,
       distance: distance.toFixed(1) + 'cm',
       confidence: (confidence * 100).toFixed(1) + '%',
+      isWall: isWall,
+      isUnknown: !yoloClasses[classId],
       currentArrayLength: detectionsForVoice.length
     });
     
@@ -310,7 +347,7 @@ function postprocessYolov11(ctx, modelResolution, tensor, conf2color, focalLengt
 
   const numClasses = 80;
   const numAnchors = tensor.dims[2];
-  const confidenceThreshold = 0.25;
+  const confidenceThreshold = 0.15; // Lowered to detect more objects including walls
   const data = tensor.data;
 
   const detections = [];
@@ -381,22 +418,40 @@ function postprocessYolov11(ctx, modelResolution, tensor, conf2color, focalLengt
 
     // Create label
     const score = round(detection.confidence * 100, 1);
-    const className = yoloClasses[detection.classId] || `Class ${detection.classId}`;                                                                           
+    let className = yoloClasses[detection.classId] || `Class ${detection.classId}`;
+    
+    // Check if this might be a wall or large obstacle
+    const isWall = typeof isLikelyWallOrLargeObstacle === 'function' && 
+                   isLikelyWallOrLargeObstacle(bboxWidth, bboxHeight, ctx.canvas.width, ctx.canvas.height);
+    
+    // If likely wall or unknown object with large bbox, label it appropriately
+    if (isWall && !yoloClasses[detection.classId]) {
+      className = 'tembok'; // Wall in Indonesian
+    } else if (isWall && yoloClasses[detection.classId]) {
+      className = `${className} / halangan`; // Add "obstacle" label
+    } else if (!yoloClasses[detection.classId]) {
+      className = 'halangan'; // Unknown object = obstacle
+    }
+    
     const label = `${capitalize(className)} ${score}%`;
     const color = conf2color(detection.confidence);
 
-    // Collect detection info for voice navigation
+    // Collect detection info for voice navigation - include ALL detections
     detectionsForVoice.push({
       classId: detection.classId,
       distance: distance,
       className: className,
-      confidence: detection.confidence
+      confidence: detection.confidence,
+      isWall: isWall,
+      isUnknown: !yoloClasses[detection.classId]
     });
     
     console.log(` [YOLOv11] Added detection to voice array:`, {
       className,
       distance: distance.toFixed(1) + 'cm',
       confidence: (detection.confidence * 100).toFixed(1) + '%',
+      isWall: isWall,
+      isUnknown: !yoloClasses[detection.classId],
       currentArrayLength: detectionsForVoice.length
     });
     
