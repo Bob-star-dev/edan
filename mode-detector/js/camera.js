@@ -71,6 +71,12 @@ async function initWebcam() {
       setCanvasSize(video.videoWidth, video.videoHeight);
       video.style.display = 'block';
       document.getElementById('esp32-img').style.display = 'none';
+      
+      // Auto-start live detection when camera is ready
+      // Live detection should always be active
+      if (typeof startLiveDetection === 'function') {
+        startLiveDetection();
+      }
     };
 
     video.onerror = (error) => {
@@ -151,6 +157,12 @@ function initESP32() {
     img.style.display = 'block';
     document.getElementById('video-element').style.display = 'none';
 
+    // Auto-start live detection when ESP32 camera is ready
+    // Live detection should always be active
+    if (typeof startLiveDetection === 'function' && cameraState.isStreamReady) {
+      startLiveDetection();
+    }
+
     // Schedule next frame
     // Use slightly longer delay to ensure frame is fully processed
     const delay = cameraState.espEndpointMode === 'stream' ? 70 : 180;
@@ -186,9 +198,11 @@ function initESP32() {
 
 /**
  * Initialize camera based on current source
+ * Note: Live detection will auto-start when camera becomes ready
  */
 function initCamera() {
-  stopLiveDetection();
+  // Don't stop live detection - it will restart automatically when camera is ready
+  // Live detection should always be active
   if (cameraState.source === 'webcam') {
     initWebcam();
   } else {

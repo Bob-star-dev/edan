@@ -200,6 +200,20 @@ function postprocessYolov7(ctx, modelResolution, tensor, conf2color, focalLength
   } else {
     console.warn(' [Postprocess] processDetectionsForVoice function not found! Make sure voiceNavigation.js is loaded.');
   }
+
+  // Check and trigger vibration for objects within 150cm
+  // This will send vibration signal to vibration motor when distance <= 150cm
+  if (typeof checkAndTriggerVibration === 'function') {
+    if (detectionsForVoice.length > 0) {
+      checkAndTriggerVibration(detectionsForVoice);
+    }
+  } else {
+    // Log warning only once to avoid spam
+    if (!window.vibrationWarningLogged) {
+      console.warn(' [Postprocess] checkAndTriggerVibration function not found! Make sure vibration.js is loaded.');
+      window.vibrationWarningLogged = true;
+    }
+  }
 }
 
 /**
@@ -329,6 +343,20 @@ function postprocessYolov10(ctx, modelResolution, tensor, conf2color, focalLengt
     }
   } else {
     console.warn(' [Postprocess] processDetectionsForVoice function not found! Make sure voiceNavigation.js is loaded.');
+  }
+
+  // Check and trigger vibration for objects within 150cm
+  // This will send vibration signal to vibration motor when distance <= 150cm
+  if (typeof checkAndTriggerVibration === 'function') {
+    if (detectionsForVoice.length > 0) {
+      checkAndTriggerVibration(detectionsForVoice);
+    }
+  } else {
+    // Log warning only once to avoid spam
+    if (!window.vibrationWarningLogged) {
+      console.warn(' [Postprocess] checkAndTriggerVibration function not found! Make sure vibration.js is loaded.');
+      window.vibrationWarningLogged = true;
+    }
   }
 }
 
@@ -494,6 +522,20 @@ function postprocessYolov11(ctx, modelResolution, tensor, conf2color, focalLengt
     }
   } else {
     console.warn(' [Postprocess] processDetectionsForVoice function not found! Make sure voiceNavigation.js is loaded.');
+  }
+
+  // Check and trigger vibration for objects within 150cm
+  // This will send vibration signal to vibration motor when distance <= 150cm
+  if (typeof checkAndTriggerVibration === 'function') {
+    if (detectionsForVoice.length > 0) {
+      checkAndTriggerVibration(detectionsForVoice);
+    }
+  } else {
+    // Log warning only once to avoid spam
+    if (!window.vibrationWarningLogged) {
+      console.warn(' [Postprocess] checkAndTriggerVibration function not found! Make sure vibration.js is loaded.');
+      window.vibrationWarningLogged = true;
+    }
   }
 }
 
