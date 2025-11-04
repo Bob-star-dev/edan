@@ -50,55 +50,105 @@ function initElements() {
 
 /**
  * Run single detection
+ * Handles the complete detection pipeline: capture, preprocess, infer, postprocess
  */
 async function runDetection() {
+  // Check if model is loaded
   if (!currentSession) {
-    console.warn('Model not loaded yet');
-    showError('Model not loaded. Please wait...');
+    console.warn('❌ Model not loaded yet');
+    showError('Model not loaded. Please wait for model to initialize...');
     return;
   }
 
+  // Check if camera is ready
   if (!cameraState.isStreamReady) {
-    console.warn('Camera not ready');
-    showError('Camera not ready. Please wait...');
+    console.warn('❌ Camera not ready');
+    const errorMsg = cameraState.source === 'webcam' 
+      ? 'Camera not ready. Please allow camera permission or check camera connection.'
+      : 'ESP32-CAM not ready. Please check connection or switch to webcam.';
+    showError(errorMsg);
     return;
   }
 
   const startTime = Date.now();
+  
+  // Capture frame from camera
   const ctx = captureFrame();
-
   if (!ctx) {
-    console.warn('Failed to capture frame');
+    console.warn('❌ Failed to capture frame');
+    const errorMsg = cameraState.source === 'webcam'
+      ? 'Failed to capture from webcam. Make sure video is playing.'
+      : 'Failed to capture from ESP32-CAM. Check connection or try capture mode.';
+    showError(errorMsg);
     return;
   }
 
   try {
-    // Preprocess
+    // Get current model configuration
     const model = getCurrentModel();
-    const inputTensor = preprocess(ctx, model.resolution);
+    if (!model) {
+      throw new Error('No model selected');
+    }
+    console.log(`🔍 Running detection with model: ${model.name} (${model.resolution[0]}×${model.resolution[1]})`);
 
-    // Inference
-    const [outputTensor, inferenceTime] = await runInference(currentSession, inputTensor);
+    // Preprocess: Convert canvas frame to tensor
+    let inputTensor;
+    try {
+      inputTensor = preprocess(ctx, model.resolution);
+      console.log('✅ Preprocessing completed');
+    } catch (preprocessError) {
+      console.error('❌ Preprocessing failed:', preprocessError);
+      throw new Error(`Preprocessing failed: ${preprocessError.message}`);
+    }
 
-    // Postprocess
-    postprocess(
-      model.name,
-      ctx,
-      model.resolution,
-      outputTensor,
-      inferenceTime,
-      appState.focalLength
-    );
+    // Inference: Run model inference
+    let outputTensor, inferenceTime;
+    try {
+      [outputTensor, inferenceTime] = await runInference(currentSession, inputTensor);
+      console.log(`✅ Inference completed in ${inferenceTime.toFixed(1)}ms`);
+    } catch (inferenceError) {
+      console.error('❌ Inference failed:', inferenceError);
+      throw new Error(`Inference failed: ${inferenceError.message}`);
+    }
 
-    // Update stats
+    // Postprocess: Draw bounding boxes and labels
+    try {
+      postprocess(
+        model.name,
+        ctx,
+        model.resolution,
+        outputTensor,
+        inferenceTime,
+        appState.focalLength
+      );
+      console.log('✅ Postprocessing completed - detections drawn');
+    } catch (postprocessError) {
+      console.error('❌ Postprocessing failed:', postprocessError);
+      throw new Error(`Postprocessing failed: ${postprocessError.message}`);
+    }
+
+    // Update performance statistics
     appState.inferenceTime = inferenceTime;
     appState.totalTime = Date.now() - startTime;
     updateStats();
 
+    // Clear any previous errors
     hideError();
+    
+    console.log(`✅ Detection completed successfully (Total: ${appState.totalTime.toFixed(1)}ms)`);
   } catch (error) {
-    console.error('Detection error:', error);
+    console.error('❌ Detection error:', error);
+    console.error('Error stack:', error.stack);
     showError(`Detection failed: ${error.message}`);
+    
+    // Log additional diagnostic information
+    console.log('Diagnostic info:', {
+      modelLoaded: !!currentSession,
+      cameraReady: cameraState.isStreamReady,
+      cameraSource: cameraState.source,
+      canvasExists: !!elements.canvas,
+      currentModel: getCurrentModel()?.name || 'none'
+    });
   }
 }
 
@@ -159,10 +209,36 @@ function reset() {
 }
 
 /**
- * Change model
+ * Change model handler
+ * This function handles user interaction to switch to the next model.
+ * It directly accesses MODELS and currentModelIndex from model.js (global scope)
+ * to avoid calling itself recursively.
  */
 async function changeModel() {
-  const newModel = changeModel();
+  // Get the next model by directly accessing model.js globals
+  // Since model.js loads before main.js, MODELS and currentModelIndex are available
+  if (typeof MODELS === 'undefined' || typeof currentModelIndex === 'undefined') {
+    showError('Model management not initialized');
+    return;
+  }
+  
+  // Safety check: ensure MODELS array is not empty
+  if (!MODELS || MODELS.length === 0) {
+    showError('No models available');
+    return;
+  }
+  
+  // Advance to next model (same logic as model.js changeModel function)
+  currentModelIndex = (currentModelIndex + 1) % MODELS.length;
+  const newModel = MODELS[currentModelIndex];
+  
+  // Safety check: ensure newModel is valid before accessing properties
+  if (!newModel || !newModel.name) {
+    console.error('Invalid model at index:', currentModelIndex);
+    showError('Invalid model selected');
+    return;
+  }
+  
   console.log(`Changing to model: ${newModel.name}`);
   
   try {
