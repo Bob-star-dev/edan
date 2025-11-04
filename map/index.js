@@ -590,9 +590,11 @@ function onLocationFound(e) {
         }
         
         // Auto-pan map untuk mengikuti marker saat navigasi aktif
-        // Hanya pan jika user bergerak cukup jauh (lebih dari 50m) untuk menghindari gerakan halus berlebihan
-        if (isNavigating && distanceMoved > 50) {
+        // Selama navigasi aktif, peta selalu mengikuti pergerakan user
+        // Threshold dikurangi menjadi 5m agar peta lebih responsif dan selalu mengikuti pergerakan
+        if (isNavigating && distanceMoved > 5) {
             map.panTo(e.latlng, { duration: 0.5 }); // Smooth pan mengikuti marker
+            console.log('📍 Map following user movement during navigation:', distanceMoved.toFixed(0), 'm');
         }
     }
     
@@ -1505,8 +1507,8 @@ function initSpeechRecognition() {
                         recognition.start();
                         isListening = true;
                         console.log('🎤 Microphone started after click');
-                        updateVoiceStatus('🎤 Mikrofon aktif. Ucapkan "Halo" atau sebutkan tujuan.');
-                        speakText('Mikrofon aktif. Ucapkan "Halo" atau sebutkan tujuan Anda', 'id-ID', true);
+                        updateVoiceStatus('🎤 Mikrofon aktif. sebutkan tujuan.');
+                        speakText('Mikrofon aktif. sebutkan tujuan Anda', 'id-ID', true);
                     }
                 } catch (err) {
                     console.error('Failed to start after click:', err);
@@ -2771,6 +2773,14 @@ function startTurnByTurnNavigation() {
         console.log('🔇 Microphone stopped - navigation started, say "Halo" or click to reactivate');
     }
     
+    // CRITICAL: Fokus peta ke lokasi user saat ini saat navigasi dimulai
+    // Ini memastikan user selalu melihat posisi mereka di peta
+    if (currentUserPosition) {
+        const userLatLng = currentUserPosition.getLatLng();
+        map.setView(userLatLng, 16, { animate: true, duration: 0.5 });
+        console.log('📍 Map focused on user location at start of navigation:', userLatLng.lat.toFixed(6), userLatLng.lng.toFixed(6));
+    }
+    
     // Announce start of navigation and read full route details
     speakText('Memulai navigasi.', 'id-ID', true, function() {
         // Announce full route summary (distance, time, and directions)
@@ -3091,7 +3101,7 @@ async function geocodeLocation(location, userLatLng = null) {
                                         recognition._waitingForNavigasi = false;
                                         isListening = false;
                                         console.log('🔇 Microphone stopped - "Navigasi" window expired, say "Halo" to restart');
-                                        updateVoiceStatus('✅ Tujuan: ' + city.name + ' - Ucapkan "Halo" lalu "Navigasi" untuk memulai');
+                                        updateVoiceStatus('✅ Tujuan: ' + city.name + ' - Ucapkan "Navigasi" untuk memulai');
                                     }
                                 }, 10000); // 10 second window
                             } catch (error) {
