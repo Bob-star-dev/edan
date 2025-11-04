@@ -126,6 +126,11 @@ async function loadModel(modelName, isFallback = false) {
     console.log('✅ Model loaded successfully');
     console.log('Input names:', session.inputNames);
     console.log('Output names:', session.outputNames);
+    
+    // Update status indicators if function exists
+    if (typeof updateStatusIndicators === 'function') {
+      setTimeout(() => updateStatusIndicators(), 100);
+    }
 
     currentSession = session;
     loadAttempts.clear(); // Clear attempts on success

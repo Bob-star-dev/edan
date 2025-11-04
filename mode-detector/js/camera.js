@@ -39,9 +39,14 @@ async function initWebcam() {
   if (!video) return;
 
   try {
-    showLoading('Starting webcam...');
+    showLoading('Memulai webcam...');
     hideError();
     cameraState.isStreamReady = false;
+    
+    // Update status
+    if (typeof updateStatusIndicators === 'function') {
+      updateStatusIndicators();
+    }
 
     // Stop existing stream
     if (cameraState.stream) {
@@ -71,6 +76,11 @@ async function initWebcam() {
       setCanvasSize(video.videoWidth, video.videoHeight);
       video.style.display = 'block';
       document.getElementById('esp32-img').style.display = 'none';
+      
+      // Update status indicators if function exists
+      if (typeof updateStatusIndicators === 'function') {
+        updateStatusIndicators();
+      }
     };
 
     video.onerror = (error) => {
@@ -102,9 +112,14 @@ function initESP32() {
     espBufferCanvas = document.createElement('canvas');
   }
 
-  showLoading(`Connecting to ESP32-S3 CAM (${ESP32_IP})...`);
-  cameraState.isStreamReady = true;
+  showLoading(`Menghubungkan ke ESP32-CAM (${ESP32_IP})...`);
+  cameraState.isStreamReady = false; // Set to false initially, will be true when frame loads
   cameraState.espErrorCount = 0;
+  
+  // Update status
+  if (typeof updateStatusIndicators === 'function') {
+    updateStatusIndicators();
+  }
 
   function setNextSrc() {
     if (!img) return;
@@ -125,8 +140,18 @@ function initESP32() {
   img.onload = () => {
     console.log('✅ ESP32-S3 CAM frame loaded');
     console.log(`Frame dimensions: ${img.naturalWidth}x${img.naturalHeight}`);
-    hideLoading();
-    hideError();
+    
+    // Set ready on first successful load
+    if (!cameraState.isStreamReady) {
+      cameraState.isStreamReady = true;
+      hideLoading();
+      hideError();
+      
+      // Update status indicators if function exists
+      if (typeof updateStatusIndicators === 'function') {
+        updateStatusIndicators();
+      }
+    }
 
     // Update buffer immediately when new frame arrives
     // This ensures buffer always has latest frame for detection
@@ -452,11 +477,15 @@ function hideError() {
  */
 function getErrorMessage(error) {
   if (error.name === 'NotAllowedError') {
-    return 'Camera permission denied. Please allow camera access.';
+    return '❌ Akses kamera ditolak. Silakan izinkan akses kamera di pengaturan browser Anda.';
   } else if (error.name === 'NotFoundError') {
-    return 'No camera found. Please connect a camera.';
+    return '❌ Kamera tidak ditemukan. Pastikan kamera terhubung dan tidak digunakan aplikasi lain.';
+  } else if (error.name === 'NotReadableError') {
+    return '❌ Kamera tidak dapat dibaca. Pastikan kamera tidak digunakan aplikasi lain.';
+  } else if (error.name === 'OverconstrainedError') {
+    return '❌ Kamera tidak mendukung resolusi yang diminta. Mencoba resolusi alternatif...';
   } else {
-    return error.message || 'Unknown error occurred';
+    return `❌ Error: ${error.message || 'Terjadi kesalahan yang tidak diketahui'}`;
   }
 }
 

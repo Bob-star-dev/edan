@@ -35,6 +35,10 @@ function initElements() {
     esp32Btn: document.getElementById('esp32-btn'),
     esp32StreamBtn: document.getElementById('esp32-stream-btn'),
     esp32CaptureBtn: document.getElementById('esp32-capture-btn'),
+    helpBtn: document.getElementById('help-btn'),
+    helpModal: document.getElementById('help-modal'),
+    closeHelpBtn: document.getElementById('close-help-btn'),
+    closeHelpBtnFooter: document.getElementById('close-help-btn-footer'),
     
     // Display elements
     modelName: document.getElementById('model-name'),
@@ -56,7 +60,7 @@ async function runDetection() {
   // Check if model is loaded
   if (!currentSession) {
     console.warn('❌ Model not loaded yet');
-    showError('Model not loaded. Please wait for model to initialize...');
+    showError('⏳ Model belum dimuat. Silakan tunggu hingga model selesai dimuat...');
     return;
   }
 
@@ -64,8 +68,8 @@ async function runDetection() {
   if (!cameraState.isStreamReady) {
     console.warn('❌ Camera not ready');
     const errorMsg = cameraState.source === 'webcam' 
-      ? 'Camera not ready. Please allow camera permission or check camera connection.'
-      : 'ESP32-CAM not ready. Please check connection or switch to webcam.';
+      ? '⏳ Kamera belum siap. Silakan izinkan akses kamera atau periksa koneksi kamera.'
+      : '⏳ ESP32-CAM belum siap. Periksa koneksi atau beralih ke webcam.';
     showError(errorMsg);
     return;
   }
@@ -77,8 +81,8 @@ async function runDetection() {
   if (!ctx) {
     console.warn('❌ Failed to capture frame');
     const errorMsg = cameraState.source === 'webcam'
-      ? 'Failed to capture from webcam. Make sure video is playing.'
-      : 'Failed to capture from ESP32-CAM. Check connection or try capture mode.';
+      ? '❌ Gagal mengambil frame dari webcam. Pastikan video sedang berjalan.'
+      : '❌ Gagal mengambil frame dari ESP32-CAM. Periksa koneksi atau coba mode capture.';
     showError(errorMsg);
     return;
   }
@@ -139,7 +143,18 @@ async function runDetection() {
   } catch (error) {
     console.error('❌ Detection error:', error);
     console.error('Error stack:', error.stack);
-    showError(`Detection failed: ${error.message}`);
+    
+    // User-friendly error messages
+    let errorMessage = 'Gagal melakukan deteksi. ';
+    if (!currentSession) {
+      errorMessage += 'Model belum dimuat.';
+    } else if (!cameraState.isStreamReady) {
+      errorMessage += 'Kamera belum siap.';
+    } else {
+      errorMessage += error.message || 'Terjadi kesalahan.';
+    }
+    
+    showError(errorMessage);
     
     // Log additional diagnostic information
     console.log('Diagnostic info:', {
@@ -165,6 +180,7 @@ function startLiveDetection() {
   if (elements.liveBtn) {
     elements.liveBtn.innerHTML = '<span class="btn-icon">⏸️</span><span>Stop Detection</span>';
   }
+  updateStatusIndicators();
 
   function loop() {
     if (!appState.liveDetection) return;
@@ -215,6 +231,7 @@ function stopLiveDetection() {
   if (elements.liveBtn) {
     elements.liveBtn.innerHTML = '<span class="btn-icon">▶️</span><span>Live Detection</span>';
   }
+  updateStatusIndicators();
 }
 
 /**
@@ -266,14 +283,31 @@ async function changeModel() {
   console.log(`Changing to model: ${newModel.name}`);
   
   try {
-    showLoading(`Loading model: ${newModel.name}...`);
+    showLoading(`Memuat model: ${newModel.name}...`);
+    updateStatusIndicators(); // Update to loading state
+    
+    // Stop live detection during model change
+    const wasLive = appState.liveDetection;
+    if (wasLive) {
+      stopLiveDetection();
+    }
+    
     await loadModel(newModel.name);
     updateModelInfo();
+    updateStatusIndicators(); // Update to ready state
     hideLoading();
     reset();
+    
+    // Restart live detection if it was running
+    if (wasLive) {
+      setTimeout(() => {
+        startLiveDetection();
+      }, 500);
+    }
   } catch (error) {
     console.error('Failed to change model:', error);
-    showError(`Failed to load model: ${error.message}`);
+    showError(`❌ Gagal memuat model: ${error.message}`);
+    updateStatusIndicators(); // Update status even on error
     hideLoading();
   }
 }
@@ -318,6 +352,63 @@ function updateModelInfo() {
   }
   if (elements.modelResolution) {
     elements.modelResolution.textContent = `${model.resolution[0]}×${model.resolution[1]}`;
+  }
+}
+
+/**
+ * Update status indicators
+ */
+function updateStatusIndicators() {
+  // Model status
+  const modelStatusDot = document.getElementById('model-status-dot');
+  const modelStatusText = document.getElementById('model-status-text');
+  if (modelStatusDot && modelStatusText) {
+    if (currentSession) {
+      modelStatusDot.className = 'status-dot active';
+      modelStatusText.textContent = 'Siap';
+    } else {
+      modelStatusDot.className = 'status-dot loading';
+      modelStatusText.textContent = 'Memuat...';
+    }
+  }
+
+  // Camera status
+  const cameraStatusDot = document.getElementById('camera-status-dot');
+  const cameraStatusText = document.getElementById('camera-status-text');
+  if (cameraStatusDot && cameraStatusText) {
+    if (cameraState.isStreamReady) {
+      cameraStatusDot.className = 'status-dot active';
+      cameraStatusText.textContent = cameraState.source === 'webcam' ? 'Webcam Aktif' : 'ESP32-CAM Aktif';
+    } else {
+      cameraStatusDot.className = 'status-dot loading';
+      cameraStatusText.textContent = 'Menunggu...';
+    }
+  }
+
+  // Detection status
+  const detectionStatusDot = document.getElementById('detection-status-dot');
+  const detectionStatusText = document.getElementById('detection-status-text');
+  if (detectionStatusDot && detectionStatusText) {
+    if (appState.liveDetection) {
+      detectionStatusDot.className = 'status-dot active';
+      detectionStatusText.textContent = 'Live Detection Aktif';
+    } else {
+      detectionStatusDot.className = 'status-dot';
+      detectionStatusText.textContent = 'Tidak Aktif';
+    }
+  }
+
+  // Voice navigation status
+  const voiceStatusDot = document.getElementById('voice-status-dot');
+  const voiceStatusText = document.getElementById('voice-status-text');
+  if (voiceStatusDot && voiceStatusText) {
+    if (typeof voiceNavigationState !== 'undefined' && voiceNavigationState.enabled) {
+      voiceStatusDot.className = 'status-dot active';
+      voiceStatusText.textContent = 'Aktif';
+    } else {
+      voiceStatusDot.className = 'status-dot';
+      voiceStatusText.textContent = 'Nonaktif';
+    }
   }
 }
 
@@ -398,6 +489,47 @@ function setupEventListeners() {
     cleanupCamera();
     stopLiveDetection();
   });
+
+  // Help/Guide modal
+  if (elements.helpBtn) {
+    elements.helpBtn.addEventListener('click', () => {
+      if (elements.helpModal) {
+        elements.helpModal.style.display = 'flex';
+      }
+    });
+  }
+
+  if (elements.closeHelpBtn) {
+    elements.closeHelpBtn.addEventListener('click', () => {
+      if (elements.helpModal) {
+        elements.helpModal.style.display = 'none';
+      }
+    });
+  }
+
+  if (elements.closeHelpBtnFooter) {
+    elements.closeHelpBtnFooter.addEventListener('click', () => {
+      if (elements.helpModal) {
+        elements.helpModal.style.display = 'none';
+      }
+    });
+  }
+
+  // Close modal when clicking outside
+  if (elements.helpModal) {
+    elements.helpModal.addEventListener('click', (e) => {
+      if (e.target === elements.helpModal) {
+        elements.helpModal.style.display = 'none';
+      }
+    });
+  }
+
+  // Close modal with Escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && elements.helpModal && elements.helpModal.style.display === 'flex') {
+      elements.helpModal.style.display = 'none';
+    }
+  });
 }
 
 /**
@@ -420,22 +552,31 @@ async function init() {
 
   // Load initial model
   const initialModel = getCurrentModel();
+  updateStatusIndicators(); // Initial status update
   try {
-    showLoading(`Loading model: ${initialModel.name}...`);
+    showLoading(`Memuat model: ${initialModel.name}...`);
+    updateStatusIndicators(); // Show loading state
     await loadModel(initialModel.name);
     updateModelInfo();
+    updateStatusIndicators(); // Update after model loaded
     hideLoading();
     console.log('✅ Model loaded');
   } catch (error) {
     console.error('Failed to load initial model:', error);
-    showError(`Failed to load model: ${error.message}`);
+    showError(`❌ Gagal memuat model: ${error.message}. Silakan refresh halaman.`);
     hideLoading();
+    updateStatusIndicators(); // Update status even on error
   }
 
   // Initialize camera
   updateCameraButtons();
   updateESP32Buttons();
   initCamera();
+  
+  // Update status indicators periodically
+  setInterval(() => {
+    updateStatusIndicators();
+  }, 1000); // Update every second
 
   console.log('✅ Application initialized');
 }

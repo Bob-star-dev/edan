@@ -9,9 +9,213 @@
 <body>
   <div class="container">
     <header>
-      <h1>🤖 Real-Time Object Detection</h1>
-      <p class="subtitle">YOLO Model Inference in Browser</p>
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div style="flex: 1;">
+          <h1>🤖 Real-Time Object Detection</h1>
+          <p class="subtitle">Deteksi Objek & Navigasi Suara dengan YOLO</p>
+          <div class="info-banner">
+            <p>📢 Sistem akan mengumumkan objek dalam jarak 100-150cm dan memberikan peringatan jika objek terlalu dekat (&lt;50cm)</p>
+          </div>
+        </div>
+        <button id="help-btn" class="btn btn-help" title="Buka Panduan Penggunaan">
+          <span class="btn-icon">📖</span>
+          <span>Panduan</span>
+        </button>
+      </div>
     </header>
+
+    <!-- Help/Guide Modal -->
+    <div id="help-modal" class="modal" style="display: none;">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>📖 Panduan Penggunaan</h2>
+          <button id="close-help-btn" class="modal-close" title="Tutup">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="guide-section">
+            <h3>🎯 Gambaran Umum</h3>
+            <p>Aplikasi ini menggunakan teknologi YOLO untuk mendeteksi objek secara real-time dari kamera. Sistem akan mengumumkan objek yang terdeteksi melalui suara dan memberikan peringatan jika ada objek terlalu dekat.</p>
+          </div>
+
+          <div class="guide-section">
+            <h3>🚀 Cara Memulai</h3>
+            <ol>
+              <li><strong>Izinkan Akses Kamera</strong> - Saat pertama kali membuka aplikasi, browser akan meminta izin untuk mengakses kamera. Klik "Allow" atau "Izinkan".</li>
+              <li><strong>Tunggu Model Dimuat</strong> - Aplikasi akan otomatis memuat model YOLO. Tunggu hingga status "Model" menunjukkan "Siap" (hijau).</li>
+              <li><strong>Kamera Siap</strong> - Pastikan status "Kamera" menunjukkan "Webcam Aktif" atau "ESP32-CAM Aktif".</li>
+              <li><strong>Mulai Deteksi</strong> - Klik tombol "Live Detection" untuk mulai mendeteksi objek secara real-time.</li>
+            </ol>
+          </div>
+
+          <div class="guide-section">
+            <h3>🎮 Kontrol Aplikasi</h3>
+            <div class="control-list">
+              <div class="control-item">
+                <strong>📸 Capture</strong>
+                <p>Ambil foto sekali dan deteksi objek pada foto tersebut. Berguna untuk deteksi single frame.</p>
+              </div>
+              <div class="control-item">
+                <strong>▶️ Live Detection</strong>
+                <p>Mulai atau hentikan deteksi real-time secara kontinyu. Deteksi akan berjalan terus sampai tombol ditekan lagi.</p>
+              </div>
+              <div class="control-item">
+                <strong>🔄 Switch</strong>
+                <p>Ganti kamera (hanya untuk webcam - depan/belakang). Tidak tersedia untuk ESP32-CAM.</p>
+              </div>
+              <div class="control-item">
+                <strong>🗑️ Reset</strong>
+                <p>Hapus semua deteksi yang ditampilkan dan reset statistik performa.</p>
+              </div>
+              <div class="control-item">
+                <strong>🤖 Model</strong>
+                <p>Ganti model YOLO yang digunakan. Pilihan model: YOLOv7, YOLOv10, YOLOv11, YOLOv12 dengan berbagai resolusi.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="guide-section">
+            <h3>📹 Sumber Kamera</h3>
+            <div class="control-item">
+              <strong>📹 Webcam</strong>
+              <p>Gunakan kamera laptop/PC. Pastikan kamera terhubung dan tidak digunakan aplikasi lain.</p>
+            </div>
+            <div class="control-item">
+              <strong>📡 ESP32-CAM</strong>
+              <p>Gunakan ESP32-CAM via WiFi. Pastikan ESP32-CAM dan komputer dalam jaringan WiFi yang sama.</p>
+              <ul style="margin-top: 0.5rem; padding-left: 1.5rem;">
+                <li><strong>IP Address:</strong> Default 192.168.1.75 (edit di camera.js jika berbeda)</li>
+                <li><strong>Stream Mode:</strong> Lebih cepat, menggunakan MJPEG stream</li>
+                <li><strong>Capture Mode:</strong> Lebih stabil, mengambil frame per frame</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="guide-section">
+            <h3>🔊 Navigasi Suara</h3>
+            <p>Sistem memiliki dua mode navigasi suara:</p>
+            <div class="control-item">
+              <strong>📢 Pengumuman Objek (100-150cm)</strong>
+              <p>Sistem akan mengumumkan nama objek dalam Bahasa Indonesia jika objek berada dalam jarak 100-150cm. Contoh: "manusia", "kursi", "mobil".</p>
+            </div>
+            <div class="control-item">
+              <strong>⚠️ Peringatan Tabrakan (&lt;50cm)</strong>
+              <p>Sistem akan memberikan peringatan suara jika objek terlalu dekat:</p>
+              <ul style="margin-top: 0.5rem; padding-left: 1.5rem;">
+                <li><strong>Normal:</strong> "Peringatan! [objek] di depan! [jarak] sentimeter!"</li>
+                <li><strong>Mendekat:</strong> "Hati-hati! [objek] mendekat! [jarak] sentimeter!"</li>
+                <li><strong>Kritis (&lt;30cm):</strong> "Awas! [objek] sangat dekat! [jarak] sentimeter!"</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="guide-section">
+            <h3>📊 Informasi Model</h3>
+            <p>Setiap model YOLO memiliki karakteristik berbeda:</p>
+            <ul>
+              <li><strong>YOLOv7-tiny (256×256):</strong> Paling cepat (~10-20ms), kurang akurat untuk objek kecil</li>
+              <li><strong>YOLOv7-tiny (320×320):</strong> Seimbang antara kecepatan dan akurasi (~15-30ms)</li>
+              <li><strong>YOLOv7-tiny (640×640):</strong> Lebih akurat (~30-60ms), lebih lambat</li>
+              <li><strong>YOLOv10n, YOLOv11n, YOLOv12n:</strong> Model terbaru dengan performa lebih baik</li>
+            </ul>
+            <p style="margin-top: 0.5rem;">💡 <strong>Tips:</strong> Gunakan resolusi lebih kecil untuk performa lebih baik, atau resolusi lebih besar untuk akurasi lebih tinggi.</p>
+          </div>
+
+          <div class="guide-section">
+            <h3>📏 Estimasi Jarak</h3>
+            <p>Sistem menggunakan triangle similarity untuk memperkirakan jarak ke objek:</p>
+            <ul>
+              <li>Jarak ditampilkan pada setiap bounding box</li>
+              <li>Akurasi tergantung pada kalibrasi focal length</li>
+              <li>Untuk akurasi lebih baik, lakukan kalibrasi dengan objek yang jaraknya diketahui</li>
+            </ul>
+            <div class="tip-box">
+              <p><strong>💡 Kalibrasi Jarak:</strong> Buka browser console (F12) dan jalankan:</p>
+              <code>calibrateFromKnownDistance(jarak_cm, class_id, bbox_width_px, bbox_height_px)</code>
+              <p style="margin-top: 0.5rem;">Contoh: <code>calibrateFromKnownDistance(100, 0, 150, 400)</code></p>
+            </div>
+          </div>
+
+          <div class="guide-section">
+            <h3>🎯 Tips Penggunaan</h3>
+            <ul>
+              <li><strong>Pencahayaan:</strong> Pastikan pencahayaan cukup untuk deteksi yang lebih baik</li>
+              <li><strong>Jarak Objek:</strong> Objek terlalu dekat atau terlalu jauh mungkin tidak terdeteksi dengan baik</li>
+              <li><strong>Posisi Kamera:</strong> Pastikan kamera stabil dan tidak goyang</li>
+              <li><strong>Performa:</strong> Tutup tab/aplikasi lain untuk performa lebih baik</li>
+              <li><strong>ESP32-CAM:</strong> Gunakan mode Stream untuk performa lebih baik, atau mode Capture jika stream tidak stabil</li>
+            </ul>
+          </div>
+
+          <div class="guide-section">
+            <h3>🐛 Troubleshooting</h3>
+            <div class="troubleshoot-item">
+              <strong>❌ Kamera tidak muncul</strong>
+              <ul>
+                <li>Izinkan akses kamera di pengaturan browser</li>
+                <li>Pastikan kamera tidak digunakan aplikasi lain</li>
+                <li>Refresh halaman dan coba lagi</li>
+              </ul>
+            </div>
+            <div class="troubleshoot-item">
+              <strong>❌ Model tidak dimuat</strong>
+              <ul>
+                <li>Pastikan file model ada di folder <code>static/models/</code></li>
+                <li>Periksa koneksi internet (untuk download WASM files)</li>
+                <li>Refresh halaman dan tunggu model dimuat</li>
+              </ul>
+            </div>
+            <div class="troubleshoot-item">
+              <strong>❌ ESP32-CAM tidak connect</strong>
+              <ul>
+                <li>Pastikan ESP32-CAM dan komputer dalam jaringan WiFi yang sama</li>
+                <li>Periksa IP address ESP32-CAM (edit di camera.js)</li>
+                <li>Coba akses URL langsung di browser: <code>http://IP_ADDRESS:81/stream</code></li>
+                <li>Coba mode Capture jika Stream tidak bekerja</li>
+              </ul>
+            </div>
+            <div class="troubleshoot-item">
+              <strong>❌ Tidak ada suara navigasi</strong>
+              <ul>
+                <li>Periksa status "Navigasi Suara" (harus hijau/aktif)</li>
+                <li>Pastikan volume browser/sistem tidak mute</li>
+                <li>Pastikan objek dalam jarak 100-150cm untuk pengumuman</li>
+                <li>Objek harus dalam jarak &lt;50cm untuk peringatan tabrakan</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="guide-section">
+            <h3>⚙️ Pengaturan Lanjutan</h3>
+            <p>Untuk pengaturan lebih lanjut, buka browser console (F12) dan gunakan fungsi berikut:</p>
+            <div class="code-block">
+              <code>setCollisionWarningThreshold(50, 30)</code>
+              <p>Ubah threshold peringatan tabrakan (warning, critical dalam cm)</p>
+            </div>
+            <div class="code-block">
+              <code>setCollisionWarningEnabled(true/false)</code>
+              <p>Aktifkan/nonaktifkan peringatan tabrakan</p>
+            </div>
+            <div class="code-block">
+              <code>setVoiceNavigationEnabled(true/false)</code>
+              <p>Aktifkan/nonaktifkan navigasi suara</p>
+            </div>
+          </div>
+
+          <div class="guide-section">
+            <h3>📞 Kontak & Bantuan</h3>
+            <p>Jika mengalami masalah atau memiliki pertanyaan:</p>
+            <ul>
+              <li>Periksa console browser (F12) untuk error messages</li>
+              <li>Lihat file README.md untuk dokumentasi lengkap</li>
+              <li>Periksa file TROUBLESHOOTING.md untuk solusi masalah umum</li>
+            </ul>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="close-help-btn-footer" class="btn btn-primary">Tutup Panduan</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Camera Container -->
     <div class="camera-section">
@@ -19,7 +223,7 @@
         <!-- Loading Indicator -->
         <div id="loading-indicator" class="loading">
           <div class="spinner"></div>
-          <p id="loading-text">Initializing camera...</p>
+          <p id="loading-text">Memuat...</p>
         </div>
 
         <!-- Error Message -->
@@ -38,27 +242,50 @@
 
     <!-- Controls Panel -->
     <div class="controls-panel">
+      <!-- Status Indicators -->
+      <div class="control-group">
+        <h3>Status</h3>
+        <div class="status-indicators">
+          <div class="status-item" id="model-status">
+            <span class="status-dot" id="model-status-dot"></span>
+            <span class="status-text">Model: <span id="model-status-text">Loading...</span></span>
+          </div>
+          <div class="status-item" id="camera-status">
+            <span class="status-dot" id="camera-status-dot"></span>
+            <span class="status-text">Kamera: <span id="camera-status-text">Menunggu...</span></span>
+          </div>
+          <div class="status-item" id="detection-status">
+            <span class="status-dot" id="detection-status-dot"></span>
+            <span class="status-text">Deteksi: <span id="detection-status-text">Tidak Aktif</span></span>
+          </div>
+          <div class="status-item" id="voice-status">
+            <span class="status-dot active" id="voice-status-dot"></span>
+            <span class="status-text">Navigasi Suara: <span id="voice-status-text">Aktif</span></span>
+          </div>
+        </div>
+      </div>
+
       <!-- Main Controls -->
       <div class="control-group">
-        <h3>Controls</h3>
+        <h3>Kontrol</h3>
         <div class="button-grid">
-          <button id="capture-btn" class="btn btn-primary">
+          <button id="capture-btn" class="btn btn-primary" title="Ambil foto dan deteksi objek">
             <span class="btn-icon">📸</span>
             <span>Capture</span>
           </button>
-          <button id="live-detection-btn" class="btn btn-primary">
+          <button id="live-detection-btn" class="btn btn-primary" title="Mulai/hentikan deteksi real-time">
             <span class="btn-icon">▶️</span>
             <span>Live Detection</span>
           </button>
-          <button id="switch-camera-btn" class="btn btn-secondary" disabled>
+          <button id="switch-camera-btn" class="btn btn-secondary" disabled title="Ganti kamera (depan/belakang)">
             <span class="btn-icon">🔄</span>
             <span>Switch</span>
           </button>
-          <button id="reset-btn" class="btn btn-secondary">
-            <span class="btn-icon">🔄</span>
+          <button id="reset-btn" class="btn btn-secondary" title="Reset canvas dan statistik">
+            <span class="btn-icon">🗑️</span>
             <span>Reset</span>
           </button>
-          <button id="model-btn" class="btn btn-secondary">
+          <button id="model-btn" class="btn btn-secondary" title="Ganti model YOLO">
             <span class="btn-icon">🤖</span>
             <span>Model</span>
           </button>
@@ -67,22 +294,22 @@
 
       <!-- Camera Source Selection -->
       <div class="control-group">
-        <h3>Camera Source</h3>
+        <h3>Sumber Kamera</h3>
         <div class="button-group">
-          <button id="webcam-btn" class="btn btn-toggle active">
+          <button id="webcam-btn" class="btn btn-toggle active" title="Gunakan webcam laptop/PC">
             📹 Webcam
           </button>
-          <button id="esp32-btn" class="btn btn-toggle">
+          <button id="esp32-btn" class="btn btn-toggle" title="Gunakan ESP32-CAM">
             📡 ESP32-CAM
           </button>
         </div>
         <div id="esp32-info" style="display: none; margin-top: 10px;">
-          <p class="info-text">IP: <span id="esp32-ip">192.168.1.75</span></p>
+          <p class="info-text">IP Address: <span id="esp32-ip">192.168.1.75</span></p>
           <div class="button-group" style="margin-top: 8px;">
-            <button id="esp32-stream-btn" class="btn btn-toggle active" style="font-size: 11px; padding: 6px 12px;">
+            <button id="esp32-stream-btn" class="btn btn-toggle active" style="font-size: 11px; padding: 6px 12px;" title="Mode stream (lebih cepat)">
               Stream
             </button>
-            <button id="esp32-capture-btn" class="btn btn-toggle" style="font-size: 11px; padding: 6px 12px;">
+            <button id="esp32-capture-btn" class="btn btn-toggle" style="font-size: 11px; padding: 6px 12px;" title="Mode capture (frame per frame)">
               Capture
             </button>
           </div>
@@ -91,20 +318,23 @@
 
       <!-- Model Info -->
       <div class="control-group">
-        <h3>Model Information</h3>
+        <h3>Informasi Model</h3>
         <div class="info-box">
           <p class="info-label">Model:</p>
           <p id="model-name" class="info-value">-</p>
         </div>
         <div class="info-box">
-          <p class="info-label">Resolution:</p>
+          <p class="info-label">Resolusi:</p>
           <p id="model-resolution" class="info-value">-</p>
+        </div>
+        <div class="help-text">
+          <p>💡 Klik tombol "Model" untuk mengganti model YOLO</p>
         </div>
       </div>
 
       <!-- Performance Stats -->
       <div class="control-group">
-        <h3>Performance</h3>
+        <h3>Performa</h3>
         <div class="stats-grid">
           <div class="stat-card">
             <p class="stat-label">Inference</p>
