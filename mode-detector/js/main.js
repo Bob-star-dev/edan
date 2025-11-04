@@ -9,7 +9,7 @@ const appState = {
   totalTime: 0,
   liveDetection: false,
   liveDetectionFrame: null,
-  focalLength: (typeof DEFAULT_FOCAL_LENGTH !== 'undefined' ? DEFAULT_FOCAL_LENGTH : 800)
+  focalLength: (typeof DEFAULT_FOCAL_LENGTH !== 'undefined' ? DEFAULT_FOCAL_LENGTH : 600)
 };
 
 // DOM Elements (will be initialized in init)
