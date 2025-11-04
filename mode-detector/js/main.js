@@ -27,7 +27,6 @@ function initElements() {
     
     // Control buttons
     captureBtn: document.getElementById('capture-btn'),
-    liveBtn: document.getElementById('live-detection-btn'),
     switchBtn: document.getElementById('switch-camera-btn'),
     resetBtn: document.getElementById('reset-btn'),
     modelBtn: document.getElementById('model-btn'),
@@ -169,18 +168,15 @@ async function runDetection() {
 
 /**
  * Start live detection loop
+ * Live detection is now always active and cannot be stopped
  */
 function startLiveDetection() {
+  // Prevent multiple detection loops from running
   if (appState.liveDetection) {
-    stopLiveDetection();
     return;
   }
 
   appState.liveDetection = true;
-  if (elements.liveBtn) {
-    elements.liveBtn.innerHTML = '<span class="btn-icon">⏸️</span><span>Stop Detection</span>';
-  }
-  updateStatusIndicators();
 
   function loop() {
     if (!appState.liveDetection) return;
@@ -221,6 +217,8 @@ function startLiveDetection() {
 
 /**
  * Stop live detection
+ * Note: This function is kept for cleanup purposes only (e.g., page unload)
+ * Live detection cannot be stopped during normal operation
  */
 function stopLiveDetection() {
   appState.liveDetection = false;
@@ -228,17 +226,14 @@ function stopLiveDetection() {
     cancelAnimationFrame(appState.liveDetectionFrame);
     appState.liveDetectionFrame = null;
   }
-  if (elements.liveBtn) {
-    elements.liveBtn.innerHTML = '<span class="btn-icon">▶️</span><span>Live Detection</span>';
-  }
-  updateStatusIndicators();
 }
 
 /**
  * Reset canvas and stats
+ * Note: Live detection continues running - only clears canvas and stats
  */
 function reset() {
-  stopLiveDetection();
+  // Don't stop live detection - it should always be running
   const ctx = elements.canvas?.getContext('2d');
   if (ctx && elements.canvas) {
     ctx.clearRect(0, 0, elements.canvas.width, elements.canvas.height);
@@ -423,12 +418,7 @@ function setupEventListeners() {
     });
   }
 
-  // Live detection button
-  if (elements.liveBtn) {
-    elements.liveBtn.addEventListener('click', () => {
-      startLiveDetection();
-    });
-  }
+  // Live detection is now always active - no button needed
 
   // Switch camera button
   if (elements.switchBtn) {
@@ -477,10 +467,18 @@ function setupEventListeners() {
     });
   }
 
-  // Page visibility change (pause detection when tab is hidden)
+  // Page visibility change (pause detection when tab is hidden for performance)
+  // Restart when tab becomes visible again
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
+      // Pause when tab is hidden to save resources
       stopLiveDetection();
+    } else {
+      // Restart when tab becomes visible again
+      // Live detection should always be active when tab is visible
+      if (cameraState.isStreamReady) {
+        startLiveDetection();
+      }
     }
   });
 
@@ -569,6 +567,7 @@ async function init() {
   }
 
   // Initialize camera
+  // Live detection will auto-start when camera becomes ready
   updateCameraButtons();
   updateESP32Buttons();
   initCamera();
@@ -579,6 +578,7 @@ async function init() {
   }, 1000); // Update every second
 
   console.log('✅ Application initialized');
+  console.log('✅ Live detection will start automatically when camera is ready');
 }
 
 // Start application when DOM is ready
