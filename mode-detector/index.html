@@ -15,6 +15,7 @@
           <p class="subtitle">Deteksi Objek & Navigasi Suara dengan YOLO</p>
           <div class="info-banner">
             <p>📢 Sistem akan mengumumkan objek dalam jarak 100-150cm dan memberikan peringatan jika objek terlalu dekat (&lt;50cm)</p>
+            <p style="margin-top: 0.5rem; font-size: 0.85rem;">📱 <strong>Handphone akan bergetar</strong> otomatis ketika objek terdeteksi dalam jarak ≤150cm (hanya untuk device mobile yang support Web Vibration API)</p>
           </div>
         </div>
         <button id="help-btn" class="btn btn-help" title="Buka Panduan Penggunaan">
@@ -104,6 +105,32 @@
                 <li><strong>Normal:</strong> "Peringatan! [objek] di depan! [jarak] sentimeter!"</li>
                 <li><strong>Mendekat:</strong> "Hati-hati! [objek] mendekat! [jarak] sentimeter!"</li>
                 <li><strong>Kritis (&lt;30cm):</strong> "Awas! [objek] sangat dekat! [jarak] sentimeter!"</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="guide-section">
+            <h3>📱 Sistem Getar (Vibration)</h3>
+            <p><strong>Ya, handphone akan bergetar otomatis!</strong> Sistem akan membuat handphone bergetar ketika objek terdeteksi dalam jarak ≤150cm. Pola getar berbeda berdasarkan jarak:</p>
+            <div class="control-item">
+              <strong>🔴 Kritis (&lt;30cm) - Pola Mario</strong>
+              <p>Pola getar kompleks seperti lagu Mario untuk peringatan maksimal. Sangat mudah dikenali.</p>
+            </div>
+            <div class="control-item">
+              <strong>🟡 Peringatan (&lt;50cm) - Pola Pattern</strong>
+              <p>Pola getar berulang [300ms getar, 400ms pause, 300ms getar, 400ms pause] untuk peringatan urgent.</p>
+            </div>
+            <div class="control-item">
+              <strong>🟢 Normal (50-150cm) - Getar Sederhana</strong>
+              <p>Getar sederhana dengan intensitas 100-200ms yang disesuaikan dengan jarak. Semakin dekat, semakin kuat.</p>
+            </div>
+            <div class="tip-box" style="margin-top: 1rem;">
+              <p><strong>💡 Kapan Handphone Akan Bergetar?</strong></p>
+              <ul style="margin-top: 0.5rem; padding-left: 1.5rem;">
+                <li><strong>✅ Akan Bergetar:</strong> Browser mobile (Chrome/Edge/Safari di handphone), device yang support Web Vibration API</li>
+                <li><strong>❌ Tidak Bergetar:</strong> Desktop browser (Chrome/Edge desktop biasanya tidak support), device yang tidak support Web Vibration API</li>
+                <li><strong>🔧 Test Manual:</strong> Buka console (F12) dan ketik: <code>vibrate()</code>, <code>vibratePattern()</code>, atau <code>vibrateMario()</code></li>
+                <li><strong>📊 Cek Status:</strong> Ketik <code>getVibrationStatus()</code> di console untuk melihat apakah vibration support</li>
               </ul>
             </div>
           </div>

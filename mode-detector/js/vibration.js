@@ -6,6 +6,16 @@
  * - Web Vibration API (untuk device mobile yang support)
  * - Serial/WebUSB API (untuk hardware eksternal)
  * - Console logging untuk debugging
+ * 
+ * Fungsi Vibration:
+ * - vibrate() - Getar sederhana 1000ms
+ * - vibratePattern() - Pola getar [300, 400, 300, 400]
+ * - vibrateMario() - Pola getar Mario [125, 75, 125, 275, 200, 275, 125, 75, 125, 275, 200, 600, 200, 600]
+ * 
+ * Sistem otomatis menggunakan pola berbeda berdasarkan jarak:
+ * - <30cm: Mario pattern (CRITICAL)
+ * - <50cm: Pattern vibration (WARNING)
+ * - 50-150cm: Simple vibration dengan intensity dinamis (NORMAL)
  */
 
 // Vibration state
@@ -32,9 +42,16 @@ async function initVibration() {
   if ('vibrate' in navigator) {
     vibrationState.useWebVibration = true;
     console.log('[Vibration] ✅ Web Vibration API available');
+    console.log('[Vibration] 📱 Handphone akan bergetar ketika objek terdeteksi dalam jarak ≤150cm');
+    
+    // Test vibration support (but don't actually vibrate during init)
+    // Just log that it's available
+    console.log('[Vibration] 💡 Test vibration dengan: vibrate(), vibratePattern(), atau vibrateMario()');
   } else {
     vibrationState.useWebVibration = false;
-    console.log('[Vibration] ⚠️ Web Vibration API not available (desktop browser)');
+    console.log('[Vibration] ⚠️ Web Vibration API not available');
+    console.log('[Vibration] 📱 Handphone TIDAK akan bergetar - gunakan browser mobile atau device yang support');
+    console.log('[Vibration] 💡 Desktop browser biasanya tidak support Web Vibration API');
   }
   
   // Check Serial Port API support (for external hardware)
@@ -111,12 +128,12 @@ async function disconnectSerialPort() {
 
 /**
  * Send vibration signal via Web Vibration API
- * @param {number} duration - Vibration duration in ms
+ * @param {number|Array} pattern - Vibration duration in ms or pattern array [vibrate, pause, vibrate, ...]
  */
-function vibrateWeb(duration) {
+function vibrateWeb(pattern) {
   try {
     if (vibrationState.useWebVibration && 'vibrate' in navigator) {
-      navigator.vibrate(duration);
+      navigator.vibrate(pattern);
       return true;
     }
     return false;
@@ -124,6 +141,74 @@ function vibrateWeb(duration) {
     console.error('[Vibration] ❌ Web vibration error:', error);
     return false;
   }
+}
+
+/**
+ * Simple vibration - 1000ms continuous
+ * Getar sederhana selama 1 detik
+ */
+function vibrate() {
+  if (!vibrationState.isEnabled) {
+    console.log('[Vibration] ⚠️ Vibration is disabled');
+    return;
+  }
+  
+  console.log('[Vibration] 🔔 Simple vibration triggered (1000ms)');
+  const success = vibrateWeb(1000);
+  
+  if (success) {
+    console.log('[Vibration] ✅ Simple vibration sent');
+  } else {
+    console.warn('[Vibration] ⚠️ Web Vibration API not available');
+  }
+  
+  return success;
+}
+
+/**
+ * Pattern vibration - [300ms vibrate, 400ms pause, 300ms vibrate, 400ms pause]
+ * Pola getar dengan interval
+ */
+function vibratePattern() {
+  if (!vibrationState.isEnabled) {
+    console.log('[Vibration] ⚠️ Vibration is disabled');
+    return;
+  }
+  
+  const pattern = [300, 400, 300, 400];
+  console.log('[Vibration] 🔔 Pattern vibration triggered:', pattern);
+  const success = vibrateWeb(pattern);
+  
+  if (success) {
+    console.log('[Vibration] ✅ Pattern vibration sent');
+  } else {
+    console.warn('[Vibration] ⚠️ Web Vibration API not available');
+  }
+  
+  return success;
+}
+
+/**
+ * Mario vibration pattern - Special pattern inspired by Super Mario theme
+ * Pola getar khusus seperti lagu Mario
+ */
+function vibrateMario() {
+  if (!vibrationState.isEnabled) {
+    console.log('[Vibration] ⚠️ Vibration is disabled');
+    return;
+  }
+  
+  const pattern = [125, 75, 125, 275, 200, 275, 125, 75, 125, 275, 200, 600, 200, 600];
+  console.log('[Vibration] 🔔 Mario vibration pattern triggered:', pattern);
+  const success = vibrateWeb(pattern);
+  
+  if (success) {
+    console.log('[Vibration] ✅ Mario vibration pattern sent');
+  } else {
+    console.warn('[Vibration] ⚠️ Web Vibration API not available');
+  }
+  
+  return success;
 }
 
 /**
@@ -155,6 +240,7 @@ async function vibrateSerial(duration) {
 /**
  * Trigger vibration based on distance
  * Called when object is detected within threshold distance
+ * Uses different vibration patterns based on distance severity
  * @param {number} distance - Distance in cm
  * @param {string} objectName - Name of detected object (for logging)
  */
@@ -180,18 +266,37 @@ async function triggerVibration(distance, objectName = 'object') {
   // Update last vibration time
   vibrationState.lastVibrationTime = now;
   
-  // Calculate vibration intensity based on distance
-  // Closer = stronger vibration
-  const maxDistance = vibrationState.distanceThreshold;
-  const minDistance = 50; // Minimum distance for max vibration
-  const distanceRatio = Math.max(0, Math.min(1, (maxDistance - distance) / (maxDistance - minDistance)));
-  const vibrationIntensity = Math.round(100 + (distanceRatio * 100)); // 100-200ms
+  // Determine vibration pattern based on distance
+  // Critical (<30cm): Mario pattern (most urgent)
+  // Warning (<50cm): Pattern vibration (urgent)
+  // Normal (50-150cm): Simple vibration (moderate)
+  let vibrationPattern;
+  let vibrationType;
+  
+  if (distance < 30) {
+    // Critical - use Mario pattern for maximum attention
+    vibrationPattern = [125, 75, 125, 275, 200, 275, 125, 75, 125, 275, 200, 600, 200, 600];
+    vibrationType = 'CRITICAL (Mario pattern)';
+  } else if (distance < 50) {
+    // Warning - use pattern vibration
+    vibrationPattern = [300, 400, 300, 400];
+    vibrationType = 'WARNING (Pattern)';
+  } else {
+    // Normal - use simple vibration with intensity based on distance
+    const maxDistance = vibrationState.distanceThreshold;
+    const minDistance = 50;
+    const distanceRatio = Math.max(0, Math.min(1, (maxDistance - distance) / (maxDistance - minDistance)));
+    const vibrationIntensity = Math.round(100 + (distanceRatio * 100)); // 100-200ms
+    vibrationPattern = vibrationIntensity;
+    vibrationType = `NORMAL (${vibrationIntensity}ms)`;
+  }
   
   console.log(`[Vibration] 🔔 VIBRATION TRIGGERED!`, {
     object: objectName,
     distance: distance.toFixed(1) + 'cm',
     threshold: vibrationState.distanceThreshold + 'cm',
-    intensity: vibrationIntensity + 'ms',
+    type: vibrationType,
+    pattern: Array.isArray(vibrationPattern) ? vibrationPattern : vibrationPattern + 'ms',
     methods: {
       webVibration: vibrationState.useWebVibration,
       serialPort: vibrationState.useSerialPort
@@ -201,18 +306,20 @@ async function triggerVibration(distance, objectName = 'object') {
   // Try Web Vibration API first (for mobile devices)
   let webVibrationSuccess = false;
   if (vibrationState.useWebVibration) {
-    webVibrationSuccess = vibrateWeb(vibrationIntensity);
+    webVibrationSuccess = vibrateWeb(vibrationPattern);
     if (webVibrationSuccess) {
-      console.log(`[Vibration] ✅ Web Vibration API signal sent (${vibrationIntensity}ms)`);
+      console.log(`[Vibration] ✅ Web Vibration API signal sent (${vibrationType})`);
     }
   }
   
   // Try Serial Port (for external hardware)
+  // For serial port, we send the first duration if it's a pattern
   let serialVibrationSuccess = false;
   if (vibrationState.useSerialPort) {
-    serialVibrationSuccess = await vibrateSerial(vibrationIntensity);
+    const serialDuration = Array.isArray(vibrationPattern) ? vibrationPattern[0] : vibrationPattern;
+    serialVibrationSuccess = await vibrateSerial(serialDuration);
     if (serialVibrationSuccess) {
-      console.log(`[Vibration] ✅ Serial Port signal sent (${vibrationIntensity}ms)`);
+      console.log(`[Vibration] ✅ Serial Port signal sent (${serialDuration}ms)`);
     }
   }
   
@@ -305,5 +412,8 @@ if (typeof window !== 'undefined') {
   window.setVibrationThreshold = setVibrationThreshold;
   window.getVibrationStatus = getVibrationStatus;
   window.triggerVibration = triggerVibration; // For testing
+  window.vibrate = vibrate; // Simple vibration
+  window.vibratePattern = vibratePattern; // Pattern vibration
+  window.vibrateMario = vibrateMario; // Mario pattern vibration
 }
 
