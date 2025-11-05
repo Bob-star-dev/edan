@@ -84,7 +84,7 @@
               <strong>📡 ESP32-CAM</strong>
               <p>Gunakan ESP32-CAM via WiFi. Pastikan ESP32-CAM dan komputer dalam jaringan WiFi yang sama.</p>
               <ul style="margin-top: 0.5rem; padding-left: 1.5rem;">
-                <li><strong>IP Address:</strong> Default 192.168.1.75 (edit di camera.js jika berbeda)</li>
+                <li><strong>DNS:</strong> Default esp32cam.local (edit di camera.js jika berbeda)</li>
                 <li><strong>Stream Mode:</strong> Lebih cepat, menggunakan MJPEG stream</li>
                 <li><strong>Capture Mode:</strong> Lebih stabil, mengambil frame per frame</li>
               </ul>
@@ -195,8 +195,8 @@
               <strong>❌ ESP32-CAM tidak connect</strong>
               <ul>
                 <li>Pastikan ESP32-CAM dan komputer dalam jaringan WiFi yang sama</li>
-                <li>Periksa IP address ESP32-CAM (edit di camera.js)</li>
-                <li>Coba akses URL langsung di browser: <code>http://IP_ADDRESS:81/stream</code></li>
+                <li>Periksa DNS ESP32-CAM (edit di camera.js)</li>
+                <li>Coba akses URL langsung di browser: <code>http://esp32cam.local:81/stream</code></li>
                 <li>Coba mode Capture jika Stream tidak bekerja</li>
               </ul>
             </div>
@@ -312,6 +312,10 @@
             <span class="btn-icon">🤖</span>
             <span>Model</span>
           </button>
+          <button id="test-vibration-btn" class="btn btn-secondary" title="Test getaran HP - Pastikan HP support Web Vibration API">
+            <span class="btn-icon">📳</span>
+            <span>Test Getar</span>
+          </button>
         </div>
       </div>
 
@@ -327,7 +331,7 @@
           </button>
         </div>
         <div id="esp32-info" style="display: none; margin-top: 10px;">
-          <p class="info-text">IP Address: <span id="esp32-ip">192.168.1.75</span></p>
+          <p class="info-text">DNS: <span id="esp32-ip">esp32cam.local</span></p>
           <div class="button-group" style="margin-top: 8px;">
             <button id="esp32-stream-btn" class="btn btn-toggle active" style="font-size: 11px; padding: 6px 12px;" title="Mode stream (lebih cepat)">
               Stream
@@ -409,22 +413,55 @@
     };
   </script>
   <!-- ONNX Runtime Web -->
-  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  <!-- Use version 1.16.0 which still supports non-SIMD configuration -->
+  <!-- Versions 1.19+ only provide SIMD builds and ignore simd: false setting -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.16.0/dist/ort.min.js"></script>
   <!-- Apply configuration immediately after ONNX Runtime loads -->
   <script>
     // Apply configuration as soon as ONNX Runtime is available
+    // NOTE: Version 1.16.0 still respects non-SIMD configuration
+    // Versions 1.19+ only provide SIMD builds and ignore simd: false
     if (typeof ort !== 'undefined') {
+      // Configure for basic WASM (non-SIMD, single-threaded)
+      // Version 1.16.0 still respects these settings
       ort.env.wasm.simd = false;
       ort.env.wasm.numThreads = 1;
       ort.env.wasm.proxy = false;
+      
+      // Disable threaded if property exists
       if (typeof ort.env.wasm.threaded !== 'undefined') {
         ort.env.wasm.threaded = false;
       }
+      
       console.log('🔧 ONNX Runtime configured immediately after load:', {
         simd: ort.env.wasm.simd,
         numThreads: ort.env.wasm.numThreads,
-        proxy: ort.env.wasm.proxy
+        proxy: ort.env.wasm.proxy,
+        threaded: ort.env.wasm.threaded || 'N/A',
+        version: ort.env.versions?.web || 'unknown'
       });
+    } else {
+      // ONNX Runtime not loaded yet - wait and retry
+      const checkInterval = setInterval(() => {
+        if (typeof ort !== 'undefined') {
+          clearInterval(checkInterval);
+          ort.env.wasm.simd = false;
+          ort.env.wasm.numThreads = 1;
+          ort.env.wasm.proxy = false;
+          if (typeof ort.env.wasm.threaded !== 'undefined') {
+            ort.env.wasm.threaded = false;
+          }
+          console.log('🔧 ONNX Runtime configured after delayed load:', {
+            simd: ort.env.wasm.simd,
+            numThreads: ort.env.wasm.numThreads,
+            proxy: ort.env.wasm.proxy,
+            version: ort.env.versions?.web || 'unknown'
+          });
+        }
+      }, 100);
+      
+      // Stop checking after 5 seconds
+      setTimeout(() => clearInterval(checkInterval), 5000);
     }
   </script>
   

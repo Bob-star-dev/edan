@@ -1,5 +1,49 @@
 # Troubleshooting Guide
 
+## ⚠️ ERR_NAME_NOT_RESOLVED (DNS tidak bisa di-resolve)
+
+**Gejala:** Error `net::ERR_NAME_NOT_RESOLVED` saat mencoba connect ke ESP32-CAM
+
+**Penyebab:** mDNS (`esp32cam.local`) tidak bekerja di Windows desktop
+
+**Solusi:** Gunakan IP address langsung
+
+### Cara menemukan IP ESP32-CAM:
+
+1. **Dari Serial Monitor (Paling Mudah):**
+   - Buka Arduino IDE
+   - Buka Serial Monitor (Tools > Serial Monitor)
+   - Set baud rate ke 115200
+   - ESP32-CAM akan menampilkan IP setelah connect WiFi:
+     ```
+     ✅ WiFi connected! IP: 192.168.1.100
+     ```
+
+2. **Dari Router WiFi:**
+   - Login ke router WiFi Anda
+   - Cari device dengan nama "esp32cam" atau "ESP32"
+   - Lihat IP address yang diberikan
+
+3. **Dari Network Scanner:**
+   - Install aplikasi network scanner (contoh: Angry IP Scanner)
+   - Scan network Anda
+   - Cari device dengan MAC address ESP32
+
+### Cara mengatur IP di aplikasi:
+
+1. Buka file `mode-detector/js/camera.js`
+2. Cari baris ~109: `const ESP32_IP = null;`
+3. Ubah menjadi: `const ESP32_IP = '192.168.1.100';` (gunakan IP ESP32-CAM Anda)
+4. Save file
+5. Refresh browser
+
+**Contoh:**
+```javascript
+const ESP32_IP = '192.168.1.100'; // IP ESP32-CAM Anda
+```
+
+---
+
 ## Error: "DEFAULT_FOCAL_LENGTH has already been declared"
 
 **Penyebab**: `DEFAULT_FOCAL_LENGTH` didefinisikan di lebih dari satu file.
@@ -129,9 +173,9 @@ npx http-server -p 8000 --cors
 - ESP32 server tidak running
 
 **Solusi**:
-1. Check IP address ESP32 di `js/camera.js`
+1. Check DNS ESP32 di `js/camera.js`
 2. Pastikan ESP32 dan komputer di network WiFi yang sama
-3. Test URL langsung di browser: `http://ESP32_IP:81/stream`
+3. Test URL langsung di browser: `http://esp32cam.local:81/stream`
 4. Coba switch ke "Capture" mode (lebih reliable dari Stream)
 
 ---

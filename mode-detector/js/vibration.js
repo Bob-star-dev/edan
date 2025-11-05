@@ -2,8 +2,12 @@
  * Vibration Motor Control
  * Mengirim sinyal getar ke vibration motor ketika jarak <= 150 cm
  * 
+ * IMPORTANT: Device akan bergetar ketika jarak objek <= 150 cm (termasuk tepat 150 cm)
+ * Target: ESP32-CAM dengan vibration motor yang terhubung
+ * 
  * Support untuk:
- * - Web Vibration API (untuk device mobile yang support)
+ * - ESP32-CAM HTTP API (mengirim sinyal ke ESP32-CAM untuk mengaktifkan vibration motor)
+ * - Web Vibration API (fallback untuk device mobile yang support - Chrome/Edge/Safari mobile)
  * - Serial/WebUSB API (untuk hardware eksternal)
  * - Console logging untuk debugging
  * 
@@ -16,7 +20,44 @@
  * - <30cm: Mario pattern (CRITICAL)
  * - <50cm: Pattern vibration (WARNING)
  * - 50-150cm: Simple vibration dengan intensity dinamis (NORMAL)
+ * - Jarak tepat 150 cm: Akan trigger vibration dengan pola NORMAL
  */
+
+// ESP32-CAM Configuration untuk vibration motor
+// Menggunakan DNS yang sama dengan ESP32-CAM camera
+// Pastikan ESP32-CAM memiliki endpoint untuk mengontrol vibration motor
+// Note: ESP32_DNS harus sama dengan yang ada di camera.js
+function getESP32DNS() {
+  // Get ESP32 DNS from camera.js if available, otherwise use default
+  if (typeof window !== 'undefined' && window.ESP32_DNS) {
+    return window.ESP32_DNS;
+  }
+  return 'esp32cam.local'; // Default DNS
+}
+
+function getESP32IP() {
+  // Get ESP32 IP from camera.js if available
+  if (typeof window !== 'undefined' && window.ESP32_IP) {
+    return window.ESP32_IP;
+  }
+  return null;
+}
+
+function getESP32VibrateURL() {
+  // Prioritaskan IP address jika tersedia (lebih reliable di Windows desktop)
+  // IP address tidak bergantung pada mDNS yang mungkin tidak bekerja di Windows
+  const ip = getESP32IP();
+  if (ip) {
+    return `http://${ip}/vibrate`;  // Gunakan IP address
+  }
+  
+  // Fallback ke DNS
+  const dns = getESP32DNS();
+  return `http://${dns}/vibrate`;  // Endpoint untuk vibration motor
+  // Alternative endpoints (sesuaikan dengan firmware ESP32-CAM Anda):
+  // return `http://${dns}/motor/vibrate`;
+  // return `http://${dns}/api/vibrate`;
+}
 
 // Vibration state
 const vibrationState = {
@@ -25,33 +66,293 @@ const vibrationState = {
   vibrationDuration: 200, // Durasi getar dalam ms
   lastVibrationTime: 0,
   vibrationCooldown: 500, // Cooldown antara getar dalam ms (mencegah spam)
-  useWebVibration: true, // Gunakan Web Vibration API jika tersedia
+  useESP32Vibration: true, // Gunakan ESP32-CAM vibration motor (prioritas utama)
+  useWebVibration: false, // Fallback: Web Vibration API jika tersedia
   useSerialPort: false, // Gunakan Serial Port jika tersedia
   serialPort: null,
   serialWriter: null
 };
 
 /**
+ * Send vibration signal to ESP32-CAM
+ * Mengirim HTTP request ke ESP32-CAM untuk mengaktifkan vibration motor
+ * @param {number|Array} pattern - Vibration pattern (duration in ms or array of [on, off, on, off, ...])
+ * @returns {Promise<boolean>} True if request sent successfully
+ */
+async function vibrateESP32(pattern) {
+  if (!vibrationState.useESP32Vibration) {
+    return false;
+  }
+  
+  try {
+    // Convert pattern to duration string
+    // If pattern is array, use first duration (ESP32 will handle pattern)
+    // If pattern is number, use it directly
+    let duration = 200; // Default duration
+    if (Array.isArray(pattern)) {
+      // For pattern array, calculate total duration or use first value
+      // ESP32 firmware might need pattern in specific format
+      duration = pattern[0] || 200;
+    } else if (typeof pattern === 'number') {
+      duration = Math.max(0, Math.min(5000, pattern)); // Limit 0-5000ms
+    }
+    
+    // Build URL with duration parameter
+    // Format: http://esp32cam.local/vibrate?duration=200
+    // Alternative formats (sesuaikan dengan firmware ESP32-CAM):
+    // - http://esp32cam.local/vibrate?ms=200
+    // - http://esp32cam.local/motor?vibrate=200
+    const baseUrl = getESP32VibrateURL();
+    const url = `${baseUrl}?duration=${duration}&t=${Date.now()}`;
+    
+    console.log(`[Vibration] 📡 Sending vibration signal to ESP32-CAM: ${url}`);
+    console.log(`[Vibration] 📡 Duration: ${duration}ms`);
+    
+    // Send HTTP GET request to ESP32-CAM
+    // Try with cors first to check response status, fallback to no-cors if CORS fails
+    let response;
+    let responseStatus = null;
+    
+    try {
+      // First try: Use cors mode to check response status
+      response = await fetch(url, {
+        method: 'GET',
+        mode: 'cors', // Try cors first to check response
+        cache: 'no-cache',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
+      responseStatus = response.status;
+      
+      if (responseStatus === 404) {
+        console.error(`[Vibration] ❌ ESP32-CAM endpoint /vibrate tidak ditemukan (404)`);
+        console.error(`[Vibration] ❌ Endpoint /vibrate belum ada di firmware ESP32-CAM`);
+        console.error(`[Vibration] 💡 SOLUSI: Tambahkan endpoint /vibrate di firmware ESP32-CAM`);
+        console.error(`[Vibration] 💡 Endpoint harus menerima: GET /vibrate?duration=200`);
+        return false;
+      } else if (responseStatus >= 400) {
+        console.error(`[Vibration] ❌ ESP32-CAM error: HTTP ${responseStatus}`);
+        return false;
+      } else {
+        console.log(`[Vibration] ✅ Vibration signal sent to ESP32-CAM (${duration}ms) - HTTP ${responseStatus}`);
+        return true;
+      }
+    } catch (corsError) {
+      // CORS error: Fallback to no-cors mode (request sent but can't check status)
+      console.warn(`[Vibration] ⚠️ CORS error, trying no-cors mode:`, corsError.message);
+      
+      try {
+        // Fallback: Use no-cors mode (request sent but can't verify)
+        response = await fetch(url, {
+          method: 'GET',
+          mode: 'no-cors', // Avoid CORS issues with ESP32-CAM
+          cache: 'no-cache',
+          headers: {
+            'Cache-Control': 'no-cache'
+          }
+        });
+        
+        // With no-cors mode, we can't check response status
+        // But request is sent successfully if no error thrown
+        console.log(`[Vibration] ✅ Vibration signal sent to ESP32-CAM (${duration}ms)`);
+        console.warn(`[Vibration] ⚠️ Note: Cannot verify response (no-cors mode). Pastikan endpoint /vibrate ada di firmware ESP32-CAM`);
+        return true;
+      } catch (noCorsError) {
+        console.error(`[Vibration] ❌ Failed to send vibration signal:`, noCorsError);
+        return false;
+      }
+    }
+    
+  } catch (error) {
+    console.error(`[Vibration] ❌ Failed to send vibration signal to ESP32-CAM:`, error);
+    
+    // Check if it's a DNS resolution error
+    const isDNSError = error.message && (
+      error.message.includes('NAME_NOT_RESOLVED') ||
+      error.message.includes('Failed to fetch') ||
+      error.message.includes('ERR_NAME_NOT_RESOLVED')
+    );
+    
+    const ip = getESP32IP();
+    const dns = getESP32DNS();
+    const url = getESP32VibrateURL();
+    
+    console.error(`[Vibration] ❌ Error details:`, {
+      name: error.name,
+      message: error.message,
+      url: url,
+      isDNSError: isDNSError,
+      note: 'Pastikan ESP32-CAM terhubung dan memiliki endpoint /vibrate'
+    });
+    
+    if (isDNSError && !ip) {
+      console.error(`[Vibration] 💡 SOLUSI: DNS tidak bisa di-resolve (umum di Windows desktop)`);
+      console.error(`[Vibration] 💡 Set ESP32_IP di camera.js (line ~109)`);
+      console.error(`[Vibration] 💡 Cara menemukan IP ESP32-CAM:`);
+      console.error(`[Vibration] 💡 1. Buka Serial Monitor di Arduino IDE (115200 baud)`);
+      console.error(`[Vibration] 💡 2. ESP32-CAM akan menampilkan IP setelah connect WiFi`);
+      console.error(`[Vibration] 💡 3. Atau cek di router WiFi Anda`);
+      console.error(`[Vibration] 💡 4. Contoh: const ESP32_IP = '192.168.1.100';`);
+      console.error(`[Vibration] 💡 5. Setelah set IP, refresh browser`);
+    }
+    
+    return false;
+  }
+}
+
+/**
+ * Send vibration pattern to ESP32-CAM
+ * Untuk pattern array, mengirim setiap pulse secara sequential
+ * @param {Array} pattern - Array of [on, off, on, off, ...] durations in ms
+ * @returns {Promise<boolean>} True if pattern sent successfully
+ */
+async function vibrateESP32Pattern(pattern) {
+  if (!vibrationState.useESP32Vibration || !Array.isArray(pattern)) {
+    return false;
+  }
+  
+  try {
+    console.log(`[Vibration] 📡 Sending vibration pattern to ESP32-CAM:`, pattern);
+    
+    // Method 1: Send pattern as comma-separated values
+    // Format: http://esp32cam.local/vibrate?pattern=200,100,200,100
+    const patternString = pattern.join(',');
+    const baseUrl = getESP32VibrateURL();
+    const url = `${baseUrl}?pattern=${patternString}&t=${Date.now()}`;
+    
+    console.log(`[Vibration] 📡 Pattern URL: ${url}`);
+    
+    // Try with cors first to check response status
+    let response;
+    let responseStatus = null;
+    
+    try {
+      // First try: Use cors mode to check response status
+      response = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        cache: 'no-cache'
+      });
+      responseStatus = response.status;
+      
+      if (responseStatus === 404) {
+        console.error(`[Vibration] ❌ ESP32-CAM endpoint /vibrate tidak ditemukan (404)`);
+        console.error(`[Vibration] ❌ Endpoint /vibrate belum ada di firmware ESP32-CAM`);
+        console.error(`[Vibration] 💡 SOLUSI: Tambahkan endpoint /vibrate di firmware ESP32-CAM`);
+        console.error(`[Vibration] 💡 Endpoint harus menerima: GET /vibrate?pattern=200,100,200,100`);
+        return false;
+      } else if (responseStatus >= 400) {
+        console.error(`[Vibration] ❌ ESP32-CAM error: HTTP ${responseStatus}`);
+        return false;
+      } else {
+        console.log(`[Vibration] ✅ Vibration pattern sent to ESP32-CAM - HTTP ${responseStatus}`);
+        return true;
+      }
+    } catch (corsError) {
+      // CORS error: Fallback to no-cors mode
+      console.warn(`[Vibration] ⚠️ CORS error, trying no-cors mode:`, corsError.message);
+      
+      try {
+        response = await fetch(url, {
+          method: 'GET',
+          mode: 'no-cors',
+          cache: 'no-cache'
+        });
+        
+        console.log(`[Vibration] ✅ Vibration pattern sent to ESP32-CAM`);
+        console.warn(`[Vibration] ⚠️ Note: Cannot verify response (no-cors mode). Pastikan endpoint /vibrate ada di firmware ESP32-CAM`);
+        return true;
+      } catch (noCorsError) {
+        console.error(`[Vibration] ❌ Failed to send vibration pattern:`, noCorsError);
+        return false;
+      }
+    }
+    
+  } catch (error) {
+    console.error(`[Vibration] ❌ Failed to send vibration pattern to ESP32-CAM:`, error);
+    
+    // Fallback: Send pattern sequentially (slower but more compatible)
+    console.log(`[Vibration] 💡 Trying sequential pattern method...`);
+    try {
+      for (let i = 0; i < pattern.length; i += 2) {
+        const onDuration = pattern[i];
+        const offDuration = pattern[i + 1] || 0;
+        
+        if (onDuration > 0) {
+          await vibrateESP32(onDuration);
+          if (offDuration > 0 && i + 1 < pattern.length) {
+            await new Promise(resolve => setTimeout(resolve, offDuration));
+          }
+        }
+      }
+      return true;
+    } catch (fallbackError) {
+      console.error(`[Vibration] ❌ Sequential pattern also failed:`, fallbackError);
+      return false;
+    }
+  }
+}
+
+/**
  * Initialize vibration system
  * Check available APIs and setup accordingly
+ * Enhanced with permission checking and troubleshooting tips
  */
 async function initVibration() {
   console.log('[Vibration] Initializing vibration system...');
+  const esp32Dns = getESP32DNS();
+  const esp32VibrateUrl = getESP32VibrateURL();
+  console.log(`[Vibration] 📡 ESP32-CAM DNS: ${esp32Dns}`);
+  console.log(`[Vibration] 📡 ESP32 Vibration URL: ${esp32VibrateUrl}`);
+  console.log(`[Vibration] 📡 ESP32 Vibration enabled: ${vibrationState.useESP32Vibration}`);
   
-  // Check Web Vibration API support
+  // ESP32-CAM vibration is primary method
+  if (vibrationState.useESP32Vibration) {
+    console.log('[Vibration] ✅ ESP32-CAM vibration motor configured');
+    console.log(`[Vibration] 💡 Vibration akan dikirim ke: ${esp32VibrateUrl}`);
+    console.log(`[Vibration] 💡 Format: GET ${esp32VibrateUrl}?duration=200`);
+    console.log(`[Vibration] 💡 Pattern: GET ${esp32VibrateUrl}?pattern=200,100,200,100`);
+  }
+  
+  // Check Web Vibration API support (fallback)
+  // Web Vibration API bekerja di mobile browser (Chrome/Edge/Safari mobile)
   if ('vibrate' in navigator) {
     vibrationState.useWebVibration = true;
-    console.log('[Vibration] ✅ Web Vibration API available');
+    console.log('[Vibration] ✅ Web Vibration API available (fallback)');
     console.log('[Vibration] 📱 Handphone akan bergetar ketika objek terdeteksi dalam jarak ≤150cm');
+    console.log('[Vibration] 📱 Ketika jarak tepat 150 cm, device akan bergetar');
+    
+    // Check if we can actually test vibration (some browsers need user interaction first)
+    try {
+      // Try a very short vibration to test if it works
+      const testResult = navigator.vibrate(1); // 1ms test - should be barely noticeable
+      console.log('[Vibration] 📊 Test vibration result:', testResult);
+      
+      if (testResult === false) {
+        console.warn('[Vibration] ⚠️ Vibration test returned false - may not be supported');
+        console.warn('[Vibration] 💡 Possible causes:');
+        console.warn('[Vibration] 💡 1. Device in silent/Do Not Disturb mode');
+        console.warn('[Vibration] 💡 2. System vibration disabled');
+        console.warn('[Vibration] 💡 3. Browser permission not granted');
+      }
+    } catch (error) {
+      console.warn('[Vibration] ⚠️ Vibration test error:', error);
+    }
     
     // Test vibration support (but don't actually vibrate during init)
     // Just log that it's available
     console.log('[Vibration] 💡 Test vibration dengan: vibrate(), vibratePattern(), atau vibrateMario()');
+    console.log('[Vibration] 💡 Jika HP tidak bergetar, cek:');
+    console.log('[Vibration] 💡 - Mode Silent/Do Not Disturb di HP');
+    console.log('[Vibration] 💡 - Setting vibration di system HP');
+    console.log('[Vibration] 💡 - Permission vibration di browser');
   } else {
     vibrationState.useWebVibration = false;
     console.log('[Vibration] ⚠️ Web Vibration API not available');
     console.log('[Vibration] 📱 Handphone TIDAK akan bergetar - gunakan browser mobile atau device yang support');
     console.log('[Vibration] 💡 Desktop browser biasanya tidak support Web Vibration API');
+    console.log('[Vibration] 💡 Untuk mobile: gunakan Chrome/Edge/Safari di handphone Android/iOS');
   }
   
   // Check Serial Port API support (for external hardware)
@@ -128,17 +429,65 @@ async function disconnectSerialPort() {
 
 /**
  * Send vibration signal via Web Vibration API
+ * Enhanced with better error handling and diagnostic
+ * Also checks for common issues that prevent vibration
  * @param {number|Array} pattern - Vibration duration in ms or pattern array [vibrate, pause, vibrate, ...]
  */
 function vibrateWeb(pattern) {
   try {
-    if (vibrationState.useWebVibration && 'vibrate' in navigator) {
-      navigator.vibrate(pattern);
-      return true;
+    // Check if vibrate exists in navigator (most direct check)
+    if (!('vibrate' in navigator)) {
+      console.warn('[Vibration] ❌ navigator.vibrate not available');
+      return false;
     }
-    return false;
+    
+    // Normalize pattern - ensure it's valid
+    // Some devices may have issues with very long patterns
+    let normalizedPattern = pattern;
+    if (Array.isArray(pattern)) {
+      // Check pattern length - some devices may limit array length
+      if (pattern.length > 20) {
+        console.warn('[Vibration] ⚠️ Pattern too long, truncating to first 20 elements');
+        normalizedPattern = pattern.slice(0, 20);
+      }
+      // Ensure all values are positive numbers
+      normalizedPattern = normalizedPattern.map(v => Math.max(0, Math.round(v)));
+    } else if (typeof pattern === 'number') {
+      // Ensure positive number and not too long (some devices limit to 5 seconds)
+      normalizedPattern = Math.max(0, Math.min(5000, Math.round(pattern)));
+    }
+    
+    // Try to call vibrate directly (more reliable)
+    // Some browsers may have vibrate but it might not work in all contexts
+    const result = navigator.vibrate(normalizedPattern);
+    
+    // vibrate() returns true if pattern is supported, false otherwise
+    // But some browsers may return undefined, so we check both
+    if (result === true || result === undefined) {
+      console.log('[Vibration] ✅ Vibration command sent:', normalizedPattern);
+      
+      // Additional check: if result is false, device may not support or is in silent mode
+      if (result === false) {
+        console.warn('[Vibration] ⚠️ Vibration returned false - device may be in silent mode or vibration disabled');
+        console.warn('[Vibration] 💡 Check:');
+        console.warn('[Vibration] 💡 1. Device not in silent/Do Not Disturb mode');
+        console.warn('[Vibration] 💡 2. System vibration enabled');
+        console.warn('[Vibration] 💡 3. Browser vibration permission');
+      }
+      
+      return true;
+    } else {
+      console.warn('[Vibration] ⚠️ Vibration pattern not supported:', normalizedPattern);
+      console.warn('[Vibration] 💡 Device may be in silent mode or vibration disabled');
+      return false;
+    }
   } catch (error) {
     console.error('[Vibration] ❌ Web vibration error:', error);
+    console.error('[Vibration] ❌ Error details:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
     return false;
   }
 }
@@ -146,20 +495,38 @@ function vibrateWeb(pattern) {
 /**
  * Simple vibration - 1000ms continuous
  * Getar sederhana selama 1 detik
+ * Enhanced with better diagnostic
  */
 function vibrate() {
   if (!vibrationState.isEnabled) {
     console.log('[Vibration] ⚠️ Vibration is disabled');
-    return;
+    return false;
   }
   
   console.log('[Vibration] 🔔 Simple vibration triggered (1000ms)');
+  
+  // Diagnostic: Check navigator.vibrate availability
+  const hasVibrate = 'vibrate' in navigator;
+  console.log('[Vibration] 📊 Diagnostic:', {
+    hasNavigatorVibrate: hasVibrate,
+    useWebVibration: vibrationState.useWebVibration,
+    navigatorType: typeof navigator,
+    userAgent: navigator.userAgent.substring(0, 50)
+  });
+  
+  if (!hasVibrate) {
+    console.error('[Vibration] ❌ navigator.vibrate not found');
+    console.error('[Vibration] 💡 Browser mungkin tidak support Web Vibration API');
+    return false;
+  }
+  
   const success = vibrateWeb(1000);
   
   if (success) {
-    console.log('[Vibration] ✅ Simple vibration sent');
+    console.log('[Vibration] ✅ Simple vibration sent successfully');
   } else {
-    console.warn('[Vibration] ⚠️ Web Vibration API not available');
+    console.warn('[Vibration] ⚠️ Vibration command failed');
+    console.warn('[Vibration] 💡 Mungkin device/browser tidak support atau ada masalah');
   }
   
   return success;
@@ -198,6 +565,7 @@ function vibrateMario() {
     return;
   }
   
+
   const pattern = [125, 75, 125, 275, 200, 275, 125, 75, 125, 275, 200, 600, 200, 600];
   console.log('[Vibration] 🔔 Mario vibration pattern triggered:', pattern);
   const success = vibrateWeb(pattern);
@@ -241,6 +609,7 @@ async function vibrateSerial(duration) {
  * Trigger vibration based on distance
  * Called when object is detected within threshold distance
  * Uses different vibration patterns based on distance severity
+ * Device akan bergetar ketika jarak <= 150 cm (termasuk tepat 150 cm)
  * @param {number} distance - Distance in cm
  * @param {string} objectName - Name of detected object (for logging)
  */
@@ -258,7 +627,8 @@ async function triggerVibration(distance, objectName = 'object') {
     return;
   }
   
-  // Check distance threshold
+  // Check distance threshold - trigger vibration when distance <= 150cm (including exactly 150cm)
+  // Jarak 150 cm akan trigger vibration
   if (distance > vibrationState.distanceThreshold) {
     return;
   }
@@ -298,69 +668,189 @@ async function triggerVibration(distance, objectName = 'object') {
     type: vibrationType,
     pattern: Array.isArray(vibrationPattern) ? vibrationPattern : vibrationPattern + 'ms',
     methods: {
+      esp32Vibration: vibrationState.useESP32Vibration,
       webVibration: vibrationState.useWebVibration,
       serialPort: vibrationState.useSerialPort
-    }
+    },
+    note: '📳 Vibration motor akan aktif ketika jarak <= 150 cm (termasuk tepat 150 cm)'
   });
   
-  // Try Web Vibration API first (for mobile devices)
-  let webVibrationSuccess = false;
-  if (vibrationState.useWebVibration) {
-    webVibrationSuccess = vibrateWeb(vibrationPattern);
-    if (webVibrationSuccess) {
-      console.log(`[Vibration] ✅ Web Vibration API signal sent (${vibrationType})`);
+  // Show prominent visual notification when vibration is triggered
+  // This helps user know vibration should happen even if device doesn't vibrate
+  // Flash effect disabled - uncomment below to re-enable screen flash overlay
+  /*
+  if (typeof document !== 'undefined') {
+    // Create flash effect overlay
+    const flashOverlay = document.createElement('div');
+    flashOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 200, 0, 0.3);
+      z-index: 9999;
+      pointer-events: none;
+      animation: vibrationFlash 0.3s ease-out;
+    `;
+    
+    // Add animation keyframes if not exists
+    if (!document.getElementById('vibration-flash-style')) {
+      const style = document.createElement('style');
+      style.id = 'vibration-flash-style';
+      style.textContent = `
+        @keyframes vibrationFlash {
+          0% { opacity: 0.6; }
+          50% { opacity: 0.3; }
+          100% { opacity: 0; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    document.body.appendChild(flashOverlay);
+    setTimeout(() => {
+      flashOverlay.remove();
+    }, 300);
+  }
+  */
+  
+  // Show notification message
+  if (typeof showError === 'function') {
+    const esp32Dns = getESP32DNS();
+    const esp32VibrateUrl = getESP32VibrateURL();
+    const vibrationMsg = `📳 GETARAN AKTIF! Objek: ${objectName} (${distance.toFixed(1)}cm)\n\n✅ Sinyal vibration dikirim ke ESP32-CAM\n\n⚠️ Jika vibration motor TIDAK berfungsi:\n\n1. Periksa Koneksi ESP32-CAM\n   → Pastikan ESP32-CAM terhubung ke WiFi\n   → Pastikan DNS benar: ${esp32Dns}\n   → Coba akses: ${esp32VibrateUrl}\n\n2. Periksa Endpoint Vibration\n   → Pastikan ESP32-CAM memiliki endpoint /vibrate\n   → Endpoint harus menerima parameter: ?duration=200\n\n3. Periksa Koneksi Vibration Motor\n   → Pastikan motor terhubung ke pin GPIO ESP32\n   → Pastikan kode ESP32-CAM mendukung kontrol vibration\n\n4. Periksa Console Log\n   → Lihat pesan error di console browser\n   → Cek apakah HTTP request berhasil dikirim`;
+    showError(vibrationMsg);
+    // Hide after 3 seconds (longer so user can read)
+    setTimeout(() => {
+      if (typeof hideError === 'function') {
+        hideError();
+      }
+    }, 3000);
+  }
+  
+  // Try ESP32-CAM vibration motor first (priority method)
+  // ESP32-CAM akan mengaktifkan kedua vibration motor secara bersamaan
+  let esp32VibrationSuccess = false;
+  if (vibrationState.useESP32Vibration) {
+    console.log(`[Vibration] 📡 Sending vibration to ESP32-CAM...`);
+    console.log(`[Vibration] 📡 Object: ${objectName}, Distance: ${distance.toFixed(1)}cm`);
+    console.log(`[Vibration] 📡 Pattern: ${Array.isArray(vibrationPattern) ? vibrationPattern.join(',') : vibrationPattern}ms`);
+    
+    if (Array.isArray(vibrationPattern)) {
+      // Send pattern array to ESP32-CAM
+      // Pattern akan dikirim ke endpoint /vibrate?pattern=200,100,200,100
+      esp32VibrationSuccess = await vibrateESP32Pattern(vibrationPattern);
+    } else {
+      // Send simple duration to ESP32-CAM
+      // Duration akan dikirim ke endpoint /vibrate?duration=200
+      esp32VibrationSuccess = await vibrateESP32(vibrationPattern);
+    }
+    
+    if (esp32VibrationSuccess) {
+      console.log(`[Vibration] ✅ ESP32-CAM vibration signal sent successfully!`);
+      console.log(`[Vibration] ✅ Type: ${vibrationType}`);
+      console.log(`[Vibration] ✅ Both motors (MOTOR_R + MOTOR_L) should vibrate now`);
+    } else {
+      console.warn(`[Vibration] ⚠️ ESP32-CAM vibration failed, trying fallback methods...`);
+      console.warn(`[Vibration] 💡 Check: ESP32-CAM endpoint /vibrate must exist`);
+      console.warn(`[Vibration] 💡 Check: ESP32-CAM must be connected to WiFi`);
+      console.warn(`[Vibration] 💡 Check: DNS must be correct (esp32cam.local)`);
     }
   }
   
-  // Try Serial Port (for external hardware)
+  // Fallback: Try Web Vibration API (for mobile devices)
+  let webVibrationSuccess = false;
+  if (!esp32VibrationSuccess && vibrationState.useWebVibration) {
+    webVibrationSuccess = vibrateWeb(vibrationPattern);
+    if (webVibrationSuccess) {
+      console.log(`[Vibration] ✅ Web Vibration API signal sent (${vibrationType}) - Fallback`);
+    }
+  }
+  
+  // Fallback: Try Serial Port (for external hardware)
   // For serial port, we send the first duration if it's a pattern
   let serialVibrationSuccess = false;
-  if (vibrationState.useSerialPort) {
+  if (!esp32VibrationSuccess && !webVibrationSuccess && vibrationState.useSerialPort) {
     const serialDuration = Array.isArray(vibrationPattern) ? vibrationPattern[0] : vibrationPattern;
     serialVibrationSuccess = await vibrateSerial(serialDuration);
     if (serialVibrationSuccess) {
-      console.log(`[Vibration] ✅ Serial Port signal sent (${serialDuration}ms)`);
+      console.log(`[Vibration] ✅ Serial Port signal sent (${serialDuration}ms) - Fallback`);
     }
   }
   
-  // Log if no method worked
-  if (!webVibrationSuccess && !serialVibrationSuccess) {
-    console.warn(`[Vibration] ⚠️ No vibration method available`, {
+  // Log final result
+  if (!esp32VibrationSuccess && !webVibrationSuccess && !serialVibrationSuccess) {
+    console.error(`[Vibration] ❌ No vibration method worked!`, {
+      object: objectName,
+      distance: distance.toFixed(1) + 'cm',
+      esp32VibrationAvailable: vibrationState.useESP32Vibration,
       webVibrationAvailable: vibrationState.useWebVibration,
       serialPortAvailable: vibrationState.useSerialPort,
-      note: 'Connect serial port or use mobile device for vibration'
+      esp32Url: getESP32VibrateURL(),
+      note: 'Pastikan ESP32-CAM terhubung dan memiliki endpoint /vibrate untuk vibration motor'
     });
+    console.error(`[Vibration] 💡 TROUBLESHOOTING:`);
+    console.error(`[Vibration] 💡 1. Pastikan ESP32-CAM kode Arduino sudah di-upload dengan endpoint /vibrate`);
+    console.error(`[Vibration] 💡 2. Pastikan ESP32-CAM terhubung ke WiFi yang sama`);
+    console.error(`[Vibration] 💡 3. Test endpoint: http://esp32cam.local/vibrate?duration=500`);
+    console.error(`[Vibration] 💡 4. Pastikan vibration motor terhubung ke GPIO 14 (MOTOR_R) dan GPIO 15 (MOTOR_L)`);
   } else {
-    console.log(`[Vibration] ✅ Vibration signal successfully sent!`);
+    const method = esp32VibrationSuccess ? 'ESP32-CAM (Both Motors)' : 
+                   webVibrationSuccess ? 'Web Vibration API (Mobile Device)' : 
+                   'Serial Port';
+    console.log(`[Vibration] ✅ Vibration signal successfully sent via ${method}!`);
+    
+    if (esp32VibrationSuccess) {
+      console.log(`[Vibration] 📳 ESP32-CAM should now vibrate both motors (MOTOR_R + MOTOR_L)`);
+      console.log(`[Vibration] 📳 Duration/Pattern: ${Array.isArray(vibrationPattern) ? vibrationPattern.join(',') : vibrationPattern}ms`);
+    }
   }
 }
 
 /**
  * Check if any object is within vibration threshold
  * This function processes all detections and triggers vibration for closest object
+ * Device akan bergetar ketika ada objek dengan jarak <= 150 cm (termasuk tepat 150 cm)
+ * ESP32-CAM akan mengaktifkan kedua vibration motor secara bersamaan
  * @param {Array} detections - Array of detection objects {distance, className, ...}
  */
 function checkAndTriggerVibration(detections) {
-  if (!vibrationState.isEnabled || !detections || detections.length === 0) {
+  // Check if vibration is enabled
+  if (!vibrationState.isEnabled) {
     return;
   }
   
-  // Filter detections within threshold
+  // Check if detections exist
+  if (!detections || detections.length === 0) {
+    return;
+  }
+  
+  // Filter detections within threshold (jarak <= 150 cm, termasuk tepat 150 cm)
+  // Filter objek yang jaraknya <= 150 cm untuk trigger vibration
   const nearbyDetections = detections.filter(det => 
     typeof det.distance === 'number' && 
+    !isNaN(det.distance) &&
     det.distance <= vibrationState.distanceThreshold
   );
   
   if (nearbyDetections.length === 0) {
+    // No objects within threshold - no vibration needed
     return;
   }
   
-  // Find closest object
+  // Find closest object (objek terdekat)
   const closestDetection = nearbyDetections.reduce((closest, current) => {
     return current.distance < closest.distance ? current : closest;
   });
   
+  // Log detection info
+  console.log(`[Vibration] 🔍 Detected ${nearbyDetections.length} object(s) within ${vibrationState.distanceThreshold}cm`);
+  console.log(`[Vibration] 🔍 Closest: ${closestDetection.className || 'object'} at ${closestDetection.distance.toFixed(1)}cm`);
+  
   // Trigger vibration for closest object
+  // Device akan bergetar ketika objek terdekat dalam jarak <= 150 cm
+  // ESP32-CAM akan mengaktifkan kedua vibration motor (MOTOR_R + MOTOR_L) secara bersamaan
   triggerVibration(closestDetection.distance, closestDetection.className || 'object');
 }
 
@@ -408,6 +898,18 @@ if (typeof window !== 'undefined') {
   // Make functions available globally for console access
   window.connectSerialPort = connectSerialPort;
   window.disconnectSerialPort = disconnectSerialPort;
+  window.vibrateESP32 = vibrateESP32;
+  window.vibrateESP32Pattern = vibrateESP32Pattern;
+  window.testVibrationESP32 = async function() {
+    // Quick test function for console
+    console.log('[Vibration] 🔔 Testing ESP32-CAM vibration motor...');
+    const result1 = await vibrateESP32(200);
+    console.log('[Vibration] Test 1 (200ms):', result1 ? '✅ Success' : '❌ Failed');
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const result2 = await vibrateESP32Pattern([300, 400, 300, 400]);
+    console.log('[Vibration] Test 2 (Pattern):', result2 ? '✅ Success' : '❌ Failed');
+    return { test1: result1, test2: result2 };
+  };
   window.setVibrationEnabled = setVibrationEnabled;
   window.setVibrationThreshold = setVibrationThreshold;
   window.getVibrationStatus = getVibrationStatus;
@@ -415,5 +917,91 @@ if (typeof window !== 'undefined') {
   window.vibrate = vibrate; // Simple vibration
   window.vibratePattern = vibratePattern; // Pattern vibration
   window.vibrateMario = vibrateMario; // Mario pattern vibration
+  
+  // Add comprehensive diagnostic function
+  window.testVibrationDiagnostic = function() {
+    console.log('📊 Vibration Diagnostic Report');
+    console.log('================================');
+    console.log('1. navigator.vibrate exists:', 'vibrate' in navigator);
+    console.log('2. navigator object:', typeof navigator);
+    console.log('3. User Agent:', navigator.userAgent);
+    console.log('4. Secure Context:', typeof window !== 'undefined' && window.isSecureContext);
+    console.log('5. Protocol:', window.location.protocol);
+    console.log('6. Hostname:', window.location.hostname);
+    console.log('7. Vibration State:', vibrationState);
+    
+    if ('vibrate' in navigator) {
+      console.log('\n✅ navigator.vibrate is available!');
+      console.log('💡 Try direct test: navigator.vibrate(200)');
+      console.log('💡 Try: vibrate()');
+      console.log('💡 Try: vibratePattern()');
+      console.log('💡 Try: vibrateMario()');
+      
+      // Try direct test with multiple patterns
+      console.log('\n📊 Testing multiple vibration patterns:');
+      const testPatterns = [
+        { name: 'Short (100ms)', pattern: 100 },
+        { name: 'Medium (500ms)', pattern: 500 },
+        { name: 'Long (2000ms)', pattern: 2000 }
+      ];
+      
+      testPatterns.forEach((test, index) => {
+        setTimeout(() => {
+          try {
+            const result = navigator.vibrate(test.pattern);
+            console.log(`📊 Test ${index + 1} (${test.name}) result:`, result);
+            if (result === false) {
+              console.warn(`⚠️ Test ${index + 1} returned false - device may be in silent mode`);
+            } else {
+              console.log(`✅ Test ${index + 1} accepted!`);
+            }
+          } catch (error) {
+            console.error(`❌ Test ${index + 1} error:`, error);
+          }
+        }, index * 2500); // Space out tests
+      });
+      
+      console.log('\n💡 Troubleshooting Tips:');
+      console.log('💡 1. Check if device is in Silent/Do Not Disturb mode');
+      console.log('💡 2. Check system vibration settings (Android: Settings > Sound > Vibration)');
+      console.log('💡 3. Ensure volume is not at 0 (some devices disable vibration when volume is 0)');
+      console.log('💡 4. Try restarting browser');
+      console.log('💡 5. Check browser vibration permission');
+      console.log('💡 6. Try testVibrationLong() for longer, more noticeable vibration');
+    } else {
+      console.error('❌ navigator.vibrate NOT available');
+      console.error('💡 Browser/device does not support Web Vibration API');
+      console.error('💡 Solutions:');
+      console.error('   - Use Chrome/Edge/Safari on mobile device');
+      console.error('   - Update browser to latest version');
+      console.error('   - Desktop browsers usually do not support');
+    }
+    console.log('================================');
+  };
+  
+  console.log('[Vibration] 💡 Diagnostic function available: testVibrationDiagnostic()');
+  console.log('[Vibration] 💡 Test long vibration: testVibrationLong()');
+}
+
+// Add function to test with longer vibration for better detection
+if (typeof window !== 'undefined') {
+  window.testVibrationLong = function() {
+    console.log('[Vibration Test] 🔔 Testing with LONG vibration (2000ms)...');
+    if ('vibrate' in navigator) {
+      const result = navigator.vibrate(2000);
+      console.log('[Vibration Test] 📊 Result:', result);
+      if (result === false) {
+        console.warn('[Vibration Test] ⚠️ Device mungkin dalam mode silent atau vibration disabled');
+      } else {
+        console.log('[Vibration Test] ✅ Command sent! Jika HP tidak bergetar, cek:');
+        console.log('[Vibration Test] 💡 1. Mode Silent/Do Not Disturb');
+        console.log('[Vibration Test] 💡 2. System vibration settings');
+        console.log('[Vibration Test] 💡 3. Volume settings (beberapa HP matikan vibration jika volume 0)');
+        console.log('[Vibration Test] 💡 4. Restart browser');
+      }
+    } else {
+      console.error('[Vibration Test] ❌ navigator.vibrate not available');
+    }
+  };
 }
 

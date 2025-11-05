@@ -47,6 +47,7 @@ function configureONNXRuntime() {
   try {
     // Re-apply configuration to ensure it's set correctly
     // (in case inline script didn't run or was overridden)
+    // NOTE: Version 1.16.0 still supports these settings
     ort.env.wasm.simd = false;
     ort.env.wasm.numThreads = 1;
     ort.env.wasm.proxy = false;
@@ -64,7 +65,7 @@ function configureONNXRuntime() {
       simd: ort.env.wasm.simd,
       numThreads: ort.env.wasm.numThreads,
       proxy: ort.env.wasm.proxy,
-      wasmPaths: ort.env.wasm.wasmPaths || '(not set - will use CDN)'
+      version: ort.env.versions?.web || 'unknown'
     });
     
     return true;
@@ -105,9 +106,19 @@ async function loadModel(modelName, isFallback = false) {
       throw fetchError;
     }
 
+    // Ensure ONNX Runtime config is still correct before creating session
+    // Re-apply config to prevent any auto-detection issues
+    // Version 1.16.0 still respects these settings
+    ort.env.wasm.simd = false;
+    ort.env.wasm.numThreads = 1;
+    ort.env.wasm.proxy = false;
+    if (typeof ort.env.wasm.threaded !== 'undefined') {
+      ort.env.wasm.threaded = false;
+    }
+    
     // Create session with basic WASM backend ONLY
     // CRITICAL: Use ONLY 'wasm' provider - no webgl, no cpu
-    // ONNX Runtime will use basic WASM (not SIMD-threaded) based on our config
+    // ONNX Runtime 1.16.0 will use basic WASM (not SIMD-threaded) based on our config
     const sessionOptions = {
       executionProviders: ['wasm'], // Only WASM, no WebGL
       graphOptimizationLevel: 'all'
@@ -117,11 +128,35 @@ async function loadModel(modelName, isFallback = false) {
     console.log('ONNX Runtime env state:', {
       simd: ort.env.wasm.simd,
       numThreads: ort.env.wasm.numThreads,
-      proxy: ort.env.wasm.proxy
+      proxy: ort.env.wasm.proxy,
+      threaded: ort.env.wasm.threaded || 'N/A',
+      version: ort.env.versions?.web || 'unknown'
     });
     
     // Create session - ONNX Runtime should respect our config and use basic WASM
-    const session = await ort.InferenceSession.create(modelUrl, sessionOptions);
+    // Wrap in try-catch to provide better error messages
+    let session;
+    try {
+      session = await ort.InferenceSession.create(modelUrl, sessionOptions);
+    } catch (sessionError) {
+      console.error('❌ Failed to create ONNX session:', sessionError);
+      console.error('❌ Error details:', {
+        name: sessionError.name,
+        message: sessionError.message,
+        stack: sessionError.stack?.substring(0, 500) // First 500 chars of stack
+      });
+      
+      // If error is related to WASM/SIMD, suggest checking ONNX Runtime version
+      if (sessionError.message && (
+        sessionError.message.includes('is not a function') ||
+        sessionError.message.includes('SIMD') ||
+        sessionError.message.includes('threaded')
+      )) {
+        throw new Error(`ONNX Runtime configuration error: ${sessionError.message}. This may be caused by SIMD-threaded version conflict. Try refreshing the page or clearing browser cache.`);
+      }
+      
+      throw sessionError;
+    }
 
     console.log('✅ Model loaded successfully');
     console.log('Input names:', session.inputNames);

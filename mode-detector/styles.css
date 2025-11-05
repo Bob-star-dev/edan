@@ -187,7 +187,9 @@ header h1 {
   padding: var(--spacing-sm);
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
-  z-index: 20;
+  white-space: pre-wrap; /* Preserve line breaks */
+  word-wrap: break-word; /* Break long words */
+  z-index: 1000; /* Ensure it's on top */
   text-align: center;
 }
 

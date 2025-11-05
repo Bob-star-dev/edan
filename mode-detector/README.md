@@ -121,9 +121,9 @@ ONNX Runtime akan otomatis download dari CDN jika file tidak ditemukan secara lo
 
 ### ESP32-CAM Configuration
 
-Edit `js/camera.js` untuk mengubah IP ESP32:
+Edit `js/camera.js` untuk mengubah DNS ESP32:
 ```javascript
-const ESP32_IP = '192.168.1.19'; // Ganti dengan IP ESP32 Anda
+const ESP32_DNS = 'esp32cam.local'; // Ganti dengan DNS ESP32 Anda
 ```
 
 ### Model Selection
@@ -188,9 +188,9 @@ const appState = {
 
 **Solusi**:
 1. Pastikan ESP32 dan komputer di network yang sama
-2. Check IP address ESP32 (edit di `camera.js`)
+2. Check DNS ESP32 (edit di `camera.js`)
 3. Pastikan ESP32 server running dan accessible
-4. Coba akses URL langsung di browser: `http://ESP32_IP:81/stream`
+4. Coba akses URL langsung di browser: `http://esp32cam.local:81/stream`
 
 ### ONNX Runtime Error
 
