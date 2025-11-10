@@ -78,7 +78,19 @@
             transition: transform 0.3s ease;
         }
         
+        /* Logo image styling */
+        .logo-img {
+            height: 40px;
+            width: auto;
+            object-fit: contain;
+            display: block;
+        }
+        
         .logo:hover {
+            transform: scale(1.05);
+        }
+        
+        .logo:hover .logo-img {
             transform: scale(1.05);
         }
         
@@ -753,6 +765,7 @@
     <nav id="navbar">
         <div class="container">
             <a href="#" class="logo">
+                <img src="image/logo.png" alt="SENAVISION Logo" class="logo-img">
                 <span>SENAVISION</span>
             </a>
             <ul class="nav-links">

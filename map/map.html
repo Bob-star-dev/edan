@@ -211,6 +211,16 @@
   })();
   </script>
 
+<!-- Hidden Canvas for Mode-Detector (background detection) -->
+<div id="mode-detector-container" style="display: none; position: absolute; top: -9999px; left: -9999px; width: 1px; height: 1px; overflow: hidden;">
+  <video id="video-element" autoplay playsinline muted style="display: none; width: 320px; height: 240px;"></video>
+  <img id="esp32-img" crossorigin="anonymous" style="display: none; width: 320px; height: 240px;">
+  <canvas id="canvas-overlay" width="320" height="240" style="display: none; width: 320px; height: 240px;"></canvas>
+</div>
+
+<!-- Mode-Detector Integration -->
+<script src="mode-detector-integration.js"></script>
+
 <!-- Custom JS -->
 <script src="index.js"></script>
 </body>

@@ -77,9 +77,10 @@ const vibrationState = {
  * Send vibration signal to ESP32-CAM
  * Mengirim HTTP request ke ESP32-CAM untuk mengaktifkan vibration motor
  * @param {number|Array} pattern - Vibration pattern (duration in ms or array of [on, off, on, off, ...])
+ * @param {string} direction - Direction: "left", "right", "both", or "stop" (optional)
  * @returns {Promise<boolean>} True if request sent successfully
  */
-async function vibrateESP32(pattern) {
+async function vibrateESP32(pattern, direction = null) {
   if (!vibrationState.useESP32Vibration) {
     return false;
   }
@@ -97,16 +98,21 @@ async function vibrateESP32(pattern) {
       duration = Math.max(0, Math.min(5000, pattern)); // Limit 0-5000ms
     }
     
-    // Build URL with duration parameter
-    // Format: http://esp32cam.local/vibrate?duration=200
-    // Alternative formats (sesuaikan dengan firmware ESP32-CAM):
-    // - http://esp32cam.local/vibrate?ms=200
-    // - http://esp32cam.local/motor?vibrate=200
+    // Build URL with parameters
     const baseUrl = getESP32VibrateURL();
-    const url = `${baseUrl}?duration=${duration}&t=${Date.now()}`;
+    let url;
     
-    console.log(`[Vibration] 📡 Sending vibration signal to ESP32-CAM: ${url}`);
-    console.log(`[Vibration] 📡 Duration: ${duration}ms`);
+    // If direction is specified, use direction parameter
+    if (direction && (direction === 'left' || direction === 'right' || direction === 'both' || direction === 'stop')) {
+      url = `${baseUrl}?direction=${direction}&duration=${duration}&t=${Date.now()}`;
+      console.log(`[Vibration] 📡 Sending directional vibration to ESP32-CAM: ${url}`);
+      console.log(`[Vibration] 📡 Direction: ${direction}, Duration: ${duration}ms`);
+    } else {
+      // Default: both motors
+      url = `${baseUrl}?duration=${duration}&t=${Date.now()}`;
+      console.log(`[Vibration] 📡 Sending vibration signal to ESP32-CAM: ${url}`);
+      console.log(`[Vibration] 📡 Duration: ${duration}ms (both motors)`);
+    }
     
     // Send HTTP GET request to ESP32-CAM
     // Try with cors first to check response status, fallback to no-cors if CORS fails
@@ -207,19 +213,28 @@ async function vibrateESP32(pattern) {
  * @param {Array} pattern - Array of [on, off, on, off, ...] durations in ms
  * @returns {Promise<boolean>} True if pattern sent successfully
  */
-async function vibrateESP32Pattern(pattern) {
+async function vibrateESP32Pattern(pattern, direction = null) {
   if (!vibrationState.useESP32Vibration || !Array.isArray(pattern)) {
     return false;
   }
   
   try {
     console.log(`[Vibration] 📡 Sending vibration pattern to ESP32-CAM:`, pattern);
+    if (direction) {
+      console.log(`[Vibration] 📡 Direction: ${direction}`);
+    }
     
     // Method 1: Send pattern as comma-separated values
-    // Format: http://esp32cam.local/vibrate?pattern=200,100,200,100
+    // Format: http://esp32cam.local/vibrate?pattern=200,100,200,100&direction=left
     const patternString = pattern.join(',');
     const baseUrl = getESP32VibrateURL();
-    const url = `${baseUrl}?pattern=${patternString}&t=${Date.now()}`;
+    let url;
+    
+    if (direction && (direction === 'left' || direction === 'right' || direction === 'both' || direction === 'stop')) {
+      url = `${baseUrl}?pattern=${patternString}&direction=${direction}&t=${Date.now()}`;
+    } else {
+      url = `${baseUrl}?pattern=${patternString}&t=${Date.now()}`;
+    }
     
     console.log(`[Vibration] 📡 Pattern URL: ${url}`);
     
@@ -280,7 +295,7 @@ async function vibrateESP32Pattern(pattern) {
         const offDuration = pattern[i + 1] || 0;
         
         if (onDuration > 0) {
-          await vibrateESP32(onDuration);
+          await vibrateESP32(onDuration, direction);
           if (offDuration > 0 && i + 1 < pattern.length) {
             await new Promise(resolve => setTimeout(resolve, offDuration));
           }
@@ -613,7 +628,30 @@ async function vibrateSerial(duration) {
  * @param {number} distance - Distance in cm
  * @param {string} objectName - Name of detected object (for logging)
  */
-async function triggerVibration(distance, objectName = 'object') {
+/**
+ * Determine vibration direction based on object position
+ * @param {number} relativeX - Relative X position (0.0 = left, 1.0 = right)
+ * @returns {string} Direction: "left", "right", or "both"
+ */
+function getVibrationDirection(relativeX) {
+  if (relativeX === undefined || relativeX === null || isNaN(relativeX)) {
+    return 'both'; // Default: both motors if position unknown
+  }
+  
+  // Divide screen into 3 zones:
+  // Left zone (0.0 - 0.33): Motor kiri
+  // Center zone (0.33 - 0.67): Kedua motor
+  // Right zone (0.67 - 1.0): Motor kanan
+  if (relativeX < 0.33) {
+    return 'left';
+  } else if (relativeX > 0.67) {
+    return 'right';
+  } else {
+    return 'both';
+  }
+}
+
+async function triggerVibration(distance, objectName = 'object', detection = null) {
   // Check if vibration is enabled
   if (!vibrationState.isEnabled) {
     return;
@@ -631,6 +669,13 @@ async function triggerVibration(distance, objectName = 'object') {
   // Jarak 150 cm akan trigger vibration
   if (distance > vibrationState.distanceThreshold) {
     return;
+  }
+  
+  // Determine vibration direction based on object position
+  let direction = 'both'; // Default: both motors
+  if (detection && typeof detection.relativeX === 'number') {
+    direction = getVibrationDirection(detection.relativeX);
+    console.log(`[Vibration] 📍 Object position: ${(detection.relativeX * 100).toFixed(1)}% (${direction === 'left' ? '⬅️ Kiri' : direction === 'right' ? '➡️ Kanan' : '📳 Tengah/Kedua'})`);
   }
   
   // Update last vibration time
@@ -738,19 +783,25 @@ async function triggerVibration(distance, objectName = 'object') {
     console.log(`[Vibration] 📡 Pattern: ${Array.isArray(vibrationPattern) ? vibrationPattern.join(',') : vibrationPattern}ms`);
     
     if (Array.isArray(vibrationPattern)) {
-      // Send pattern array to ESP32-CAM
-      // Pattern akan dikirim ke endpoint /vibrate?pattern=200,100,200,100
-      esp32VibrationSuccess = await vibrateESP32Pattern(vibrationPattern);
+      // Send pattern array to ESP32-CAM with direction
+      // Pattern akan dikirim ke endpoint /vibrate?pattern=200,100,200,100&direction=left
+      esp32VibrationSuccess = await vibrateESP32Pattern(vibrationPattern, direction);
     } else {
-      // Send simple duration to ESP32-CAM
-      // Duration akan dikirim ke endpoint /vibrate?duration=200
-      esp32VibrationSuccess = await vibrateESP32(vibrationPattern);
+      // Send simple duration to ESP32-CAM with direction
+      // Duration akan dikirim ke endpoint /vibrate?duration=200&direction=left
+      esp32VibrationSuccess = await vibrateESP32(vibrationPattern, direction);
     }
     
     if (esp32VibrationSuccess) {
       console.log(`[Vibration] ✅ ESP32-CAM vibration signal sent successfully!`);
       console.log(`[Vibration] ✅ Type: ${vibrationType}`);
-      console.log(`[Vibration] ✅ Both motors (MOTOR_R + MOTOR_L) should vibrate now`);
+      if (direction === 'left') {
+        console.log(`[Vibration] ✅ Motor kiri (MOTOR_L, GPIO 15) should vibrate now`);
+      } else if (direction === 'right') {
+        console.log(`[Vibration] ✅ Motor kanan (MOTOR_R, GPIO 14) should vibrate now`);
+      } else {
+        console.log(`[Vibration] ✅ Both motors (MOTOR_R + MOTOR_L) should vibrate now`);
+      }
     } else {
       console.warn(`[Vibration] ⚠️ ESP32-CAM vibration failed, trying fallback methods...`);
       console.warn(`[Vibration] 💡 Check: ESP32-CAM endpoint /vibrate must exist`);
@@ -847,11 +898,14 @@ function checkAndTriggerVibration(detections) {
   // Log detection info
   console.log(`[Vibration] 🔍 Detected ${nearbyDetections.length} object(s) within ${vibrationState.distanceThreshold}cm`);
   console.log(`[Vibration] 🔍 Closest: ${closestDetection.className || 'object'} at ${closestDetection.distance.toFixed(1)}cm`);
+  if (closestDetection.relativeX !== undefined) {
+    console.log(`[Vibration] 🔍 Position: ${(closestDetection.relativeX * 100).toFixed(1)}% (0% = left, 100% = right)`);
+  }
   
-  // Trigger vibration for closest object
+  // Trigger vibration for closest object with position information
   // Device akan bergetar ketika objek terdekat dalam jarak <= 150 cm
-  // ESP32-CAM akan mengaktifkan kedua vibration motor (MOTOR_R + MOTOR_L) secara bersamaan
-  triggerVibration(closestDetection.distance, closestDetection.className || 'object');
+  // ESP32-CAM akan mengaktifkan vibration motor berdasarkan posisi objek (left/right/both)
+  triggerVibration(closestDetection.distance, closestDetection.className || 'object', closestDetection);
 }
 
 /**

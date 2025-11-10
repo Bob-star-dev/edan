@@ -2541,7 +2541,7 @@ function handleVoiceCommand(transcript) {
         return;
     }
     
-    // Check for "Mode 2" command - redirect to mode-detector
+    // Check for "Mode 2" command - activate/deactivate mode-detector in background
     if (cleanCommand === 'mode 2' || cleanCommand === 'mode dua' || cleanCommand === 'mode detector') {
         console.log('✅ Mode 2 command detected:', cleanCommand);
         
@@ -2552,13 +2552,136 @@ function handleVoiceCommand(transcript) {
             isListening = false;
         }
         
-        // Announce redirect and navigate to mode-detector
-        speakText('Mengarahkan ke Mode Detektor', 'id-ID', true, function() {
-            // Navigate to mode-detector after announcement
-            setTimeout(function() {
-                window.location.href = '../mode-detector/';
-            }, 1000);
-        });
+        // Toggle Mode-Detector (activate if inactive, deactivate if active)
+        if (typeof window.ModeDetector !== 'undefined') {
+            const currentState = window.ModeDetector.getState();
+            
+            if (currentState.isActive) {
+                // Deactivate Mode-Detector
+                console.log('🔄 Deactivating Mode-Detector...');
+                window.ModeDetector.deactivate();
+                speakText('Mode Detektor dimatikan', 'id-ID', true, function() {
+                    // Restart microphone after announcement
+                    setTimeout(function() {
+                        if (recognition && !isListening) {
+                            try {
+                                recognition.start();
+                                isListening = true;
+                                recognition._stopped = false;
+                                console.log('🎤 Microphone restarted after Mode-Detector deactivation');
+                            } catch (error) {
+                                console.error('Failed to restart microphone:', error);
+                                recognition._stopped = true;
+                            }
+                        }
+                    }, 500);
+                });
+            } else {
+                // Activate Mode-Detector
+                console.log('🔄 Activating Mode-Detector...');
+                speakText('Mengaktifkan Mode Detektor, mohon tunggu', 'id-ID', true, function() {
+                    window.ModeDetector.activate().then(function(success) {
+                        if (success) {
+                            console.log('✅ Mode-Detector activated successfully');
+                            speakText('Mode Detektor diaktifkan. Deteksi objek berjalan di latar belakang', 'id-ID', true, function() {
+                                // Restart microphone after activation
+                                setTimeout(function() {
+                                    if (recognition && !isListening) {
+                                        try {
+                                            recognition.start();
+                                            isListening = true;
+                                            recognition._stopped = false;
+                                            console.log('🎤 Microphone restarted after Mode-Detector activation');
+                                        } catch (error) {
+                                            console.error('Failed to restart microphone:', error);
+                                            recognition._stopped = true;
+                                        }
+                                    }
+                                }, 500);
+                            });
+                        } else {
+                            console.error('❌ Failed to activate Mode-Detector');
+                            speakText('Gagal mengaktifkan Mode Detektor', 'id-ID', true, function() {
+                                // Restart microphone after error announcement
+                                setTimeout(function() {
+                                    if (recognition && !isListening) {
+                                        try {
+                                            recognition.start();
+                                            isListening = true;
+                                            recognition._stopped = false;
+                                        } catch (error) {
+                                            console.error('Failed to restart microphone:', error);
+                                            recognition._stopped = true;
+                                        }
+                                    }
+                                }, 500);
+                            });
+                        }
+                    });
+                });
+            }
+        } else {
+            // ModeDetector not loaded yet - try to initialize
+            console.warn('⚠️ ModeDetector not loaded - attempting to load...');
+            speakText('Memuat Mode Detektor, mohon tunggu', 'id-ID', true, function() {
+                // Try to initialize ModeDetector
+                if (typeof window.ModeDetector !== 'undefined') {
+                    window.ModeDetector.init().then(function() {
+                        window.ModeDetector.activate().then(function(success) {
+                            if (success) {
+                                speakText('Mode Detektor diaktifkan. Deteksi objek berjalan di latar belakang', 'id-ID', true, function() {
+                                    // Restart microphone
+                                    setTimeout(function() {
+                                        if (recognition && !isListening) {
+                                            try {
+                                                recognition.start();
+                                                isListening = true;
+                                                recognition._stopped = false;
+                                            } catch (error) {
+                                                console.error('Failed to restart microphone:', error);
+                                                recognition._stopped = true;
+                                            }
+                                        }
+                                    }, 500);
+                                });
+                            } else {
+                                speakText('Gagal mengaktifkan Mode Detektor', 'id-ID', true, function() {
+                                    // Restart microphone
+                                    setTimeout(function() {
+                                        if (recognition && !isListening) {
+                                            try {
+                                                recognition.start();
+                                                isListening = true;
+                                                recognition._stopped = false;
+                                            } catch (error) {
+                                                console.error('Failed to restart microphone:', error);
+                                                recognition._stopped = true;
+                                            }
+                                        }
+                                    }, 500);
+                                });
+                            }
+                        });
+                    });
+                } else {
+                    speakText('Mode Detektor tidak tersedia. Pastikan file integrasi sudah dimuat', 'id-ID', true, function() {
+                        // Restart microphone
+                        setTimeout(function() {
+                            if (recognition && !isListening) {
+                                try {
+                                    recognition.start();
+                                    isListening = true;
+                                    recognition._stopped = false;
+                                } catch (error) {
+                                    console.error('Failed to restart microphone:', error);
+                                    recognition._stopped = true;
+                                }
+                            }
+                        }, 500);
+                    });
+                }
+            });
+        }
         
         return;
     }
@@ -3317,7 +3440,7 @@ function announceWelcomeGuide() {
     
     const welcomeText = 'Senavision Siap, Panduan Penggunaan: ' +
         'Isilah rute terlebih dahulu, Ucapkan Rute 1 atau Rute 2 dan seterusnya untuk menuju Lokasi yang anda Tuju. ' +
-        'Untuk Mode Deteksi, ucapkan Mode 2. Selamat menikmati Perjalanan';
+        'Untuk Mode Deteksi Objek, ucapkan Mode 2. Mode Deteksi akan berjalan di latar belakang tanpa mengganggu navigasi. Selamat menikmati Perjalanan';
     
     console.log('📢 Starting welcome guide announcement');
     updateVoiceStatus('📢 Memutar panduan penggunaan...');

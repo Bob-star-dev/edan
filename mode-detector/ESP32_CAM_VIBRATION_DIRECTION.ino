@@ -1,32 +1,12 @@
 #include "esp_camera.h"
 #include <WiFi.h>
-#include <WebServer.h>
 #include <ESPmDNS.h>
+#include <WebServer.h>
+#include "board_config.h"
 
-// WiFi credentials - sesuaikan dengan WiFi Anda
 const char *ssid = "enumatechz";
 const char *password = "3numaTechn0l0gy";
 
-// ESP32-CAM Pin Definitions (AI Thinker ESP32-CAM)
-// Pin definitions untuk ESP32-CAM
-#define PWDN_GPIO_NUM     32
-#define RESET_GPIO_NUM    -1
-#define XCLK_GPIO_NUM      0
-#define SIOD_GPIO_NUM     26
-#define SIOC_GPIO_NUM     27
-#define Y9_GPIO_NUM       35
-#define Y8_GPIO_NUM       34
-#define Y7_GPIO_NUM       39
-#define Y6_GPIO_NUM       36
-#define Y5_GPIO_NUM       21
-#define Y4_GPIO_NUM       19
-#define Y3_GPIO_NUM       18
-#define Y2_GPIO_NUM        5
-#define VSYNC_GPIO_NUM    25
-#define HREF_GPIO_NUM     23
-#define PCLK_GPIO_NUM     22
-
-// Pin untuk vibration motor
 #define MOTOR_R 14  // Vibrator kanan
 #define MOTOR_L 15  // Vibrator kiri
 
@@ -34,7 +14,7 @@ const char *password = "3numaTechn0l0gy";
 WebServer server(80);
 
 /**
- * Fungsi untuk mengontrol motor berdasarkan arah (untuk Serial Monitor)
+ * Fungsi untuk mengontrol motor berdasarkan arah
  * 1 = kanan, 2 = kiri, 0 = stop
  */
 void kontrolMotor(int hasilML) {
@@ -56,69 +36,11 @@ void kontrolMotor(int hasilML) {
 }
 
 /**
- * Fungsi untuk menggetarkan kedua motor secara bersamaan
- * @param duration Durasi getaran dalam milidetik (ms)
- */
-void vibrateBothMotors(int duration) {
-  // Limit durasi untuk melindungi motor (max 5000ms = 5 detik)
-  duration = constrain(duration, 0, 5000);
-  
-  if (duration > 0) {
-    Serial.printf("📳 Vibrating both motors: %dms\n", duration);
-    
-    // Aktifkan kedua motor secara bersamaan
-    digitalWrite(MOTOR_R, HIGH);
-    digitalWrite(MOTOR_L, HIGH);
-    
-    // Tunggu sesuai durasi
-    delay(duration);
-    
-    // Matikan kedua motor
-    digitalWrite(MOTOR_R, LOW);
-    digitalWrite(MOTOR_L, LOW);
-    
-    Serial.println("✅ Vibration completed");
-  }
-}
-
-/**
- * Fungsi untuk menjalankan pattern vibration
- * Pattern format: [on, off, on, off, ...] dalam milidetik
- * @param pattern Array pattern
- * @param count Jumlah elemen dalam array
- */
-void vibratePattern(int pattern[], int count) {
-  Serial.printf("📳 Vibrating pattern: %d steps\n", count);
-  
-  for (int i = 0; i < count; i++) {
-    if (i % 2 == 0) {
-      // Even index = ON duration (getar)
-      int duration = constrain(pattern[i], 0, 5000);
-      if (duration > 0) {
-        digitalWrite(MOTOR_R, HIGH);
-        digitalWrite(MOTOR_L, HIGH);
-        delay(duration);
-        digitalWrite(MOTOR_R, LOW);
-        digitalWrite(MOTOR_L, LOW);
-      }
-    } else {
-      // Odd index = OFF duration (delay/jeda)
-      int delayTime = constrain(pattern[i], 0, 5000);
-      if (delayTime > 0) {
-        delay(delayTime);
-      }
-    }
-  }
-  
-  Serial.println("✅ Pattern vibration completed");
-}
-
-/**
  * Handler untuk endpoint /vibrate
  * Menerima parameter:
- * - duration: Durasi vibration dalam ms (contoh: ?duration=200)
- * - pattern: Pattern vibration dipisahkan koma (contoh: ?pattern=200,100,200,100)
- * - direction: Arah getar - "left" (kiri), "right" (kanan), "both" (kedua), "stop" (mati)
+ * - direction: "left" (kiri), "right" (kanan), "both" (kedua), "stop" (mati)
+ * - duration: Durasi vibration dalam ms (optional, untuk auto-stop)
+ * - pattern: Pattern vibration dipisahkan koma (optional)
  */
 void handleVibrate() {
   Serial.println("📡 Received /vibrate request");
@@ -183,57 +105,24 @@ void handleVibrate() {
     Serial.printf("📳 Duration vibration: %dms (both motors)\n", duration);
     
     // Getarkan kedua motor secara bersamaan
-    vibrateBothMotors(duration);
+    digitalWrite(MOTOR_R, HIGH);
+    digitalWrite(MOTOR_L, HIGH);
+    delay(duration);
+    digitalWrite(MOTOR_R, LOW);
+    digitalWrite(MOTOR_L, LOW);
     
-    // Kirim response dengan CORS header (untuk web browser)
+    // Kirim response dengan CORS header
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
     server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
     server.send(200, "application/json", "{\"status\":\"ok\",\"duration\":" + String(duration) + "}");
-    
-  } 
-  // Cek apakah menggunakan parameter pattern
-  else if (server.hasArg("pattern")) {
-    String patternStr = server.arg("pattern");
-    Serial.printf("📳 Pattern vibration: %s\n", patternStr.c_str());
-    
-    // Parse pattern string (format: "200,100,200,100")
-    int values[20]; // Max 20 values (10 on/off pairs)
-    int count = 0;
-    int startPos = 0;
-    
-    // Parse comma-separated values
-    for (int i = 0; i <= patternStr.length(); i++) {
-      if (i == patternStr.length() || patternStr.charAt(i) == ',') {
-        if (count < 20) {
-          values[count] = patternStr.substring(startPos, i).toInt();
-          count++;
-        }
-        startPos = i + 1;
-      }
-    }
-    
-    // Jalankan pattern vibration
-    if (count > 0) {
-      vibratePattern(values, count);
-      
-      // Kirim response dengan CORS header
-      server.sendHeader("Access-Control-Allow-Origin", "*");
-      server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-      server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-      server.send(200, "application/json", "{\"status\":\"ok\",\"pattern\":\"" + patternStr + "\"}");
-    } else {
-      server.sendHeader("Access-Control-Allow-Origin", "*");
-      server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid pattern\"}");
-    }
-    
-  } 
-  // Parameter tidak valid
-  else {
-    Serial.println("❌ Invalid request: Missing 'duration' or 'pattern' parameter");
-    server.sendHeader("Access-Control-Allow-Origin", "*");
-    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing 'duration' or 'pattern' parameter\"}");
+    return;
   }
+  
+  // Parameter tidak valid
+  Serial.println("❌ Invalid request: Missing 'direction' or 'duration' parameter");
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing 'direction' or 'duration' parameter\"}");
 }
 
 /**
@@ -324,23 +213,18 @@ void setup() {
   server.begin();
   Serial.println("✅ HTTP server started");
   Serial.println("📡 Vibration endpoint: http://esp32cam.local/vibrate");
-  Serial.println("   - Direction (Left):  GET /vibrate?direction=left&duration=200");
-  Serial.println("   - Direction (Right): GET /vibrate?direction=right&duration=200");
-  Serial.println("   - Direction (Both):  GET /vibrate?direction=both&duration=200");
-  Serial.println("   - Stop:              GET /vibrate?direction=stop");
-  Serial.println("   - Duration (Both):   GET /vibrate?duration=200");
-  Serial.println("   - Pattern:           GET /vibrate?pattern=200,100,200,100");
+  Serial.println("   - Direction: GET /vibrate?direction=left&duration=200");
+  Serial.println("   - Direction: GET /vibrate?direction=right&duration=200");
+  Serial.println("   - Direction: GET /vibrate?direction=both&duration=200");
+  Serial.println("   - Stop: GET /vibrate?direction=stop");
+  Serial.println("   - Duration: GET /vibrate?duration=200 (both motors)");
   
   // === Start Camera Server ===
   // Note: Jika Anda menggunakan library ESP32-CAM yang sudah ada (seperti dari ESP32 CameraWebServer example),
   // fungsi startCameraServer() biasanya sudah tersedia. Jika tidak, Anda bisa menggunakan WebServer
-  // untuk membuat endpoint /stream dan /capture sendiri, atau gunakan library yang sudah ada.
+  // untuk membuat endpoint /stream dan /capture sendiri.
   
   // Untuk sementara, kita akan membuat endpoint kamera sederhana
-  // Jika Anda menggunakan library yang sudah ada, uncomment baris berikut:
-  // startCameraServer();
-  
-  // Atau buat endpoint kamera sendiri menggunakan WebServer
   server.on("/stream", []() {
     // Handle MJPEG stream request
     // Implementasi stream biasanya menggunakan library khusus
@@ -359,15 +243,10 @@ void setup() {
   });
   
   Serial.println("✅ Camera Server Ready!");
-  
   Serial.println();
   Serial.println("=== ESP32-CAM dengan Vibration Motor (Directional) ===");
   Serial.println("📡 Endpoint vibration: http://esp32cam.local/vibrate");
   Serial.println("📱 Serial Monitor: Ketik '1' (kanan), '2' (kiri), atau '0' (stop)");
-  Serial.println("💡 Motor akan bergetar sesuai posisi objek yang terdeteksi");
-  Serial.println("   - Objek di kiri layar → Motor kiri (GPIO 15)");
-  Serial.println("   - Objek di kanan layar → Motor kanan (GPIO 14)");
-  Serial.println("   - Objek di tengah → Kedua motor");
   Serial.println();
 }
 
@@ -384,10 +263,4 @@ void loop() {
   }
 }
 
-// Catatan tentang Camera Server:
-// - Jika Anda menggunakan contoh ESP32 CameraWebServer dari Arduino IDE,
-//   fungsi startCameraServer() biasanya sudah tersedia di library.
-// - Atau Anda bisa menggunakan implementasi endpoint kamera sederhana
-//   yang sudah ditambahkan di setup() di atas.
-// - Endpoint /stream untuk MJPEG stream dan /capture untuk single image capture
 

@@ -141,6 +141,16 @@ function postprocessYolov7(ctx, modelResolution, tensor, conf2color, focalLength
     const label = `${capitalize(className)} ${score}%`;
     const color = conf2color(confidence);
 
+    // Calculate center position of bounding box for directional vibration
+    const centerX = (scaledX0 + scaledX1) / 2;
+    const centerY = (scaledY0 + scaledY1) / 2;
+    const canvasWidth = ctx.canvas.width;
+    const canvasHeight = ctx.canvas.height;
+    
+    // Determine position relative to canvas (0.0 = left/top, 1.0 = right/bottom)
+    const relativeX = centerX / canvasWidth;
+    const relativeY = centerY / canvasHeight;
+    
     // Collect detection info for voice navigation - include ALL detections
     detectionsForVoice.push({
       classId: classId,
@@ -148,7 +158,16 @@ function postprocessYolov7(ctx, modelResolution, tensor, conf2color, focalLength
       className: className,
       confidence: confidence,
       isWall: isWall,
-      isUnknown: !yoloClasses[classId]
+      isUnknown: !yoloClasses[classId],
+      // Position information for directional vibration
+      centerX: centerX,
+      centerY: centerY,
+      relativeX: relativeX, // 0.0 = left, 1.0 = right
+      relativeY: relativeY, // 0.0 = top, 1.0 = bottom
+      x0: scaledX0,
+      x1: scaledX1,
+      y0: scaledY0,
+      y1: scaledY1
     });
     
     console.log(` [YOLOv7] Added detection ${i} to voice array:`, {
@@ -285,6 +304,16 @@ function postprocessYolov10(ctx, modelResolution, tensor, conf2color, focalLengt
     const label = `${capitalize(className)} ${score}%`;
     const color = conf2color(confidence);
 
+    // Calculate center position of bounding box for directional vibration
+    const centerX = (scaledX0 + scaledX1) / 2;
+    const centerY = (scaledY0 + scaledY1) / 2;
+    const canvasWidth = ctx.canvas.width;
+    const canvasHeight = ctx.canvas.height;
+    
+    // Determine position relative to canvas (0.0 = left/top, 1.0 = right/bottom)
+    const relativeX = centerX / canvasWidth;
+    const relativeY = centerY / canvasHeight;
+    
     // Collect detection info for voice navigation - include ALL detections
     detectionsForVoice.push({
       classId: classId,
@@ -292,7 +321,16 @@ function postprocessYolov10(ctx, modelResolution, tensor, conf2color, focalLengt
       className: className,
       confidence: confidence,
       isWall: isWall,
-      isUnknown: !yoloClasses[classId]
+      isUnknown: !yoloClasses[classId],
+      // Position information for directional vibration
+      centerX: centerX,
+      centerY: centerY,
+      relativeX: relativeX, // 0.0 = left, 1.0 = right
+      relativeY: relativeY, // 0.0 = top, 1.0 = bottom
+      x0: scaledX0,
+      x1: scaledX1,
+      y0: scaledY0,
+      y1: scaledY1
     });
     
     console.log(` [YOLOv10] Added detection to voice array:`, {

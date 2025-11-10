@@ -132,8 +132,8 @@ const ESP32_PROXY_CAPTURE_URL = `/api/esp32-capture`;
 
 // ESP32 LED/flash control endpoints (common ESP32-CAM implementations)
 // Different ESP32-CAM firmware may use different endpoints
-const ESP32_LED_OFF_URL = `http://${ESP32_DNS}/led?params=0`;  // Turn off flash LED
-const ESP32_LED_ON_URL = `http://${ESP32_DNS}/led?params=255`;  // Turn on flash LED
+const ESP32_LED_OFF_URL = `${getESP32BaseURL()}/led?params=0`;  // Turn off flash LED
+const ESP32_LED_ON_URL = `${getESP32BaseURL()}/led?params=255`;  // Turn on flash LED
 // Alternative endpoints (uncomment if above doesn't work):
 // const ESP32_LED_OFF_URL = `http://${ESP32_DNS}/ledoff`;
 // const ESP32_LED_OFF_URL = `http://${ESP32_DNS}/led/off`;
@@ -152,12 +152,13 @@ let espStreamAbortController = null; // For aborting stream requests
  * Tries multiple common endpoints for different ESP32-CAM firmware versions
  */
 async function disableESP32Flash() {
+  const baseURL = getESP32BaseURL();
   const endpoints = [
-    `http://${ESP32_DNS}/led?params=0`,
-    `http://${ESP32_DNS}/ledoff`,
-    `http://${ESP32_DNS}/led/off`,
-    `http://${ESP32_DNS}/control?var=led_intensity&val=0`,
-    `http://${ESP32_DNS}/?led=off`
+    `${baseURL}/led?params=0`,
+    `${baseURL}/ledoff`,
+    `${baseURL}/led/off`,
+    `${baseURL}/control?var=led_intensity&val=0`,
+    `${baseURL}/?led=off`
   ];
   
   console.log('[ESP32-CAM] 💡 Attempting to disable flash LED...');
