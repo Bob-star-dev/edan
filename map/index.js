@@ -1508,7 +1508,11 @@ function initSpeechRecognition() {
                         isListening = true;
                         console.log('🎤 Microphone started after click');
                         updateVoiceStatus('🎤 Mikrofon aktif. sebutkan tujuan.');
-                        speakText('Mikrofon aktif. sebutkan tujuan Anda', 'id-ID', true);
+                        if (cleanCommand === 'navigasi') {
+                            speakText('Mikrofon aktif kembali. Silakan sebutkan perintah navigasi Anda.', 'id-ID', true);
+                        } else {
+                            speakText('Mikrofon aktif. Ucapkan nama rute atau sebutkan tujuan Anda.', 'id-ID', true);
+                        }
                     }
                 } catch (err) {
                     console.error('Failed to start after click:', err);
@@ -2381,7 +2385,7 @@ function handleVoiceCommand(transcript) {
     
     // Voice trigger commands - "Halo" is required to activate microphone
     // This is the primary way to activate microphone (works even during navigation)
-    if (cleanCommand === 'halo' || cleanCommand === 'hello' || cleanCommand === 'aktivasi' || cleanCommand === 'activate' || cleanCommand === 'buka mikrofon' || cleanCommand === 'aktifkan') {
+    if (cleanCommand === 'halo' || cleanCommand === 'hello' || cleanCommand === 'aktivasi' || cleanCommand === 'activate' || cleanCommand === 'buka mikrofon' || cleanCommand === 'aktifkan' || cleanCommand === 'navigasi') {
         // Mark user interaction when voice command is received (voice counts as interaction)
         hasUserInteraction = true;
         console.log('✅ "Halo" command detected - hasUserInteraction set to true');
@@ -2910,10 +2914,127 @@ function startTurnByTurnNavigation() {
         announceRouteDirections(true, function() {
             // After route announced, announce first few instructions
             announceFirstDirections(function() {
-                // CRITICAL: Mikrofon TIDAK restart setelah "Navigasi"
-                // Mikrofon MATI dan hanya bisa diaktifkan dengan "Halo" atau klik layar
-                console.log('🔇 Microphone remains OFF after navigation - user must say "Halo" or click to reactivate');
-                updateVoiceStatus('📍 Navigasi aktif - Ucapkan "Halo" atau klik layar untuk aktivasi mikrofon');
+                // MODIFIED: Setelah semua announcement selesai, restart mikrofon untuk menerima command "Mode 2"
+                // Tunggu hingga semua announcement benar-benar selesai (termasuk queue)
+                // Kita perlu menunggu beberapa kali untuk memastikan queue benar-benar kosong
+                let consecutiveEmptyChecks = 0;
+                const requiredEmptyChecks = 3; // Butuh 3 check berturut-turut yang kosong untuk memastikan benar-benar selesai
+                
+                const waitForAllSpeechComplete = function(checkCount = 0) {
+                    const maxChecks = 120; // Maximum 60 seconds (120 * 500ms)
+                    
+                    // Check if speech synthesis is still speaking OR if queue is not empty
+                    const speechSynthesisSpeaking = (typeof window.speechSynthesis !== 'undefined') ? window.speechSynthesis.speaking : false;
+                    const queueLength = (typeof announcementQueue !== 'undefined') ? announcementQueue.length : 0;
+                    const queueEmpty = queueLength === 0;
+                    const isSpeakingVar = (typeof isSpeaking !== 'undefined') ? isSpeaking : false;
+                    const pendingUtterances = (typeof window.speechSynthesis !== 'undefined' && window.speechSynthesis.pending !== undefined) ? window.speechSynthesis.pending : false;
+                    
+                    // Check if everything is really done
+                    const allDone = !speechSynthesisSpeaking && queueEmpty && !isSpeakingVar && !pendingUtterances;
+                    
+                    if (allDone) {
+                        consecutiveEmptyChecks++;
+                        console.log('✅ Speech appears complete (check ' + consecutiveEmptyChecks + '/' + requiredEmptyChecks + ')', {
+                            speechSynthesisSpeaking: speechSynthesisSpeaking,
+                            queueLength: queueLength,
+                            isSpeaking: isSpeakingVar,
+                            pendingUtterances: pendingUtterances
+                        });
+                        
+                        // Need multiple consecutive checks to be sure
+                        if (consecutiveEmptyChecks >= requiredEmptyChecks) {
+                            console.log('✅✅✅ All speech confirmed complete after ' + consecutiveEmptyChecks + ' consecutive empty checks');
+                            restartMicrophoneAfterNavigasi();
+                            return;
+                        }
+                    } else {
+                        // Reset counter if something is still active
+                        consecutiveEmptyChecks = 0;
+                        console.log('⏳ Waiting for all speech to complete...', {
+                            check: checkCount + '/' + maxChecks,
+                            speechSynthesisSpeaking: speechSynthesisSpeaking,
+                            queueLength: queueLength,
+                            isSpeaking: isSpeakingVar,
+                            pendingUtterances: pendingUtterances
+                        });
+                    }
+                    
+                    // Continue checking
+                    if (checkCount < maxChecks) {
+                        setTimeout(function() {
+                            waitForAllSpeechComplete(checkCount + 1);
+                        }, 500);
+                    } else {
+                        console.warn('⚠️ Speech check timeout after ' + maxChecks + ' checks - proceeding anyway');
+                        console.warn('⚠️ Final state:', {
+                            speechSynthesisSpeaking: speechSynthesisSpeaking,
+                            queueLength: queueLength,
+                            isSpeaking: isSpeakingVar,
+                            pendingUtterances: pendingUtterances
+                        });
+                        // Even on timeout, try to restart microphone
+                        restartMicrophoneAfterNavigasi();
+                    }
+                };
+                
+                // Helper function to restart microphone
+                function restartMicrophoneAfterNavigasi() {
+                    console.log('🔄 Attempting to restart microphone after all announcements complete...');
+                    setTimeout(function() {
+                        if (recognition && !isListening) {
+                            try {
+                                recognition._stopped = false; // Clear stopped flag agar mikrofon bisa menerima command
+                                recognition.start();
+                                isListening = true;
+                                console.log('✅✅✅ Microphone restarted after "Navigasi" - listening for "Mode 2" command');
+                                updateVoiceStatus('🎤 Mikrofon aktif - Ucapkan "Mode 2" untuk deteksi objek');
+                                
+                                // Set flag bahwa mikrofon siap menerima "Mode 2"
+                                recognition._waitingForMode2 = true;
+                            } catch (error) {
+                                console.error('❌ Failed to restart microphone after Navigasi:', error);
+                                // Retry setelah delay lebih lama
+                                setTimeout(function() {
+                                    if (recognition && !isListening) {
+                                        try {
+                                            recognition._stopped = false;
+                                            recognition.start();
+                                            isListening = true;
+                                            recognition._waitingForMode2 = true;
+                                            console.log('✅✅✅ Microphone restarted (retry) - listening for "Mode 2" command');
+                                            updateVoiceStatus('🎤 Mikrofon aktif - Ucapkan "Mode 2" untuk deteksi objek');
+                                        } catch (retryError) {
+                                            console.error('❌ Failed to restart microphone (retry):', retryError);
+                                            recognition._stopped = true;
+                                            updateVoiceStatus('📍 Navigasi aktif - Ucapkan "Halo" untuk aktivasi mikrofon');
+                                        }
+                                    }
+                                }, 2000);
+                            }
+                        } else {
+                            console.warn('⚠️ Cannot restart microphone:', {
+                                recognition: !!recognition,
+                                isListening: isListening
+                            });
+                            // If microphone is already listening, just update status
+                            if (isListening && recognition) {
+                                recognition._waitingForMode2 = true;
+                                updateVoiceStatus('🎤 Mikrofon aktif - Ucapkan "Mode 2" untuk deteksi objek');
+                                console.log('✅ Microphone already listening - updated status for "Mode 2"');
+                            } else if (!recognition) {
+                                console.error('❌ Recognition object not available');
+                                updateVoiceStatus('📍 Navigasi aktif - Ucapkan "Halo" untuk aktivasi mikrofon');
+                            }
+                        }
+                    }, 1000); // Delay 1 second setelah semua speech selesai untuk memastikan
+                }
+                
+                // Start waiting for all speech to complete (wait 2 seconds first to let callback complete)
+                console.log('⏳ Starting wait for all speech to complete (will check queue and speechSynthesis)...');
+                setTimeout(function() {
+                    waitForAllSpeechComplete();
+                }, 2000);
             });
             
             // Start turn-by-turn navigation
