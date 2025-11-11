@@ -1,10 +1,14 @@
 // Init Leaflet Map - Start with a default location
+// Expanded zoom levels for global navigation
 const map = L.map('map', {
     center: [3.59, 98.67],
-    zoom: 15
+    zoom: 3, // Start with wider view (was 15)
+    minZoom: 2, // Allow zoom out to see entire world
+    maxZoom: 19 // Maximum detail level
 });
 
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    minZoom: 2,
     maxZoom: 19,
     attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 }).addTo(map);
@@ -66,21 +70,28 @@ const MAX_DEBUG_LOGS = 500; // Maximum number of log entries to keep
 
 // Debug Console Functions
 // Toggle debug panel visibility - similar to status panel toggle
+// Updated to work with new sidebar navbar
 function toggleDebugPanel() {
-    const debugPanel = document.getElementById('debugPanel');
-    const toggleBtn = document.getElementById('debugToggleBtn');
-    
-    if (debugPanel && toggleBtn) {
-        const isActive = debugPanel.classList.contains('active');
+    // Use new sidebar navbar instead
+    const navbar = document.getElementById('sideNavbar');
+    if (navbar) {
+        switchNavbarTab('debug');
+        toggleSideNavbar();
+    } else {
+        // Fallback to old panel if navbar doesn't exist
+        const debugPanel = document.getElementById('debugPanel');
+        const toggleBtn = document.getElementById('debugToggleBtn');
         
-        if (isActive) {
-            // Close panel
-            debugPanel.classList.remove('active');
-            toggleBtn.textContent = '🐛 Debug';
-        } else {
-            // Open panel
-            debugPanel.classList.add('active');
-            toggleBtn.textContent = '✖️ Tutup';
+        if (debugPanel && toggleBtn) {
+            const isActive = debugPanel.classList.contains('active');
+            
+            if (isActive) {
+                debugPanel.classList.remove('active');
+                toggleBtn.textContent = '🐛 Debug';
+            } else {
+                debugPanel.classList.add('active');
+                toggleBtn.textContent = '✖️ Tutup';
+            }
         }
     }
 }
@@ -231,24 +242,30 @@ function escapeHtml(text) {
 // Mobile UI Toggle Function - Toggle status panel visibility on mobile
 // This function is called when the mobile toggle button is clicked
 // It shows/hides the status panel on mobile devices
+// Updated to work with new sidebar navbar
 function toggleStatusPanel() {
-    const statusPanel = document.getElementById('statusPanel');
-    const toggleBtn = document.getElementById('mobileToggleBtn');
-    
-    if (statusPanel && toggleBtn) {
-        // Toggle active class to show/hide panel
-        const isActive = statusPanel.classList.contains('active');
+    // Use new sidebar navbar instead
+    const navbar = document.getElementById('sideNavbar');
+    if (navbar) {
+        switchNavbarTab('status');
+        toggleSideNavbar();
+    } else {
+        // Fallback to old panel if navbar doesn't exist
+        const statusPanel = document.getElementById('statusPanel');
+        const toggleBtn = document.getElementById('mobileToggleBtn');
         
-        if (isActive) {
-            // Close panel
-            statusPanel.classList.remove('active');
-            toggleBtn.textContent = '📍 Info Lokasi';
-            toggleBtn.style.background = '#3b49df'; // Blue when closed
-        } else {
-            // Open panel
-            statusPanel.classList.add('active');
-            toggleBtn.textContent = '✖️ Tutup';
-            toggleBtn.style.background = '#dc3545'; // Red when open
+        if (statusPanel && toggleBtn) {
+            const isActive = statusPanel.classList.contains('active');
+            
+            if (isActive) {
+                statusPanel.classList.remove('active');
+                toggleBtn.textContent = '📍 Info Lokasi';
+                toggleBtn.style.background = '#3b49df';
+            } else {
+                statusPanel.classList.add('active');
+                toggleBtn.textContent = '✖️ Tutup';
+                toggleBtn.style.background = '#dc3545';
+            }
         }
     }
 }
@@ -572,8 +589,9 @@ function onLocationFound(e) {
     
     // Auto-center map to user location (only first time)
     // This makes the map automatically zoom to user's position when opened
+    // Using zoom level 13 for wider view (was 16 for closer view)
     if (isFirstLocationUpdate) {
-        map.setView(e.latlng, 16);
+        map.setView(e.latlng, 13);
         isFirstLocationUpdate = false; // Reset flag after first update
     }
     
@@ -2061,8 +2079,9 @@ async function geocodeLocationForRoute(locationName, callback) {
             return;
         }
         
-        // Jika tidak ada, coba geocode dengan Nominatim
-        const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=json&limit=1&countrycodes=id&accept-language=id`;
+        // Jika tidak ada, coba geocode dengan Nominatim - GLOBAL SEARCH
+        // Removed countrycodes restriction to search worldwide
+        const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=json&limit=10&addressdetails=1&accept-language=id,en`;
         
         const response = await fetch(geocodeUrl);
         const data = await response.json();
@@ -2086,28 +2105,37 @@ async function geocodeLocationForRoute(locationName, callback) {
 // ========== ROUTE MANAGEMENT UI FUNCTIONS ==========
 
 // Toggle route management panel visibility
+// Updated to work with new sidebar navbar
 function toggleRouteManagementPanel() {
-    const routePanel = document.getElementById('routeManagementPanel');
-    const toggleBtn = document.getElementById('routeManagementToggleBtn');
-    const closeBtn = document.getElementById('closeRoutePanelBtn');
-    
-    if (routePanel && toggleBtn) {
-        const isActive = routePanel.classList.contains('active');
+    // Use new sidebar navbar instead
+    const navbar = document.getElementById('sideNavbar');
+    if (navbar) {
+        switchNavbarTab('route');
+        toggleSideNavbar();
+        // Refresh route list when opening
+        renderRouteList();
+    } else {
+        // Fallback to old panel if navbar doesn't exist
+        const routePanel = document.getElementById('routeManagementPanel');
+        const toggleBtn = document.getElementById('routeManagementToggleBtn');
+        const closeBtn = document.getElementById('closeRoutePanelBtn');
         
-        if (isActive) {
-            // Close panel
-            routePanel.classList.remove('active');
-            toggleBtn.textContent = '🗺️ Kelola Rute';
-            if (closeBtn) closeBtn.style.display = 'none';
-        } else {
-            // Open panel
-            routePanel.classList.add('active');
-            toggleBtn.textContent = '✖️ Tutup';
-            if (closeBtn && window.innerWidth <= 768) {
-                closeBtn.style.display = 'block';
+        if (routePanel && toggleBtn) {
+            const isActive = routePanel.classList.contains('active');
+            
+            if (isActive) {
+                routePanel.classList.remove('active');
+                toggleBtn.textContent = '🗺️ Kelola Rute';
+                if (closeBtn) closeBtn.style.display = 'none';
+            } else {
+                routePanel.classList.add('active');
+                toggleBtn.textContent = '✖️ Tutup';
+                if (closeBtn && window.innerWidth <= 768) {
+                    closeBtn.style.display = 'block';
+                }
+                // Refresh route list when opening
+                renderRouteList();
             }
-            // Refresh route list when opening
-            renderRouteList();
         }
     }
 }
@@ -2159,11 +2187,12 @@ function editRoute(routeId) {
     const formContainer = document.getElementById('routeFormContainer');
     const formTitle = document.getElementById('routeFormTitle');
     const formId = document.getElementById('routeFormId');
-    const formStart = document.getElementById('routeStart');
     const formEnd = document.getElementById('routeEnd');
     const formStatus = document.getElementById('routeFormStatus');
+    const currentLocationText = document.getElementById('currentLocationText');
+    const locationSelectionList = document.getElementById('locationSelectionList');
     
-    if (!formContainer || !formTitle || !formId || !formStart || !formEnd) {
+    if (!formContainer || !formTitle || !formId || !formEnd) {
         console.error('Route form elements not found');
         return;
     }
@@ -2171,18 +2200,273 @@ function editRoute(routeId) {
     // Set form values
     formId.value = routeId;
     formTitle.textContent = `Edit ${route.name}`;
-    formStart.value = route.start ? route.start.name : '';
-    formEnd.value = route.end ? route.end.name : '';
+    
+    // Update current location display
+    if (currentUserPosition) {
+        const userLatLng = currentUserPosition.getLatLng();
+        currentLocationText.textContent = `Lokasi saat ini (${userLatLng.lat.toFixed(6)}, ${userLatLng.lng.toFixed(6)})`;
+    } else {
+        currentLocationText.textContent = 'Menggunakan lokasi saat ini (GPS belum aktif)';
+    }
+    
+    // Set end location
+    if (route.end) {
+        formEnd.value = route.end.name;
+        // Set selected location if route already has end location
+        window.selectedEndLocation = {
+            lat: route.end.lat,
+            lng: route.end.lng,
+            name: route.end.name
+        };
+    } else {
+        formEnd.value = '';
+        window.selectedEndLocation = null;
+    }
     formStatus.innerHTML = '';
+    
+    // Hide location selection list
+    if (locationSelectionList) {
+        locationSelectionList.style.display = 'none';
+    }
+    
+    // Hide autocomplete initially
+    const autocomplete = document.getElementById('locationAutocomplete');
+    if (autocomplete) {
+        autocomplete.style.display = 'none';
+    }
     
     // Show form and scroll to it
     formContainer.style.display = 'block';
     formContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     
-    // Focus on first input
+    // Update current location display periodically
+    updateCurrentLocationDisplay();
+    
+    // Clear any existing interval first
+    if (window.routeFormLocationInterval) {
+        clearInterval(window.routeFormLocationInterval);
+    }
+    
+    const locationUpdateInterval = setInterval(updateCurrentLocationDisplay, 2000);
+    window.routeFormLocationInterval = locationUpdateInterval;
+    
+    // Setup autocomplete for route end input
+    setupLocationAutocomplete(formEnd);
+    
+    // Focus on end input
     setTimeout(function() {
-        formStart.focus();
+        formEnd.focus();
     }, 100);
+}
+
+// Update current location display
+function updateCurrentLocationDisplay() {
+    const currentLocationText = document.getElementById('currentLocationText');
+    if (!currentLocationText) return;
+    
+    if (currentUserPosition) {
+        const userLatLng = currentUserPosition.getLatLng();
+        currentLocationText.textContent = `Lokasi saat ini (${userLatLng.lat.toFixed(6)}, ${userLatLng.lng.toFixed(6)})`;
+    } else {
+        currentLocationText.textContent = 'Menggunakan lokasi saat ini (GPS belum aktif)';
+    }
+}
+
+// Setup autocomplete for location input
+function setupLocationAutocomplete(inputElement) {
+    if (!inputElement) return;
+    
+    const autocomplete = document.getElementById('locationAutocomplete');
+    const autocompleteOptions = document.getElementById('autocompleteOptions');
+    let searchTimeout = null;
+    let currentSuggestions = [];
+    let selectedIndex = -1;
+    
+    if (!autocomplete || !autocompleteOptions) return;
+    
+    // Clear any existing handlers
+    const oldInputHandler = inputElement._autocompleteInputHandler;
+    const oldKeyHandler = inputElement._autocompleteKeyHandler;
+    const oldBlurHandler = inputElement._autocompleteBlurHandler;
+    
+    if (oldInputHandler) inputElement.removeEventListener('input', oldInputHandler);
+    if (oldKeyHandler) inputElement.removeEventListener('keydown', oldKeyHandler);
+    if (oldBlurHandler) inputElement.removeEventListener('blur', oldBlurHandler);
+    
+    // Input handler with debounce
+    const inputHandler = function(e) {
+        const query = e.target.value.trim();
+        
+        // Clear selected location when user types
+        window.selectedEndLocation = null;
+        
+        // Hide old location selection list if exists
+        const locationSelectionList = document.getElementById('locationSelectionList');
+        if (locationSelectionList) {
+            locationSelectionList.style.display = 'none';
+        }
+        
+        // Clear timeout
+        if (searchTimeout) {
+            clearTimeout(searchTimeout);
+        }
+        
+        // Hide autocomplete if query is too short
+        if (query.length < 2) {
+            autocomplete.style.display = 'none';
+            currentSuggestions = [];
+            selectedIndex = -1;
+            return;
+        }
+        
+        // Show loading
+        autocomplete.style.display = 'block';
+        autocompleteOptions.innerHTML = '<div class="autocomplete-loading">⏳ Mencari lokasi...</div>';
+        
+        // Debounce search (wait 500ms after user stops typing)
+        searchTimeout = setTimeout(async function() {
+            try {
+                // Search with expanded limit (50 results)
+                const results = await geocodeLocationMultiple(query, 50);
+                
+                if (!results || results.length === 0) {
+                    autocompleteOptions.innerHTML = '<div class="autocomplete-no-results">Tidak ada lokasi ditemukan</div>';
+                    currentSuggestions = [];
+                    selectedIndex = -1;
+                    return;
+                }
+                
+                // Store suggestions (limit display to 30 for better performance, but keep all for selection)
+                currentSuggestions = results;
+                selectedIndex = -1;
+                
+                // Render suggestions (show first 30, but allow scrolling if more)
+                const displayResults = results.slice(0, 30);
+                renderAutocompleteOptions(displayResults, results.length > 30 ? results.length : 0);
+                
+            } catch (error) {
+                console.error('Autocomplete error:', error);
+                autocompleteOptions.innerHTML = '<div class="autocomplete-no-results">Error: ' + error.message + '</div>';
+                currentSuggestions = [];
+                selectedIndex = -1;
+            }
+        }, 500);
+    };
+    
+    // Keyboard navigation handler
+    const keyHandler = function(e) {
+        if (!autocomplete || autocomplete.style.display === 'none') return;
+        
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectedIndex = Math.min(selectedIndex + 1, currentSuggestions.length - 1);
+            updateSelectedOption();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectedIndex = Math.max(selectedIndex - 1, -1);
+            updateSelectedOption();
+        } else if (e.key === 'Enter' && selectedIndex >= 0) {
+            e.preventDefault();
+            selectLocation(currentSuggestions[selectedIndex]);
+        } else if (e.key === 'Escape') {
+            autocomplete.style.display = 'none';
+            selectedIndex = -1;
+        }
+    };
+    
+    // Blur handler (hide autocomplete when focus is lost)
+    const blurHandler = function(e) {
+        // Delay to allow click events on suggestions
+        setTimeout(function() {
+            if (!autocomplete.contains(document.activeElement)) {
+                autocomplete.style.display = 'none';
+            }
+        }, 200);
+    };
+    
+    // Update selected option visual
+    function updateSelectedOption() {
+        const options = autocompleteOptions.querySelectorAll('.autocomplete-option');
+        options.forEach(function(option, index) {
+            if (index === selectedIndex) {
+                option.classList.add('selected');
+                option.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            } else {
+                option.classList.remove('selected');
+            }
+        });
+    }
+    
+    // Render autocomplete options
+    function renderAutocompleteOptions(results, totalCount = 0) {
+        autocompleteOptions.innerHTML = '';
+        
+        results.forEach(function(location, index) {
+            const option = document.createElement('div');
+            option.className = 'autocomplete-option';
+            option.dataset.index = index;
+            
+            // Add country badge if available
+            const countryBadge = location.country ? `<span class="country-badge">${location.country}</span>` : '';
+            
+            option.innerHTML = `
+                <div class="autocomplete-option-header">
+                    <div class="autocomplete-option-name">${location.name}</div>
+                    ${countryBadge}
+                </div>
+                <div class="autocomplete-option-address">${location.full_address}</div>
+            `;
+            
+            option.addEventListener('click', function() {
+                selectLocation(location);
+            });
+            
+            option.addEventListener('mouseenter', function() {
+                selectedIndex = index;
+                updateSelectedOption();
+            });
+            
+            autocompleteOptions.appendChild(option);
+        });
+        
+        // Show count if there are more results
+        if (totalCount > results.length) {
+            const moreInfo = document.createElement('div');
+            moreInfo.className = 'autocomplete-more-info';
+            moreInfo.textContent = `Menampilkan ${results.length} dari ${totalCount} hasil. Scroll untuk melihat lebih banyak.`;
+            autocompleteOptions.appendChild(moreInfo);
+        }
+    }
+    
+    // Select location from autocomplete
+    function selectLocation(location) {
+        // Set input value
+        inputElement.value = location.name;
+        
+        // Store selected location
+        window.selectedEndLocation = {
+            lat: location.lat,
+            lng: location.lng,
+            name: location.name
+        };
+        
+        // Hide autocomplete
+        autocomplete.style.display = 'none';
+        selectedIndex = -1;
+        
+        // Focus back to input
+        inputElement.focus();
+    }
+    
+    // Store handlers
+    inputElement._autocompleteInputHandler = inputHandler;
+    inputElement._autocompleteKeyHandler = keyHandler;
+    inputElement._autocompleteBlurHandler = blurHandler;
+    
+    // Add event listeners
+    inputElement.addEventListener('input', inputHandler);
+    inputElement.addEventListener('keydown', keyHandler);
+    inputElement.addEventListener('blur', blurHandler);
 }
 
 // Cancel route form
@@ -2197,6 +2481,27 @@ function cancelRouteForm() {
         
         const formStatus = document.getElementById('routeFormStatus');
         if (formStatus) formStatus.innerHTML = '';
+        
+        // Hide location selection list
+        const locationSelectionList = document.getElementById('locationSelectionList');
+        if (locationSelectionList) {
+            locationSelectionList.style.display = 'none';
+        }
+        
+        // Hide autocomplete
+        const autocomplete = document.getElementById('locationAutocomplete');
+        if (autocomplete) {
+            autocomplete.style.display = 'none';
+        }
+        
+        // Clear selected location
+        window.selectedEndLocation = null;
+        
+        // Clear location update interval
+        if (window.routeFormLocationInterval) {
+            clearInterval(window.routeFormLocationInterval);
+            window.routeFormLocationInterval = null;
+        }
     }
 }
 
@@ -2205,27 +2510,88 @@ async function saveRouteFromForm(event) {
     event.preventDefault();
     
     const formId = document.getElementById('routeFormId');
-    const formStart = document.getElementById('routeStart');
     const formEnd = document.getElementById('routeEnd');
     const formStatus = document.getElementById('routeFormStatus');
+    const locationSelectionList = document.getElementById('locationSelectionList');
     
-    if (!formId || !formStart || !formEnd || !formStatus) {
+    if (!formId || !formEnd || !formStatus) {
         console.error('Form elements not found');
         return;
     }
     
     const routeId = parseInt(formId.value);
-    const startName = formStart.value.trim();
     const endName = formEnd.value.trim();
     
-    if (!startName || !endName) {
-        formStatus.innerHTML = 'Lokasi awal dan tujuan harus diisi!';
+    // Check if user has selected a location from multiple results
+    if (window.selectedEndLocation) {
+        // User selected from multiple results, use selected location
+        const startLocation = getCurrentLocationAsStart();
+        if (!startLocation) {
+            formStatus.innerHTML = '❌ Lokasi GPS belum aktif. Pastikan GPS aktif dan izin lokasi diberikan.';
+            formStatus.className = 'route-form-status error';
+            return;
+        }
+        
+        const endLocation = window.selectedEndLocation;
+        
+        // Save route
+        if (setRoute(routeId, startLocation, endLocation)) {
+            formStatus.innerHTML = '✅ Rute berhasil disimpan!';
+            formStatus.className = 'route-form-status success';
+            
+            renderRouteList();
+            
+            setTimeout(function() {
+                cancelRouteForm();
+                const route = getRouteById(routeId);
+                if (route) {
+                    speakText(route.name + ' berhasil disimpan. Dari lokasi saat ini ke ' + endLocation.name, 'id-ID', true);
+                }
+            }, 1500);
+        } else {
+            formStatus.innerHTML = '❌ Gagal menyimpan rute';
+            formStatus.className = 'route-form-status error';
+        }
+        return;
+    }
+    
+    // If no selection made, check if end location is filled
+    if (!endName) {
+        formStatus.innerHTML = '❌ Lokasi tujuan harus diisi! Pilih dari daftar yang muncul saat mengetik.';
         formStatus.className = 'route-form-status error';
         return;
     }
     
+    // If user typed but didn't select from autocomplete, prompt to select
+    if (!window.selectedEndLocation) {
+        formStatus.innerHTML = '❌ Silakan pilih lokasi dari daftar yang muncul saat mengetik. Ketik minimal 2 karakter untuk melihat pilihan.';
+        formStatus.className = 'route-form-status error';
+        
+        // Show autocomplete if hidden
+        const autocomplete = document.getElementById('locationAutocomplete');
+        const formEnd = document.getElementById('routeEnd');
+        if (autocomplete && formEnd && formEnd.value.trim().length >= 2) {
+            // Trigger search again
+            if (formEnd._autocompleteInputHandler) {
+                formEnd._autocompleteInputHandler({ target: formEnd });
+            }
+        }
+        return;
+    }
+    
+    // Get current location as start
+    const startLocation = getCurrentLocationAsStart();
+    if (!startLocation) {
+        formStatus.innerHTML = '❌ Lokasi GPS belum aktif. Pastikan GPS aktif dan izin lokasi diberikan.';
+        formStatus.className = 'route-form-status error';
+        return;
+    }
+    
+    // Use selected location from autocomplete
+    const endLocation = window.selectedEndLocation;
+    
     // Show loading status
-    formStatus.innerHTML = '⏳ Mencari lokasi...';
+    formStatus.innerHTML = '⏳ Menyimpan rute...';
     formStatus.className = 'route-form-status loading';
     
     // Disable form
@@ -2238,35 +2604,18 @@ async function saveRouteFromForm(event) {
     }
     
     try {
-        // Geocode start location
-        const startLocation = await geocodeLocationPromise(startName);
-        if (!startLocation) {
-            throw new Error('Lokasi awal tidak ditemukan: ' + startName);
-        }
-        
-        // Geocode end location
-        const endLocation = await geocodeLocationPromise(endName);
-        if (!endLocation) {
-            throw new Error('Lokasi tujuan tidak ditemukan: ' + endName);
-        }
-        
         // Save route
         if (setRoute(routeId, startLocation, endLocation)) {
-            // Success
             formStatus.innerHTML = '✅ Rute berhasil disimpan!';
             formStatus.className = 'route-form-status success';
             
-            // Refresh route list
             renderRouteList();
             
-            // Hide form after 1.5 seconds
             setTimeout(function() {
                 cancelRouteForm();
-                
-                // Show success message in voice
                 const route = getRouteById(routeId);
                 if (route) {
-                    speakText(route.name + ' berhasil disimpan. Dari ' + startLocation.name + ' ke ' + endLocation.name, 'id-ID', true);
+                    speakText(route.name + ' berhasil disimpan. Dari lokasi saat ini ke ' + endLocation.name, 'id-ID', true);
                 }
             }, 1500);
         } else {
@@ -2285,6 +2634,99 @@ async function saveRouteFromForm(event) {
             });
         }
     }
+}
+
+// Get current location as start location object
+function getCurrentLocationAsStart() {
+    if (!currentUserPosition) {
+        return null;
+    }
+    
+    const userLatLng = currentUserPosition.getLatLng();
+    return {
+        lat: userLatLng.lat,
+        lng: userLatLng.lng,
+        name: 'Lokasi Saat Ini'
+    };
+}
+
+// Display location options for user to select
+function displayLocationOptions(locations, routeId, startLocation) {
+    const locationSelectionList = document.getElementById('locationSelectionList');
+    const locationOptions = document.getElementById('locationOptions');
+    
+    if (!locationSelectionList || !locationOptions) {
+        console.error('Location selection elements not found');
+        return;
+    }
+    
+    // Clear previous options
+    locationOptions.innerHTML = '';
+    
+    // Create option for each location
+    locations.forEach(function(location, index) {
+        const option = document.createElement('div');
+        option.className = 'location-option';
+        option.dataset.index = index;
+        
+        option.innerHTML = `
+            <div class="location-option-name">${location.name}</div>
+            <div class="location-option-address">${location.full_address}</div>
+        `;
+        
+        option.addEventListener('click', function() {
+            // Remove previous selection
+            locationOptions.querySelectorAll('.location-option').forEach(function(opt) {
+                opt.classList.remove('selected');
+            });
+            
+            // Mark as selected
+            option.classList.add('selected');
+            
+            // Store selected location
+            window.selectedEndLocation = {
+                lat: location.lat,
+                lng: location.lng,
+                name: location.name
+            };
+            
+            // Auto-save route after selection
+            const formStatus = document.getElementById('routeFormStatus');
+            if (formStatus) {
+                formStatus.innerHTML = '⏳ Menyimpan rute...';
+                formStatus.className = 'route-form-status loading';
+            }
+            
+            // Save route
+            if (setRoute(routeId, startLocation, window.selectedEndLocation)) {
+                if (formStatus) {
+                    formStatus.innerHTML = '✅ Rute berhasil disimpan!';
+                    formStatus.className = 'route-form-status success';
+                }
+                
+                renderRouteList();
+                
+                setTimeout(function() {
+                    cancelRouteForm();
+                    const route = getRouteById(routeId);
+                    if (route) {
+                        speakText(route.name + ' berhasil disimpan. Dari lokasi saat ini ke ' + window.selectedEndLocation.name, 'id-ID', true);
+                    }
+                }, 1500);
+            } else {
+                if (formStatus) {
+                    formStatus.innerHTML = '❌ Gagal menyimpan rute';
+                    formStatus.className = 'route-form-status error';
+                }
+            }
+        });
+        
+        locationOptions.appendChild(option);
+    });
+    
+    // Show selection list
+    locationSelectionList.style.display = 'block';
+    locationSelectionList.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // Delete route
@@ -2326,7 +2768,7 @@ function deleteRoute(routeId) {
     console.log('✅ Route', routeId, 'deleted');
 }
 
-// Helper function: Geocode location and return Promise
+// Helper function: Geocode location and return Promise (single result)
 function geocodeLocationPromise(locationName) {
     return new Promise(function(resolve, reject) {
         // Check known cities first
@@ -2341,8 +2783,10 @@ function geocodeLocationPromise(locationName) {
             return;
         }
         
-        // Try geocoding with Nominatim
-        const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=json&limit=1&countrycodes=id&accept-language=id`;
+        // Try geocoding with Nominatim - GLOBAL SEARCH
+        // Removed countrycodes restriction to search worldwide
+        // Increased limit for better results
+        const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=json&limit=10&addressdetails=1&accept-language=id,en`;
         
         fetch(geocodeUrl)
             .then(function(response) {
@@ -2356,6 +2800,96 @@ function geocodeLocationPromise(locationName) {
                         lng: parseFloat(result.lon),
                         name: shortenAddress(result.display_name || result.name)
                     });
+                } else {
+                    reject(new Error('Lokasi tidak ditemukan: ' + locationName));
+                }
+            })
+            .catch(function(error) {
+                console.error('Geocoding error:', error);
+                reject(new Error('Error saat mencari lokasi: ' + error.message));
+            });
+    });
+}
+
+// Helper function: Geocode location and return multiple results (for selection)
+// Expanded to search globally with more results
+function geocodeLocationMultiple(locationName, limit = 100) {
+    return new Promise(function(resolve, reject) {
+        // Check known cities first
+        const cityKey = locationName.toLowerCase().trim().replace(/[.,;:!?]/g, '');
+        if (knownCities[cityKey]) {
+            const city = knownCities[cityKey];
+            resolve([{
+                lat: city.lat,
+                lng: city.lng,
+                name: city.name,
+                display_name: city.name,
+                full_address: city.name
+            }]);
+            return;
+        }
+        
+        // Try geocoding with Nominatim - EXPANDED SEARCH
+        // Removed countrycodes restriction to search globally
+        // Increased limit to 50 results for more options
+        // Added addressdetails=1 for better address information
+        const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=json&limit=${limit}&addressdetails=1&extratags=1&accept-language=id,en`;
+        
+        fetch(geocodeUrl, {
+            headers: {
+                'User-Agent': 'SenaVision Navigation App'
+            }
+        })
+            .then(function(response) {
+                if (!response.ok) {
+                    throw new Error('Geocoding service error: ' + response.status);
+                }
+                return response.json();
+            })
+            .then(function(data) {
+                if (data && data.length > 0) {
+                    // Sort results: prioritize Indonesia, then nearby countries, then others
+                    const sortedData = data.sort(function(a, b) {
+                        const aIsIndonesia = (a.address && a.address.country_code === 'id') || 
+                                           (a.address && a.address.country === 'Indonesia');
+                        const bIsIndonesia = (b.address && b.address.country_code === 'id') || 
+                                           (b.address && b.address.country === 'Indonesia');
+                        
+                        if (aIsIndonesia && !bIsIndonesia) return -1;
+                        if (!aIsIndonesia && bIsIndonesia) return 1;
+                        return 0;
+                    });
+                    
+                    const results = sortedData.map(function(result) {
+                        // Build better address string
+                        let addressParts = [];
+                        if (result.address) {
+                            if (result.address.road) addressParts.push(result.address.road);
+                            if (result.address.suburb || result.address.neighbourhood) {
+                                addressParts.push(result.address.suburb || result.address.neighbourhood);
+                            }
+                            if (result.address.city || result.address.town || result.address.village) {
+                                addressParts.push(result.address.city || result.address.town || result.address.village);
+                            }
+                            if (result.address.state) addressParts.push(result.address.state);
+                            if (result.address.country) addressParts.push(result.address.country);
+                        }
+                        
+                        const fullAddress = addressParts.length > 0 
+                            ? addressParts.join(', ') 
+                            : (result.display_name || result.name);
+                        
+                        return {
+                            lat: parseFloat(result.lat),
+                            lng: parseFloat(result.lon),
+                            name: shortenAddress(result.display_name || result.name),
+                            display_name: result.display_name || result.name,
+                            full_address: fullAddress,
+                            country: result.address ? (result.address.country || '') : '',
+                            type: result.type || result.class || ''
+                        };
+                    });
+                    resolve(results);
                 } else {
                     reject(new Error('Lokasi tidak ditemukan: ' + locationName));
                 }
@@ -3209,21 +3743,22 @@ async function geocodeLocation(location, userLatLng = null) {
             const userLat = userLatLng.lat;
             const userLng = userLatLng.lng;
             
-            // Define search radius (50km from user location)
-            const radius = 0.45; // ~50km in degrees
+            // Define search radius (expanded to 200km from user location for wider coverage)
+            const radius = 1.8; // ~200km in degrees (was 0.45 = 50km)
             const minLat = userLat - radius;
             const maxLat = userLat + radius;
             const minLng = userLng - radius;
             const maxLng = userLng + radius;
             
-            // Use Nominatim API with bounded search around user location
-            geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=5&bounded=1&viewbox=${minLng},${maxLat},${maxLng},${minLat}&countrycodes=id&accept-language=id`;
+            // Use Nominatim API with bounded search around user location - GLOBAL SEARCH
+            // Removed countrycodes restriction, increased limit, expanded radius
+            geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=20&bounded=1&viewbox=${minLng},${maxLat},${maxLng},${minLat}&addressdetails=1&accept-language=id,en`;
             boundedSearch = true;
-            console.log('🔍 Bounded search:', userLat + ',' + userLng, 'radius: ~50km');
+            console.log('🔍 Bounded search:', userLat + ',' + userLng, 'radius: ~200km (expanded)');
         } else {
-            // If no user location, use broader Indonesia search
-            geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=5&countrycodes=id&accept-language=id`;
-            console.log('🔍 Indonesia-wide search (no user location)');
+            // If no user location, use global search (no country restriction)
+            geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=20&addressdetails=1&accept-language=id,en`;
+            console.log('🔍 Global search (no user location, no country restriction)');
         }
         
         try {
@@ -3433,6 +3968,50 @@ function updateDestination(lat, lng, name) {
     destinationMarker = L.marker(latLngB).addTo(map)
         .bindPopup(name || 'Destination').openPopup();
     
+    // Adjust map view to show both user location and destination
+    // This ensures long-distance routes are visible
+    if (currentUserPosition) {
+        const userLatLng = currentUserPosition.getLatLng();
+        const destLatLng = L.latLng(lat, lng);
+        
+        // Calculate distance between user and destination
+        const distance = userLatLng.distanceTo(destLatLng); // in meters
+        
+        // Create bounds to fit both locations
+        const bounds = L.latLngBounds([userLatLng, destLatLng]);
+        
+        // Add padding to bounds for better view
+        bounds.pad(0.1); // 10% padding
+        
+        // Fit map to show both locations
+        // For very long distances (>1000km), use wider zoom
+        if (distance > 1000000) {
+            // Very long distance - use wider view
+            map.fitBounds(bounds, { 
+                padding: [50, 50],
+                maxZoom: 6 // Don't zoom in too much for long distances
+            });
+        } else if (distance > 100000) {
+            // Long distance (100-1000km) - moderate zoom
+            map.fitBounds(bounds, { 
+                padding: [50, 50],
+                maxZoom: 8
+            });
+        } else {
+            // Normal distance - fit bounds with reasonable zoom
+            map.fitBounds(bounds, { 
+                padding: [50, 50],
+                maxZoom: 13
+            });
+        }
+        
+        console.log('📍 Map adjusted to show route - distance:', (distance / 1000).toFixed(1) + 'km');
+    } else {
+        // If no user location, just center on destination with appropriate zoom
+        const destLatLng = L.latLng(lat, lng);
+        map.setView(destLatLng, 10); // Zoom level 10 for city-level view
+    }
+    
     // Save destination change to Firestore (if available)
     if (window.saveUserRouteUpdate) {
         try {
@@ -3469,12 +4048,8 @@ function updateDestination(lat, lng, name) {
         forceUpdateRoute(userLatLng);
     }
     
-    // Pan to new destination (jangan pan ke user location - biarkan user lihat rute)
-    // TAPI: PASTIKAN marker biru tetap di lokasi GPS user, tidak ikut pan ke destination
-    map.setView(latLngB, 13);
-    
-    // CRITICAL: Setelah pan ke destination, PASTIKAN marker biru tetap di GPS location
-    // Jangan biarkan marker ikut ke destination
+    // CRITICAL: PASTIKAN marker biru tetap di lokasi GPS user, tidak ikut pan ke destination
+    // Map view sudah diatur dengan fitBounds di atas untuk menampilkan kedua lokasi
     if (currentUserPosition && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(function(position) {
             const currentGPSLocation = L.latLng(position.coords.latitude, position.coords.longitude);
@@ -4285,5 +4860,248 @@ function updateRealTimeInstructions(userLatLng) {
         
     } catch (error) {
         console.error('❌ Error in updateRealTimeInstructions:', error);
+    }
+}
+
+// ========== SIDE NAVBAR FUNCTIONS ==========
+
+// Toggle sidebar visibility
+function toggleSideNavbar() {
+    const navbar = document.getElementById('sideNavbar');
+    const toggleBtn = document.getElementById('navbarToggleBtn');
+    
+    if (navbar) {
+        const isActive = navbar.classList.contains('active');
+        
+        if (isActive) {
+            navbar.classList.remove('active');
+            navbar.classList.add('collapsed');
+            if (toggleBtn) {
+                toggleBtn.style.display = 'flex';
+            }
+        } else {
+            navbar.classList.add('active');
+            navbar.classList.remove('collapsed');
+            if (toggleBtn) {
+                toggleBtn.style.display = 'none';
+            }
+        }
+    }
+}
+
+// Switch between navbar tabs
+function switchNavbarTab(tabName) {
+    // Update tab buttons
+    const tabs = document.querySelectorAll('.navbar-tab');
+    tabs.forEach(tab => {
+        if (tab.dataset.tab === tabName) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+    
+    // Update tab content
+    const contents = document.querySelectorAll('.navbar-tab-content');
+    contents.forEach(content => {
+        if (content.id === 'navbarTab' + tabName.charAt(0).toUpperCase() + tabName.slice(1)) {
+            content.classList.add('active');
+        } else {
+            content.classList.remove('active');
+        }
+    });
+    
+    // Auto-open navbar if collapsed
+    const navbar = document.getElementById('sideNavbar');
+    if (navbar && navbar.classList.contains('collapsed')) {
+        navbar.classList.remove('collapsed');
+        navbar.classList.add('active');
+        const toggleBtn = document.getElementById('navbarToggleBtn');
+        if (toggleBtn) {
+            toggleBtn.style.display = 'none';
+        }
+    }
+}
+
+// Initialize drag/swipe functionality for sidebar
+(function() {
+    let isDragging = false;
+    let startY = 0;
+    let currentY = 0;
+    let startTransform = 0;
+    let navbar = null;
+    let dragHandle = null;
+    
+    function initSidebarDrag() {
+        navbar = document.getElementById('sideNavbar');
+        dragHandle = document.getElementById('navbarDragHandle');
+        
+        if (!navbar || !dragHandle) return;
+        
+        // Touch events for mobile
+        dragHandle.addEventListener('touchstart', handleDragStart, { passive: false });
+        dragHandle.addEventListener('touchmove', handleDragMove, { passive: false });
+        dragHandle.addEventListener('touchend', handleDragEnd, { passive: false });
+        
+        // Mouse events for desktop
+        dragHandle.addEventListener('mousedown', handleDragStart);
+        document.addEventListener('mousemove', handleDragMove);
+        document.addEventListener('mouseup', handleDragEnd);
+        
+        // Click on drag handle to toggle
+        dragHandle.addEventListener('click', function(e) {
+            if (!isDragging) {
+                toggleSideNavbar();
+            }
+        });
+    }
+    
+    function handleDragStart(e) {
+        if (!navbar) return;
+        
+        isDragging = true;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        startY = clientY;
+        
+        // Get current transform value
+        const style = window.getComputedStyle(navbar);
+        const matrix = new DOMMatrix(style.transform);
+        startTransform = matrix.m42; // translateY value
+        
+        navbar.style.transition = 'none'; // Disable transition during drag
+        e.preventDefault();
+    }
+    
+    function handleDragMove(e) {
+        if (!isDragging || !navbar) return;
+        
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        currentY = clientY - startY;
+        
+        // Calculate new transform
+        const newTransform = startTransform + currentY;
+        const maxTransform = 0; // Fully visible
+        const minTransform = navbar.offsetHeight - 60; // Only drag handle visible
+        
+        // Clamp transform value
+        const clampedTransform = Math.max(minTransform, Math.min(maxTransform, newTransform));
+        
+        navbar.style.transform = `translateY(${clampedTransform}px)`;
+        e.preventDefault();
+    }
+    
+    function handleDragEnd(e) {
+        if (!isDragging || !navbar) return;
+        
+        isDragging = false;
+        navbar.style.transition = ''; // Re-enable transition
+        
+        const threshold = navbar.offsetHeight * 0.3; // 30% of navbar height
+        const currentTransform = parseFloat(navbar.style.transform.replace('translateY(', '').replace('px)', '')) || 0;
+        
+        // Determine final state based on drag distance
+        if (currentY < -threshold) {
+            // Dragged up significantly - open fully
+            navbar.classList.add('active');
+            navbar.classList.remove('collapsed');
+            navbar.style.transform = 'translateY(0)';
+            const toggleBtn = document.getElementById('navbarToggleBtn');
+            if (toggleBtn) {
+                toggleBtn.style.display = 'none';
+            }
+        } else if (currentY > threshold) {
+            // Dragged down significantly - collapse
+            navbar.classList.remove('active');
+            navbar.classList.add('collapsed');
+            navbar.style.transform = `translateY(calc(100% - 60px))`;
+            const toggleBtn = document.getElementById('navbarToggleBtn');
+            if (toggleBtn) {
+                toggleBtn.style.display = 'flex';
+            }
+        } else {
+            // Snap back to current state
+            if (navbar.classList.contains('active')) {
+                navbar.style.transform = 'translateY(0)';
+            } else {
+                navbar.style.transform = `translateY(calc(100% - 60px))`;
+            }
+        }
+        
+        e.preventDefault();
+    }
+    
+    // Initialize when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            initSidebarDrag();
+            initSidebarState();
+        });
+    } else {
+        initSidebarDrag();
+        initSidebarState();
+    }
+    
+    // Initialize sidebar state based on screen size
+    function initSidebarState() {
+        const navbar = document.getElementById('sideNavbar');
+        if (!navbar) return;
+        
+        // On mobile, start collapsed (only drag handle visible)
+        // On desktop, always visible
+        if (window.innerWidth <= 768) {
+            navbar.classList.remove('active');
+            navbar.classList.add('collapsed');
+            navbar.style.transform = 'translateY(calc(100% - 60px))';
+            const toggleBtn = document.getElementById('navbarToggleBtn');
+            if (toggleBtn) {
+                toggleBtn.style.display = 'flex';
+            }
+        } else {
+            navbar.classList.add('active');
+            navbar.classList.remove('collapsed');
+            navbar.style.transform = 'translateY(0)';
+            const toggleBtn = document.getElementById('navbarToggleBtn');
+            if (toggleBtn) {
+                toggleBtn.style.display = 'none';
+            }
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            if (window.innerWidth <= 768) {
+                // Mobile: allow collapsing
+                if (!navbar.classList.contains('active') && !navbar.classList.contains('collapsed')) {
+                    navbar.classList.add('collapsed');
+                }
+            } else {
+                // Desktop: always visible
+                navbar.classList.add('active');
+                navbar.classList.remove('collapsed');
+                navbar.style.transform = 'translateY(0)';
+                const toggleBtn = document.getElementById('navbarToggleBtn');
+                if (toggleBtn) {
+                    toggleBtn.style.display = 'none';
+                }
+            }
+        });
+    }
+})();
+
+// Function to navigate to home page (index.html)
+function goToHomePage() {
+    // Try multiple path options to ensure it works
+    const paths = [
+        '../index.html',
+        '/index.html',
+        window.location.origin + '/index.html'
+    ];
+    
+    // Try the first path (relative)
+    try {
+        window.location.href = '../index.html';
+    } catch (error) {
+        console.error('Error navigating to home:', error);
+        // Fallback to absolute path
+        window.location.href = window.location.origin + '/index.html';
     }
 }

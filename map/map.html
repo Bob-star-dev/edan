@@ -5,6 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Live Location Tracker with Route</title>
     
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="SENAVISION">
+    <meta name="mobile-web-app-capable" content="yes">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json">
+    
+    <!-- Apple Touch Icons -->
+    <link rel="apple-touch-icon" href="/image/logo.png">
+    <link rel="icon" type="image/png" href="/image/logo.png">
+    
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -49,131 +63,165 @@
   </div>
 </div>
 
-<!-- Mobile Toggle Button (shown only on mobile) -->
-<button id="mobileToggleBtn" class="mobile-toggle-btn" onclick="toggleStatusPanel()">
-  📍 Info Lokasi
-</button>
-
-<!-- Debug Console Toggle Button -->
-<button id="debugToggleBtn" class="debug-toggle-btn" onclick="toggleDebugPanel()" title="Toggle Debug Console">
-  🐛 Debug
-</button>
-
-<!-- Status Panel -->
-<div id="statusPanel" class="status-panel">
-  <!-- Close button for mobile (shown only on mobile) -->
-  <button id="closePanelBtn" class="close-panel-btn" onclick="toggleStatusPanel()" style="display: none;" aria-label="Tutup panel">✖️</button>
-  
-  <h3><span class="icon">📍</span> Track Your Location</h3>
-  <p id="status">Waiting for location...</p>
-  <p id="coordinates">Lat: -, Lng: -</p>
-  <p id="accuracy">Accuracy: -</p>
-  
-  <div class="route-info">
-    <h4>Live Route Tracking</h4>
-    <p>Shows route from your current location to destination</p>
-    <p class="route-update-info">Route updates every 1 second (realtime)</p>
+<!-- Sidebar Navigation (Draggable from bottom) -->
+<div id="sideNavbar" class="side-navbar">
+  <!-- Drag Handle -->
+  <div class="navbar-drag-handle" id="navbarDragHandle">
+    <div class="drag-handle-bar"></div>
   </div>
   
-  <button id="retryBtn" class="retry-button">
-    <span class="btn-icon">🔄</span>
-    <span>Coba Lagi</span>
-  </button>
-</div>
-
-<!-- Debug Console Panel -->
-<div id="debugPanel" class="debug-panel">
-  <!-- Close button for mobile (shown only on mobile) -->
-  <button id="closeDebugBtn" class="close-panel-btn" onclick="toggleDebugPanel()" style="display: none;" aria-label="Tutup debug panel">✖️</button>
-  
-  <div class="debug-header">
-    <h3><span class="icon">🐛</span> Debug Console</h3>
-    <div class="debug-controls">
-      <button id="clearDebugBtn" class="clear-debug-btn" onclick="clearDebugLogs()" title="Clear logs">🗑️ Clear</button>
-      <button id="toggleAutoScrollBtn" class="auto-scroll-btn" onclick="toggleAutoScroll()" title="Toggle auto-scroll">📜 Auto</button>
-    </div>
+  <!-- Tab Navigation -->
+  <div class="navbar-tabs">
+    <button class="navbar-tab active" data-tab="status" onclick="switchNavbarTab('status')">
+      <span class="tab-icon">📍</span>
+      <span class="tab-label">Lokasi</span>
+    </button>
+    <button class="navbar-tab" data-tab="voice" onclick="switchNavbarTab('voice')">
+      <span class="tab-icon">🎤</span>
+      <span class="tab-label">Suara</span>
+    </button>
+    <button class="navbar-tab" data-tab="route" onclick="switchNavbarTab('route')">
+      <span class="tab-icon">🗺️</span>
+      <span class="tab-label">Rute</span>
+    </button>
+    <button class="navbar-tab" data-tab="debug" onclick="switchNavbarTab('debug')">
+      <span class="tab-icon">🐛</span>
+      <span class="tab-label">Debug</span>
+    </button>
   </div>
   
-  <div id="debugLogs" class="debug-logs">
-    <p class="debug-placeholder">Console logs will appear here...</p>
-  </div>
-</div>
-
-<!-- Route Management Panel -->
-<div id="routeManagementPanel" class="route-management-panel">
-  
-  <div class="route-panel-header">
-    <h3><span class="icon">🗺️</span> Kelola Rute</h3>
-    <button id="routePanelToggleBtn" class="route-toggle-btn" onclick="toggleRouteManagementPanel()" title="Tutup/Buka panel">✖️</button>
-  </div>
-  
-  <div class="route-panel-content">
-    <p class="route-panel-description">
-      Atur 6 slot rute yang bisa digunakan untuk navigasi. Semua rute tersimpan di device Anda.
-    </p>
-    
-    <!-- Route List Container -->
-    <div id="routeListContainer" class="route-list-container">
-      <!-- Route items will be dynamically generated here -->
-    </div>
-    
-    <!-- Add Route Form (shown when editing) -->
-    <div id="routeFormContainer" class="route-form-container" style="display: none;">
-      <h4 id="routeFormTitle" class="route-form-title">Edit Rute</h4>
-      <form id="routeForm" onsubmit="saveRouteFromForm(event)">
-        <input type="hidden" id="routeFormId" />
-        
-        <div class="form-group">
-          <label for="routeStart">📍 Lokasi Awal:</label>
-          <input type="text" id="routeStart" class="route-input" placeholder="Contoh: SMA Negeri 1 Surakarta" required />
-          <small class="form-hint">Masukkan nama lokasi awal</small>
-        </div>
-        
-        <div class="form-group">
-          <label for="routeEnd">🎯 Lokasi Tujuan:</label>
-          <input type="text" id="routeEnd" class="route-input" placeholder="Contoh: Universitas Sebelas Maret" required />
-          <small class="form-hint">Masukkan nama lokasi tujuan</small>
-        </div>
-        
-        <div class="form-actions">
-          <button type="submit" class="btn-save-route">💾 Simpan Rute</button>
-          <button type="button" class="btn-cancel-route" onclick="cancelRouteForm()">❌ Batal</button>
-        </div>
-      </form>
+  <!-- Tab Content Container -->
+  <div class="navbar-content">
+    <!-- Status Tab Content -->
+    <div id="navbarTabStatus" class="navbar-tab-content active">
+      <h3><span class="icon">📍</span> Track Your Location</h3>
+      <p id="status">Waiting for location...</p>
+      <p id="coordinates">Lat: -, Lng: -</p>
+      <p id="accuracy">Accuracy: -</p>
       
-      <div id="routeFormStatus" class="route-form-status"></div>
+      <div class="route-info">
+        <h4>Live Route Tracking</h4>
+        <p>Shows route from your current location to destination</p>
+        <p class="route-update-info">Route updates every 1 second (realtime)</p>
+      </div>
+      
+      <button id="retryBtn" class="retry-button">
+        <span class="btn-icon">🔄</span>
+        <span>Coba Lagi</span>
+      </button>
+    </div>
+    
+    <!-- Voice Tab Content -->
+    <div id="navbarTabVoice" class="navbar-tab-content">
+      <h4>🎤 Navigasi Suara</h4>
+      <p>Ucapkan tujuan Anda untuk bernavigasi</p>
+      
+      <!-- Hidden button for voice control - accessible via screen reader -->
+      <button id="voiceBtn" onclick="toggleVoiceListening()" style="display: none;" aria-label="Toggle voice listening" role="button" tabindex="-1">
+        🎤 Aktifkan Mikrofon
+      </button>
+      
+      <p id="voiceStatus" class="voice-status-text">
+        Senavision Siap. Ucapkan Tujuan Anda.
+      </p>
+      
+      <div class="voice-examples">
+        <p class="voice-examples-title">💡 Percobaan perintah suara:</p>
+        <p class="voice-examples-list">
+          • "Jakarta" (langsung sebutkan kota)<br>
+          • "Pergi ke Bandung" juga bisa<br>
+          • "Mulai" (setelah tujuan ditetapkan)
+        </p>
+      </div>
+    </div>
+    
+    <!-- Route Tab Content -->
+    <div id="navbarTabRoute" class="navbar-tab-content">
+      <div class="route-panel-header">
+        <h3><span class="icon">🗺️</span> Kelola Rute</h3>
+      </div>
+      
+      <div class="route-panel-content">
+        <p class="route-panel-description">
+          Atur 6 slot rute yang bisa digunakan untuk navigasi. Semua rute tersimpan di device Anda.
+        </p>
+        
+        <!-- Route List Container -->
+        <div id="routeListContainer" class="route-list-container">
+          <!-- Route items will be dynamically generated here -->
+        </div>
+        
+        <!-- Add Route Form (shown when editing) -->
+        <div id="routeFormContainer" class="route-form-container" style="display: none;">
+          <h4 id="routeFormTitle" class="route-form-title">Edit Rute</h4>
+          <form id="routeForm" onsubmit="saveRouteFromForm(event)">
+            <input type="hidden" id="routeFormId" />
+            
+            <div class="form-group">
+              <label>📍 Lokasi Awal:</label>
+              <div class="current-location-display" id="currentLocationDisplay">
+                <span class="location-icon">📍</span>
+                <span class="location-text" id="currentLocationText">Menggunakan lokasi saat ini</span>
+              </div>
+              <small class="form-hint">Lokasi awal otomatis menggunakan GPS Anda saat ini</small>
+            </div>
+            
+            <div class="form-group">
+              <label for="routeEnd">🎯 Lokasi Tujuan:</label>
+              <div class="route-input-wrapper">
+                <input type="text" id="routeEnd" class="route-input" placeholder="Contoh: Universitas Sebelas Maret" autocomplete="off" required />
+                <!-- Autocomplete Suggestions (shown while typing) -->
+                <div id="locationAutocomplete" class="location-autocomplete" style="display: none;">
+                  <div id="autocompleteOptions" class="autocomplete-options">
+                    <!-- Autocomplete suggestions will be dynamically generated here -->
+                  </div>
+                </div>
+              </div>
+              <small class="form-hint">Mulai ketik nama lokasi, pilih dari daftar yang muncul</small>
+            </div>
+            
+            <div class="form-actions">
+              <button type="submit" class="btn-save-route">💾 Simpan Rute</button>
+              <button type="button" class="btn-cancel-route" onclick="cancelRouteForm()">❌ Batal</button>
+            </div>
+          </form>
+          
+          <div id="routeFormStatus" class="route-form-status"></div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Debug Tab Content -->
+    <div id="navbarTabDebug" class="navbar-tab-content">
+      <div class="debug-header">
+        <h3><span class="icon">🐛</span> Debug Console</h3>
+        <div class="debug-controls">
+          <button id="clearDebugBtn" class="clear-debug-btn" onclick="clearDebugLogs()" title="Clear logs">🗑️ Clear</button>
+          <button id="toggleAutoScrollBtn" class="auto-scroll-btn" onclick="toggleAutoScroll()" title="Toggle auto-scroll">📜 Auto</button>
+        </div>
+      </div>
+      
+      <div id="debugLogs" class="debug-logs">
+        <p class="debug-placeholder">Console logs will appear here...</p>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- Route Management Toggle Button -->
-<button id="routeManagementToggleBtn" class="route-management-toggle-btn" onclick="toggleRouteManagementPanel()" title="Kelola Rute">
-  🗺️ Kelola Rute
+<!-- Back to Home Button -->
+<button id="backToHomeBtn" class="back-to-home-btn" onclick="goToHomePage()" title="Kembali ke Beranda">
+  <span class="back-icon">🏠</span>
 </button>
 
-<!-- Voice Control Panel -->
-<div class="voice-panel">
-  <h4>🎤 Navigasi Suara</h4>
-  <p>Ucapkan tujuan Anda untuk bernavigasi</p>
-  
-  <!-- Hidden button for voice control - accessible via screen reader -->
-  <button id="voiceBtn" onclick="toggleVoiceListening()" style="display: none;" aria-label="Toggle voice listening" role="button" tabindex="-1">
-    🎤 Aktifkan Mikrofon
-  </button>
-  
-  <p id="voiceStatus" class="voice-status-text">
-    Senavision Siap. Ucapkan Tujuan Anda.
-  </p>
-  
-  <div class="voice-examples">
-    <p class="voice-examples-title">💡 Percobaan perintah suara:</p>
-    <p class="voice-examples-list">
-      • "Jakarta" (langsung sebutkan kota)<br>
-      • "Pergi ke Bandung" juga bisa<br>
-      • "Mulai" (setelah tujuan ditetapkan)
-    </p>
-  </div>
-</div>
+<!-- Toggle Button for Sidebar -->
+<button id="navbarToggleBtn" class="navbar-toggle-btn" onclick="toggleSideNavbar()" title="Buka/Tutup Menu">
+  <span class="toggle-icon">☰</span>
+</button>
+
+<!-- Legacy panels (hidden, kept for backward compatibility) -->
+<div id="debugPanel" class="debug-panel" style="display: none;"></div>
+<div id="routeManagementPanel" class="route-management-panel" style="display: none;"></div>
+<div class="voice-panel" style="display: none;"></div>
 
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -223,5 +271,32 @@
 
 <!-- Custom JS -->
 <script src="index.js"></script>
+
+<!-- PWA Service Worker Registration -->
+<script>
+  // Register Service Worker for PWA
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then((registration) => {
+          console.log('✅ Service Worker registered successfully:', registration.scope);
+          
+          // Check for updates
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing;
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // New service worker available
+                console.log('🔄 New service worker available. Reload to update.');
+              }
+            });
+          });
+        })
+        .catch((error) => {
+          console.warn('❌ Service Worker registration failed:', error);
+        });
+    });
+  }
+</script>
 </body>
 </html>

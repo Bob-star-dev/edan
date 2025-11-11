@@ -4,6 +4,391 @@
     width: 100%;
 }
 
+/* ========== SIDE NAVBAR (Draggable from bottom) ========== */
+.side-navbar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-height: 85vh; /* Tidak memenuhi layar penuh */
+    min-height: 200px; /* Minimum height saat collapsed */
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.95);
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 20px 20px 0 0;
+    z-index: 1000;
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.12), 
+                0 -4px 16px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    transform: translateY(calc(100% - 60px)); /* Default: hanya drag handle terlihat */
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    touch-action: pan-y;
+}
+
+.side-navbar.active {
+    transform: translateY(0); /* Fully visible */
+}
+
+.side-navbar.collapsed {
+    transform: translateY(calc(100% - 60px)); /* Only drag handle visible */
+}
+
+/* Drag Handle */
+.navbar-drag-handle {
+    width: 100%;
+    padding: 12px 0;
+    cursor: grab;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+}
+
+.navbar-drag-handle:active {
+    cursor: grabbing;
+}
+
+.drag-handle-bar {
+    width: 40px;
+    height: 4px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 2px;
+    transition: background 0.2s;
+}
+
+.navbar-drag-handle:hover .drag-handle-bar {
+    background: rgba(0, 0, 0, 0.5);
+}
+
+/* Tab Navigation */
+.navbar-tabs {
+    display: flex;
+    border-bottom: 2px solid rgba(0, 0, 0, 0.08);
+    background: rgba(255, 255, 255, 0.5);
+    padding: 0 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+}
+
+.navbar-tabs::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+}
+
+.navbar-tab {
+    flex: 1;
+    min-width: 80px;
+    padding: 12px 8px;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
+    color: #666;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.navbar-tab:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: #333;
+}
+
+.navbar-tab.active {
+    color: #3b49df;
+    border-bottom-color: #3b49df;
+    background: rgba(59, 73, 223, 0.05);
+}
+
+.tab-icon {
+    font-size: 20px;
+    line-height: 1;
+}
+
+.tab-label {
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+/* Tab Content Container */
+.navbar-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px;
+    -webkit-overflow-scrolling: touch;
+}
+
+.navbar-tab-content {
+    display: none;
+    animation: fadeIn 0.2s ease-in;
+}
+
+.navbar-tab-content.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Back to Home Button */
+.back-to-home-btn {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    border: none;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    z-index: 1001;
+    box-shadow: 0 4px 16px rgba(40, 167, 69, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    touch-action: manipulation;
+}
+
+.back-to-home-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(40, 167, 69, 0.5);
+}
+
+.back-to-home-btn:active {
+    transform: scale(0.95);
+}
+
+.back-icon {
+    display: block;
+    line-height: 1;
+}
+
+/* Toggle Button */
+.navbar-toggle-btn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3b49df 0%, #667eea 100%);
+    border: none;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    z-index: 999;
+    box-shadow: 0 4px 16px rgba(59, 73, 223, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    touch-action: manipulation;
+}
+
+.navbar-toggle-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(59, 73, 223, 0.5);
+}
+
+.navbar-toggle-btn:active {
+    transform: scale(0.95);
+}
+
+.navbar-toggle-btn.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0);
+}
+
+.toggle-icon {
+    display: block;
+    line-height: 1;
+}
+
+/* Content Styles inside Navbar */
+.navbar-tab-content h3,
+.navbar-tab-content h4 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    font-size: 18px;
+    font-weight: 700;
+    color: #1a1a1a;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.navbar-tab-content .icon {
+    font-size: 20px;
+}
+
+.navbar-tab-content p {
+    font-size: 14px;
+    margin: 8px 0;
+    line-height: 1.5;
+    color: #4a4a4a;
+}
+
+/* Ensure all content elements are properly styled in navbar */
+.navbar-tab-content #status {
+    font-size: 14px;
+    margin: 8px 0;
+    font-weight: 500;
+    color: #2d5016;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.navbar-tab-content #coordinates {
+    font-size: 13px;
+    margin: 8px 0;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+    color: #1a73e8;
+    background-color: rgba(26, 115, 232, 0.08);
+    padding: 8px 12px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(26, 115, 232, 0.15);
+}
+
+.navbar-tab-content #accuracy {
+    font-size: 13px;
+    margin: 8px 0;
+    color: #5f6368;
+    font-weight: 500;
+    padding: 6px 12px;
+    background-color: rgba(95, 99, 104, 0.08);
+    border-radius: 8px;
+    display: inline-block;
+}
+
+.navbar-tab-content .route-info {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 2px solid rgba(0, 0, 0, 0.08);
+}
+
+.navbar-tab-content .route-info h4 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+
+.navbar-tab-content .retry-button {
+    margin-top: 16px;
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    width: 100%;
+    box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.navbar-tab-content .voice-status-text {
+    font-size: 13px;
+    color: #5f6368;
+    margin: 12px 0 0 0;
+    min-height: 32px;
+    font-style: italic;
+    padding: 10px 12px;
+    background-color: rgba(95, 99, 104, 0.08);
+    border-radius: 8px;
+    border-left: 3px solid #667eea;
+    transition: all 0.3s ease;
+}
+
+.navbar-tab-content .voice-examples {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 2px solid rgba(0, 0, 0, 0.08);
+}
+
+.navbar-tab-content .voice-examples-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #5f6368;
+    margin: 0 0 8px 0;
+    line-height: 1.5;
+}
+
+.navbar-tab-content .voice-examples-list {
+    font-size: 12px;
+    color: #80868b;
+    margin: 0;
+    line-height: 1.7;
+}
+
+/* Responsive adjustments for navbar */
+@media screen and (min-width: 769px) {
+    .side-navbar {
+        max-width: 400px;
+        left: auto;
+        right: 20px;
+        max-height: 80vh;
+        transform: translateY(0) !important; /* Always visible on desktop */
+        border-radius: 16px;
+        bottom: 20px;
+        top: auto;
+    }
+    
+    .navbar-toggle-btn {
+        display: none !important; /* Hide toggle on desktop, navbar always visible */
+    }
+    
+    .side-navbar.collapsed {
+        transform: translateY(0) !important; /* Override collapsed state on desktop */
+    }
+}
+
+@media screen and (max-width: 768px) {
+    .side-navbar {
+        max-height: 90vh;
+    }
+    
+    .navbar-tab {
+        min-width: 70px;
+        padding: 10px 6px;
+    }
+    
+    .tab-icon {
+        font-size: 18px;
+    }
+    
+    .tab-label {
+        font-size: 10px;
+    }
+}
+
 /* Modern Glassmorphism Effect - Base styles for panels */
 .status-panel,
 .voice-panel {
@@ -1112,6 +1497,11 @@
     color: #333;
 }
 
+.route-input-wrapper {
+    position: relative;
+    width: 100%;
+}
+
 .route-input {
     width: 100%;
     padding: 10px 12px;
@@ -1120,12 +1510,131 @@
     font-size: 14px;
     transition: all 0.2s;
     background: white;
+    box-sizing: border-box;
 }
 
 .route-input:focus {
     outline: none;
     border-color: #3b49df;
     box-shadow: 0 0 0 3px rgba(59, 73, 223, 0.1);
+}
+
+/* Location Autocomplete */
+.location-autocomplete {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    background: white;
+    border: 2px solid rgba(59, 73, 223, 0.2);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    z-index: 1000;
+    max-height: 500px; /* Increased from 300px to show more results */
+    overflow-y: auto;
+    animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.autocomplete-options {
+    display: flex;
+    flex-direction: column;
+}
+
+.autocomplete-option {
+    padding: 12px;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.autocomplete-option:last-child {
+    border-bottom: none;
+}
+
+.autocomplete-option:hover {
+    background: rgba(59, 73, 223, 0.05);
+}
+
+.autocomplete-option.selected {
+    background: rgba(59, 73, 223, 0.1);
+    border-left: 3px solid #3b49df;
+}
+
+.autocomplete-option-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+
+.autocomplete-option-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.autocomplete-option-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1a1a;
+    flex: 1;
+}
+
+.country-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    background: rgba(59, 73, 223, 0.1);
+    color: #3b49df;
+    border-radius: 4px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.autocomplete-option-address {
+    font-size: 12px;
+    color: #666;
+    line-height: 1.4;
+}
+
+.autocomplete-more-info {
+    padding: 8px 12px;
+    text-align: center;
+    font-size: 11px;
+    color: #999;
+    font-style: italic;
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.autocomplete-loading {
+    padding: 12px;
+    text-align: center;
+    color: #666;
+    font-size: 13px;
+}
+
+.autocomplete-no-results {
+    padding: 12px;
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+    font-style: italic;
 }
 
 .form-hint {
@@ -1197,6 +1706,89 @@
     background: rgba(59, 73, 223, 0.1);
     color: #3b49df;
     border: 1px solid rgba(59, 73, 223, 0.2);
+}
+
+/* Current Location Display */
+.current-location-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: rgba(59, 73, 223, 0.08);
+    border: 2px solid rgba(59, 73, 223, 0.2);
+    border-radius: 8px;
+    margin-bottom: 4px;
+}
+
+.location-icon {
+    font-size: 18px;
+    line-height: 1;
+}
+
+.location-text {
+    font-size: 14px;
+    color: #3b49df;
+    font-weight: 500;
+    flex: 1;
+}
+
+/* Location Selection List */
+.location-selection-list {
+    margin-top: 16px;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.02);
+    border-radius: 8px;
+    border: 2px solid rgba(59, 73, 223, 0.2);
+}
+
+.selection-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    margin: 0 0 12px 0;
+}
+
+.location-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.location-option {
+    padding: 12px;
+    background: white;
+    border: 2px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.location-option:hover {
+    border-color: #3b49df;
+    background: rgba(59, 73, 223, 0.05);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(59, 73, 223, 0.15);
+}
+
+.location-option.selected {
+    border-color: #3b49df;
+    background: rgba(59, 73, 223, 0.1);
+    box-shadow: 0 0 0 3px rgba(59, 73, 223, 0.1);
+}
+
+.location-option-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin-bottom: 4px;
+}
+
+.location-option-address {
+    font-size: 12px;
+    color: #666;
+    line-height: 1.4;
 }
 
 /* Route Management Toggle Button */

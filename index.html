@@ -6,10 +6,24 @@
     <title>SENAVISION - Navigasi Lokasi Real-Time</title>
     <meta name="description" content="Sistem navigasi real-time dengan voice control untuk kemudahan bepergian dan tracking lokasi">
     
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="SENAVISION">
+    <meta name="mobile-web-app-capable" content="yes">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json">
+    
+    <!-- Apple Touch Icons -->
+    <link rel="apple-touch-icon" href="/image/logo.png">
+    <link rel="icon" type="image/png" href="/image/logo.png">
+    
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
     
     <style>
         * {
@@ -31,10 +45,15 @@
         }
         
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Poppins', 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             line-height: 1.6;
             color: var(--dark);
             overflow-x: hidden;
+        }
+        
+        /* Ensure all text elements use the same font */
+        * {
+            font-family: inherit;
         }
         
         /* ========== NAVIGATION ========== */
@@ -64,7 +83,7 @@
         }
         
         .logo {
-            font-family: 'Playfair Display', serif;
+            font-family: 'Nunito', 'Poppins', sans-serif;
             font-size: 1.5rem;
             font-weight: 700;
             background: var(--gradient);
@@ -198,7 +217,7 @@
         }
         
         .hero h1 {
-            font-family: 'Playfair Display', serif;
+            font-family: 'Nunito', 'Poppins', sans-serif;
             font-size: 4rem;
             font-weight: 700;
             margin-bottom: 1.5rem;
@@ -295,7 +314,7 @@
         }
         
         .section-title h2 {
-            font-family: 'Playfair Display', serif;
+            font-family: 'Nunito', 'Poppins', sans-serif;
             font-size: 2.8rem;
             color: var(--dark);
             margin-bottom: 1rem;
@@ -532,7 +551,7 @@
         }
         
         .showcase h2 {
-            font-family: 'Playfair Display', serif;
+            font-family: 'Nunito', 'Poppins', sans-serif;
             font-size: 2.8rem;
             margin-bottom: 2rem;
             font-weight: 700;
@@ -626,7 +645,7 @@
         }
         
         .footer-column h4 {
-            font-family: 'Playfair Display', serif;
+            font-family: 'Nunito', 'Poppins', sans-serif;
             font-size: 1.4rem;
             margin-bottom: 1.5rem;
             font-weight: 700;
@@ -1115,6 +1134,30 @@
             el.style.transition = 'opacity 0.8s ease, transform 0.8s ease';
             observer.observe(el);
         });
+        
+        // Register Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then((registration) => {
+                        console.log('✅ Service Worker registered successfully:', registration.scope);
+                        
+                        // Check for updates
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    // New service worker available
+                                    console.log('🔄 New service worker available. Reload to update.');
+                                }
+                            });
+                        });
+                    })
+                    .catch((error) => {
+                        console.warn('❌ Service Worker registration failed:', error);
+                    });
+            });
+        }
     </script>
 </body>
 </html>
