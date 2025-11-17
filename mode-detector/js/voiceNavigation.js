@@ -191,12 +191,57 @@ function getIndonesianVoice() {
  * Speak text using Web Speech API with Indonesian language
  * @param {string} text - Text to speak (in Indonesian)
  * @param {string} lang - Language code (default: id-ID)
+ * @param {string} priority - Priority: 'critical' (collision warning), 'normal' (object announcement)
  */
-function speakText(text, lang = 'id-ID') {
+function speakText(text, lang = 'id-ID', priority = 'normal') {
   // Check browser support
   if (!('speechSynthesis' in window)) {
     console.warn('[Voice] Speech synthesis not supported by browser');
     return;
+  }
+
+  // Use SpeechCoordinator to check if we can speak (coordinate with navigation)
+  if (typeof window.SpeechCoordinator !== 'undefined') {
+    if (!window.SpeechCoordinator.requestSpeak(priority)) {
+      console.log('[ModeDetector] ⏸️ Speech delayed - waiting for navigation to finish:', text.substring(0, 50));
+      
+      // During navigation, retry more aggressively to allow both voices to speak quickly
+      const isNavigating = window.SpeechCoordinator.isNavigating || false;
+      const retryDelay = isNavigating ? 300 : 1000; // Faster retry during navigation (300ms vs 1000ms)
+      
+      // Retry after a short delay, but only if speechSynthesis is not speaking
+      setTimeout(() => {
+        const speechSynthesisSpeaking = (typeof window.speechSynthesis !== 'undefined') && 
+                                       window.speechSynthesis.speaking;
+        if (!voiceNavigationState.isSpeaking && !speechSynthesisSpeaking) {
+          // Double check with SpeechCoordinator before retrying
+          if (window.SpeechCoordinator.requestSpeak(priority)) {
+            console.log('[ModeDetector] ✅ Retry successful - speaking now');
+            speakText(text, lang, priority);
+          } else {
+            // If still cannot speak and navigation is active, retry again more quickly
+            if (isNavigating && !speechSynthesisSpeaking) {
+              console.log('[ModeDetector] 🔄 Retrying again (navigation mode - quick retry)');
+              setTimeout(() => {
+                if (!voiceNavigationState.isSpeaking && !speechSynthesisSpeaking) {
+                  if (window.SpeechCoordinator.requestSpeak(priority)) {
+                    console.log('[ModeDetector] ✅ Second retry successful - speaking now');
+                    speakText(text, lang, priority);
+                  } else {
+                    console.log('[ModeDetector] ⏸️ Still cannot speak - giving up for this announcement');
+                  }
+                }
+              }, 300); // Quick retry after 300ms
+            } else {
+              console.log('[ModeDetector] ⏸️ Still cannot speak - giving up for this announcement');
+            }
+          }
+        } else {
+          console.log('[ModeDetector] ⏸️ Still cannot speak - speech active or already speaking');
+        }
+      }, retryDelay);
+      return;
+    }
   }
 
   // Check if already speaking
@@ -205,8 +250,20 @@ function speakText(text, lang = 'id-ID') {
     return;
   }
 
-  // Cancel any pending speech
-  window.speechSynthesis.cancel();
+  // Cancel any pending speech (only if not critical warning)
+  if (priority !== 'critical') {
+    // For normal priority, don't cancel navigation speech
+    // Only cancel if navigation is not speaking
+    if (typeof window.SpeechCoordinator !== 'undefined' && window.SpeechCoordinator.isNavigationActive()) {
+      console.log('[ModeDetector] ⏸️ Navigation is speaking - waiting...');
+      return;
+    }
+  }
+  
+  // For critical warnings, cancel all speech
+  if (priority === 'critical') {
+    window.speechSynthesis.cancel();
+  }
 
   // Create utterance
   const utterance = new SpeechSynthesisUtterance(text);
@@ -244,17 +301,30 @@ function speakText(text, lang = 'id-ID') {
   // Event handlers
   utterance.onstart = () => {
     voiceNavigationState.isSpeaking = true;
-    console.log(`[Voice] 🔊 Speaking in Indonesian: "${text}"`);
+    if (typeof window.SpeechCoordinator !== 'undefined') {
+      if (priority === 'critical') {
+        window.SpeechCoordinator.isModeDetectorWarning = true;
+      } else {
+        window.SpeechCoordinator.isModeDetectorSpeaking = true;
+      }
+    }
+    console.log(`[ModeDetector] 🔊 Speaking (${priority}): "${text}"`);
   };
 
   utterance.onend = () => {
     voiceNavigationState.isSpeaking = false;
-    console.log('[Voice] ✅ Speech ended:', text);
+    if (typeof window.SpeechCoordinator !== 'undefined') {
+      window.SpeechCoordinator.markSpeechEnd(priority);
+    }
+    console.log(`[ModeDetector] ✅ Speech ended (${priority}):`, text);
   };
 
   utterance.onerror = (error) => {
     voiceNavigationState.isSpeaking = false;
-    console.error('[Voice] ❌ Speech error:', error);
+    if (typeof window.SpeechCoordinator !== 'undefined') {
+      window.SpeechCoordinator.markSpeechEnd(priority);
+    }
+    console.error('[ModeDetector] ❌ Speech error:', error);
   };
 
   // Speak
@@ -312,7 +382,8 @@ function announceObjectIfNearby(classId, distance, className) {
   const indonesianName = getIndonesianClassName(className);
   console.log(`[Voice] 🎯 Announcing: ${indonesianName} (distance: ${distance.toFixed(1)}cm, class: ${classId})`);
   
-  speakText(indonesianName);
+  // Use 'normal' priority for object announcements (will wait for navigation to finish)
+  speakText(indonesianName, 'id-ID', 'normal');
   
   // Update state
   voiceNavigationState.announcedObjects.add(classId);
@@ -398,13 +469,24 @@ function checkCollisionWarnings(detections) {
   if (objectAnnouncement) {
     console.log(`[Collision] 🎯 Announcing object: ${objectAnnouncement} (distance: ${distance.toFixed(1)}cm)`);
     
-    // Cancel any ongoing speech to prioritize collision warning
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      voiceNavigationState.isSpeaking = false;
+    // Use SpeechCoordinator for critical warning (will cancel navigation speech)
+    if (typeof window.SpeechCoordinator !== 'undefined') {
+      if (!window.SpeechCoordinator.requestSpeak('critical')) {
+        console.log('[Collision] ⏸️ Critical warning delayed - retrying...');
+        setTimeout(() => {
+          checkCollisionWarnings(detections);
+        }, 500);
+        return;
+      }
+    } else {
+      // Fallback: Cancel any ongoing speech to prioritize collision warning
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        voiceNavigationState.isSpeaking = false;
+      }
     }
     
-    // Speak object name first (simple announcement)
+    // Speak object name first (simple announcement) - use critical priority
     const objectUtterance = new SpeechSynthesisUtterance(objectAnnouncement);
     objectUtterance.lang = 'id-ID';
     
@@ -422,6 +504,9 @@ function checkCollisionWarnings(detections) {
     objectUtterance.volume = 1.0;
     
     objectUtterance.onstart = () => {
+      if (typeof window.SpeechCoordinator !== 'undefined') {
+        window.SpeechCoordinator.isModeDetectorWarning = true;
+      }
       console.log(`[Collision] 🔊 Announcing object: "${objectAnnouncement}"`);
     };
     
@@ -434,6 +519,9 @@ function checkCollisionWarnings(detections) {
     
     objectUtterance.onerror = (error) => {
       console.error(`[Collision] ❌ Error announcing object:`, error);
+      if (typeof window.SpeechCoordinator !== 'undefined') {
+        window.SpeechCoordinator.markSpeechEnd('critical');
+      }
       // Continue to warning message even if object announcement fails
       speakCollisionWarning(warningMessage, warningLevel);
     };
@@ -461,10 +549,21 @@ function checkCollisionWarnings(detections) {
 function speakCollisionWarning(warningMessage, warningLevel) {
   console.log(`[Collision] ${warningLevel.toUpperCase()}: ${warningMessage}`);
   
-  // Cancel any ongoing speech for immediate warning
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel();
-    voiceNavigationState.isSpeaking = false;
+  // Use SpeechCoordinator for critical warning (will cancel navigation speech)
+  if (typeof window.SpeechCoordinator !== 'undefined') {
+    if (!window.SpeechCoordinator.requestSpeak('critical')) {
+      console.log('[Collision] ⏸️ Critical warning delayed - retrying...');
+      setTimeout(() => {
+        speakCollisionWarning(warningMessage, warningLevel);
+      }, 500);
+      return;
+    }
+  } else {
+    // Fallback: Cancel any ongoing speech for immediate warning
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      voiceNavigationState.isSpeaking = false;
+    }
   }
 
   // Speak with appropriate urgency in Indonesian
@@ -497,18 +596,27 @@ function speakCollisionWarning(warningMessage, warningLevel) {
   utterance.onstart = () => {
     collisionWarningState.isWarning = true;
     voiceNavigationState.isSpeaking = true;
+    if (typeof window.SpeechCoordinator !== 'undefined') {
+      window.SpeechCoordinator.isModeDetectorWarning = true;
+    }
     console.log(`[Collision] 🔊 Warning spoken: ${warningMessage}`);
   };
 
   utterance.onend = () => {
     collisionWarningState.isWarning = false;
     voiceNavigationState.isSpeaking = false;
+    if (typeof window.SpeechCoordinator !== 'undefined') {
+      window.SpeechCoordinator.markSpeechEnd('critical');
+    }
     console.log(`[Collision] ✅ Warning ended`);
   };
 
   utterance.onerror = (error) => {
     collisionWarningState.isWarning = false;
     voiceNavigationState.isSpeaking = false;
+    if (typeof window.SpeechCoordinator !== 'undefined') {
+      window.SpeechCoordinator.markSpeechEnd('critical');
+    }
     console.error(`[Collision] ❌ Warning error:`, error);
   };
 

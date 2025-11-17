@@ -466,6 +466,13 @@ const ModeDetector = {
         
         console.log('[ModeDetector] Activating...');
         
+        // Check if SpeechCoordinator is available for voice coordination
+        if (typeof window.SpeechCoordinator !== 'undefined') {
+            console.log('[ModeDetector] ✅ SpeechCoordinator available - voice coordination enabled');
+        } else {
+            console.warn('[ModeDetector] ⚠️ SpeechCoordinator not available - voice may overlap with navigation');
+        }
+        
         try {
             // Ensure initialized first
             if (!modeDetectorState.isInitialized) {
@@ -511,6 +518,13 @@ const ModeDetector = {
         
         // Deactivate camera
         this.deactivateCamera();
+        
+        // Reset SpeechCoordinator state for mode detector
+        if (typeof window.SpeechCoordinator !== 'undefined') {
+            window.SpeechCoordinator.isModeDetectorSpeaking = false;
+            window.SpeechCoordinator.isModeDetectorWarning = false;
+            console.log('[ModeDetector] ✅ SpeechCoordinator state reset');
+        }
         
         modeDetectorState.isActive = false;
         console.log('[ModeDetector] ✅ Deactivated');

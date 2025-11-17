@@ -1,8 +1,8 @@
 // Service Worker for SENAVISION PWA
-// Version: 1.0.0
+// Version: 1.0.4
 
-const CACHE_NAME = 'senavision-v1.0.0';
-const RUNTIME_CACHE = 'senavision-runtime-v1.0.0';
+const CACHE_NAME = 'senavision-v1.0.4';
+const RUNTIME_CACHE = 'senavision-runtime-v1.0.4';
 
 // Assets to cache on install
 const STATIC_ASSETS = [
@@ -70,13 +70,20 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          // Delete old caches
+          // Delete ALL old caches (force refresh)
           if (cacheName !== CACHE_NAME && cacheName !== RUNTIME_CACHE) {
             console.log('[Service Worker] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
-      );
+      ).then(() => {
+        // Force delete runtime cache to ensure fresh files
+        return caches.delete(RUNTIME_CACHE).then(() => {
+          console.log('[Service Worker] Runtime cache cleared for fresh files');
+          // Recreate runtime cache
+          return caches.open(RUNTIME_CACHE);
+        });
+      });
     })
   );
   
@@ -103,7 +110,31 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   
-  // Strategy: Cache First, Network Fallback
+  // Strategy: Network ONLY for JS files (no cache) - ensures always fresh
+  // This ensures JS files are always fresh and never served from cache
+  if (request.url.includes('.js') && !request.url.includes('node_modules') && !request.url.includes('unpkg.com') && !request.url.includes('gstatic.com')) {
+    // For JS files, ALWAYS fetch from network, never use cache
+    event.respondWith(
+      fetch(request, { cache: 'no-store' })
+        .then((response) => {
+          // Don't cache JS files at all - always get fresh version
+          return response;
+        })
+        .catch((error) => {
+          console.error('[Service Worker] Failed to fetch JS from network:', request.url, error);
+          // Only fallback to cache if network completely fails
+          return caches.match(request).then((cached) => {
+            if (cached) {
+              console.warn('[Service Worker] Using cached JS (network failed):', request.url);
+            }
+            return cached || new Response('Network error', { status: 503 });
+          });
+        })
+    );
+    return;
+  }
+  
+  // Strategy: Cache First, Network Fallback (for non-JS files)
   event.respondWith(
     caches.match(request)
       .then((cachedResponse) => {
