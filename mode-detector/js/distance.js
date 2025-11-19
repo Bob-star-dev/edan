@@ -10,6 +10,23 @@
 // For ESP32-CAM: typically 400-800 pixels depending on resolution
 const DEFAULT_FOCAL_LENGTH = 600;
 
+// Camera-specific default focal lengths (empirical starting points)
+const DEFAULT_FOCAL_LENGTHS = {
+  webcam: 820,   // Typical laptop/USB webcam at 720p
+  esp32: 520     // ESP32-CAM (OV2640) at 640x480
+};
+
+/**
+ * Get default focal length for a specific camera source
+ * @param {string} source - 'webcam' or 'esp32'
+ * @returns {number} Default focal length for the camera
+ */
+function getDefaultFocalLengthForCamera(source = 'webcam') {
+  if (!source) return DEFAULT_FOCAL_LENGTH;
+  const key = source.toLowerCase();
+  return DEFAULT_FOCAL_LENGTHS[key] || DEFAULT_FOCAL_LENGTH;
+}
+
 /**
  * Database of average object sizes in centimeters
  * These are typical sizes for common objects - may need adjustment for specific objects
@@ -366,14 +383,22 @@ function calibrateFromKnownDistance(knownDistanceCm, classId, bboxWidthPx, bboxH
   const focalLength = calibrateFocalLength(knownDistanceCm, classId, bboxWidthPx, bboxHeightPx, canvasWidth);
   console.log(`\n✅ Calibration complete!`);
   console.log(`📝 Recommended focal length: ${Math.round(focalLength)}`);
-  console.log(`💡 Update DEFAULT_FOCAL_LENGTH in distance.js to ${Math.round(focalLength)}`);
-  console.log(`💡 Or update appState.focalLength in main.js to ${Math.round(focalLength)}`);
+  console.log(`💡 Focal length applied to current kamera secara otomatis`);
+  console.log(`💾 Nilai disimpan per kamera sehingga ESP32/Webcam punya kalibrasi masing-masing`);
+  
+  if (typeof window !== 'undefined' && typeof window.applyCalibratedFocalLength === 'function') {
+    window.applyCalibratedFocalLength(Math.round(focalLength));
+  } else {
+    console.log(`ℹ️ Jalankan window.applyCalibratedFocalLength(${Math.round(focalLength)}) setelah halaman siap bila diperlukan.`);
+  }
   return focalLength;
 }
 
 // Make calibration function available globally for console access
 if (typeof window !== 'undefined') {
   window.calibrateFromKnownDistance = calibrateFromKnownDistance;
+  window.DEFAULT_FOCAL_LENGTHS = DEFAULT_FOCAL_LENGTHS;
+  window.getDefaultFocalLengthForCamera = getDefaultFocalLengthForCamera;
   console.log('[Distance] Calibration helper available: calibrateFromKnownDistance(knownDistanceCm, classId, bboxWidthPx, bboxHeightPx)');
 }
 

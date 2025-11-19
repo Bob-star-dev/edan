@@ -25,6 +25,11 @@ let isFirstLocationUpdate = true; // Track if this is the first location update
 let bestGPSLocation = null; // Store { lat, lng, accuracy }
 const MAX_ACCEPTABLE_ACCURACY = 500; // Only accept GPS locations with accuracy < 500m
 
+// GPS Smoothing - untuk mengurangi noise/jitter pada koordinat GPS
+let gpsHistory = []; // Array untuk menyimpan history GPS coordinates
+const GPS_HISTORY_SIZE = 5; // Jumlah titik GPS yang digunakan untuk smoothing
+const MIN_DISTANCE_FOR_UPDATE = 2; // Minimum jarak (meter) untuk update marker (reduces jitter)
+
 // Configuration for location update interval
 // Options: 500ms (very fast), 1000ms (1s - realtime), 2000ms (2s), 3000ms (3s), 5000ms (5s)
 // Note: Faster updates = more battery/data usage
@@ -37,6 +42,82 @@ let destinationMarker = null; // No destination marker until user sets a destina
 
 // Route control - will be created after we get user's location
 let route = null;
+
+// Helper function to move routing directions to custom container
+function moveRoutingDirectionsToContainer() {
+    const routingContainer = document.getElementById('routingDirectionsContainer');
+    if (!routingContainer) return;
+    
+    // Try multiple times with increasing delays to ensure routing directions are moved
+    let attempts = 0;
+    const maxAttempts = 15;
+    
+    function tryMove() {
+        attempts++;
+        const defaultContainer = document.querySelector('.leaflet-top.leaflet-right .leaflet-routing-container');
+        if (defaultContainer) {
+            // Clear placeholder
+            const placeholder = routingContainer.querySelector('.directions-placeholder');
+            if (placeholder) placeholder.remove();
+            
+            // Move routing container to custom location
+            const routingAltContainer = defaultContainer.querySelector('.leaflet-routing-alternatives-container');
+            if (routingAltContainer) {
+                // Check if already moved
+                if (routingAltContainer.parentNode !== routingContainer) {
+                    routingContainer.appendChild(routingAltContainer);
+                    console.log('✅ Routing directions moved to navbar');
+                    return true; // Success
+                } else {
+                    // Already moved, but make sure it's visible
+                    routingAltContainer.style.display = '';
+                    return true;
+                }
+            }
+        }
+        
+        // If not found and haven't exceeded max attempts, try again
+        if (attempts < maxAttempts) {
+            setTimeout(tryMove, 200);
+        } else {
+            console.warn('⚠️ Failed to move routing directions after', maxAttempts, 'attempts');
+        }
+        return false;
+    }
+    
+    // Start trying after initial delay
+    setTimeout(tryMove, 100);
+}
+
+// Set up MutationObserver to automatically move routing directions when they appear
+(function setupRoutingDirectionsObserver() {
+    const routingContainer = document.getElementById('routingDirectionsContainer');
+    if (!routingContainer) {
+        // Retry after DOM is ready
+        setTimeout(setupRoutingDirectionsObserver, 500);
+        return;
+    }
+    
+    // Observe changes to the default routing container location
+    const observer = new MutationObserver(function(mutations) {
+        const defaultContainer = document.querySelector('.leaflet-top.leaflet-right .leaflet-routing-container');
+        if (defaultContainer) {
+            const routingAltContainer = defaultContainer.querySelector('.leaflet-routing-alternatives-container');
+            if (routingAltContainer && routingAltContainer.parentNode !== routingContainer) {
+                moveRoutingDirectionsToContainer();
+            }
+        }
+    });
+    
+    // Start observing the map container for changes
+    const mapContainer = document.getElementById('map');
+    if (mapContainer) {
+        observer.observe(mapContainer, {
+            childList: true,
+            subtree: true
+        });
+    }
+})();
 
 // Speech Recognition Variables
 let recognition = null;
@@ -157,56 +238,91 @@ window.SpeechCoordinator = {
         // Normal priority (object announcements) - can speak immediately if navigation not speaking
         // During navigation, mode detector can speak right after navigation finishes
         if (priority === 'normal') {
-            // Check if navigation is actually speaking (not just state flag)
+            // Check if speechSynthesis is actually speaking
             const speechSynthesisSpeaking = (typeof window.speechSynthesis !== 'undefined') && 
                                            window.speechSynthesis.speaking;
             
-            // If speechSynthesis is not speaking, navigation definitely not speaking
-            // Reset stale state flags and allow mode detector to speak immediately
-            if (!speechSynthesisSpeaking) {
-                if (this.isNavigationSpeaking) {
-                    console.log('[SpeechCoordinator] 🔄 Navigation state is stale (no speech active) - resetting');
-                    this.isNavigationSpeaking = false;
-                    if (typeof isSpeaking !== 'undefined') {
-                        isSpeaking = false;
+            // CRITICAL: Saat navigasi aktif, mode detector HARUS bisa berbicara
+            // Hanya tunggu jika navigasi benar-benar sedang berbicara SAAT INI
+            if (this.isNavigating) {
+                // Jika tidak ada speech aktif, mode detector bisa langsung berbicara
+                if (!speechSynthesisSpeaking) {
+                    // Reset stale states
+                    if (this.isNavigationSpeaking) {
+                        console.log('[SpeechCoordinator] 🔄 Navigation state is stale - resetting');
+                        this.isNavigationSpeaking = false;
+                        if (typeof isSpeaking !== 'undefined') {
+                            isSpeaking = false;
+                        }
                     }
-                }
-                // If no speech is active, allow mode detector to speak immediately
-                if (!this.isModeDetectorWarning) {
-                    this.isModeDetectorSpeaking = true;
-                    console.log('[SpeechCoordinator] ✅ Mode detector speech allowed immediately (no active speech)');
-                    return true;
-                } else {
-                    // Check if warning is actually active
-                    if (!speechSynthesisSpeaking) {
+                    if (this.isModeDetectorWarning && !speechSynthesisSpeaking) {
                         console.log('[SpeechCoordinator] 🔄 Warning state is stale - resetting');
                         this.isModeDetectorWarning = false;
-                        this.isModeDetectorSpeaking = true;
-                        console.log('[SpeechCoordinator] ✅ Mode detector speech allowed (warning state reset)');
-                        return true;
+                    }
+                    // Mode detector bisa langsung berbicara
+                    this.isModeDetectorSpeaking = true;
+                    console.log('[SpeechCoordinator] ✅ Mode detector speech allowed (navigation active, no speech)');
+                    return true;
+                }
+                
+                // Jika ada speech aktif, cek apakah itu navigasi atau mode detector
+                if (speechSynthesisSpeaking) {
+                    // Jika navigasi sedang berbicara, mode detector harus menunggu
+                    if (this.isNavigationActive() && !this.isModeDetectorWarning) {
+                        console.log('[SpeechCoordinator] ⏸️ Mode detector waiting - navigation speaking (will speak after)');
+                        return false; // Mode detector akan retry setelah navigasi selesai
+                    }
+                    // Jika warning aktif, tunggu warning selesai
+                    if (this.isModeDetectorWarning) {
+                        console.log('[SpeechCoordinator] ⏸️ Mode detector waiting - critical warning active');
+                        return false;
+                    }
+                    // Jika mode detector sendiri yang berbicara, tidak perlu berbicara lagi
+                    if (this.isModeDetectorSpeaking) {
+                        console.log('[SpeechCoordinator] ⏸️ Mode detector already speaking');
+                        return false;
                     }
                 }
-            }
-            
-            // If speechSynthesis is speaking, check if it's navigation or mode detector
-            if (speechSynthesisSpeaking) {
-                // If navigation is speaking, mode detector can still speak (will queue and speak after)
-                // But only if it's not a critical warning
-                if (this.isNavigationActive() && !this.isModeDetectorWarning) {
-                    // During navigation, allow mode detector to interrupt after a short delay
-                    // This allows both voices to speak in quick succession
-                    console.log('[SpeechCoordinator] ⏸️ Mode detector speech queued - navigation speaking, will speak after');
-                    return false; // Queue it, will be processed when navigation ends
+            } else {
+                // Saat navigasi TIDAK aktif, logika normal
+                if (!speechSynthesisSpeaking) {
+                    // Reset stale states
+                    if (this.isNavigationSpeaking) {
+                        console.log('[SpeechCoordinator] 🔄 Navigation state is stale - resetting');
+                        this.isNavigationSpeaking = false;
+                        if (typeof isSpeaking !== 'undefined') {
+                            isSpeaking = false;
+                        }
+                    }
+                    if (!this.isModeDetectorWarning) {
+                        this.isModeDetectorSpeaking = true;
+                        console.log('[SpeechCoordinator] ✅ Mode detector speech allowed (no navigation, no speech)');
+                        return true;
+                    } else {
+                        if (!speechSynthesisSpeaking) {
+                            console.log('[SpeechCoordinator] 🔄 Warning state is stale - resetting');
+                            this.isModeDetectorWarning = false;
+                            this.isModeDetectorSpeaking = true;
+                            console.log('[SpeechCoordinator] ✅ Mode detector speech allowed (warning reset)');
+                            return true;
+                        }
+                    }
                 }
-                // If warning is active, wait for it
-                if (this.isModeDetectorWarning) {
-                    console.log('[SpeechCoordinator] ⏸️ Mode detector speech delayed - warning active');
-                    return false; // Wait for warning to finish
-                }
-                // If mode detector is already speaking, don't allow another
-                if (this.isModeDetectorSpeaking) {
-                    console.log('[SpeechCoordinator] ⏸️ Mode detector already speaking');
-                    return false;
+                
+                // Jika ada speech aktif
+                if (speechSynthesisSpeaking) {
+                    if (this.isNavigationActive() && !this.isModeDetectorWarning) {
+                        console.log('[SpeechCoordinator] ⏸️ Mode detector waiting - navigation speaking');
+                        return false;
+                    }
+                    if (this.isModeDetectorWarning) {
+                        console.log('[SpeechCoordinator] ⏸️ Mode detector waiting - warning active');
+                        return false;
+                    }
+                    if (this.isModeDetectorSpeaking) {
+                        console.log('[SpeechCoordinator] ⏸️ Mode detector already speaking');
+                        return false;
+                    }
                 }
             }
             
@@ -734,8 +850,9 @@ function onLocationFound(e) {
     }
     
     // Calculate accuracy dan update
-    // Accuracy dari GPS (bisa sangat besar, misal 41904m)
-    const actualAccuracy = e.accuracy / 2;
+    // Accuracy dari GPS sudah dalam meter (radius 95% confidence)
+    // e.accuracy adalah radius akurasi dalam meter, tidak perlu dibagi 2
+    const actualAccuracy = e.accuracy;
     
     // CRITICAL: Radius lingkaran accuracy Maksimal 1 kilometer (1000 meter)
     // Batasi radius lingkaran agar tidak terlalu besar dan tetap praktis
@@ -786,22 +903,50 @@ function onLocationFound(e) {
         // Update existing marker position ke lokasi saat ini (REAL-TIME)
         // setLatLng() memastikan marker selalu bergerak mengikuti lokasi GPS AKURAT
         const oldLatLng = currentUserPosition.getLatLng();
-        currentUserPosition.setLatLng(e.latlng);
-        // Tampilkan accuracy aktual di popup, bukan radius terbatas
-        currentUserPosition.setPopupContent("📍 Lokasi Anda (Akurasi GPS: " + actualAccuracy.toFixed(0) + "m)");
         
-        // Log untuk debugging - memastikan marker selalu update
-        const distanceMoved = oldLatLng ? oldLatLng.distanceTo(e.latlng) : 0;
-        if (distanceMoved > 1) { // Hanya log jika bergerak lebih dari 1 meter
-            console.log('📍 Marker updated - moved ' + distanceMoved.toFixed(1) + 'm to:', e.latlng.lat.toFixed(6) + ', ' + e.latlng.lng.toFixed(6));
+        // GPS Smoothing: Tambahkan koordinat ke history untuk smoothing
+        gpsHistory.push({ lat: e.latlng.lat, lng: e.latlng.lng, accuracy: accuracy });
+        if (gpsHistory.length > GPS_HISTORY_SIZE) {
+            gpsHistory.shift(); // Hapus titik tertua
+        }
+        
+        // Hitung smoothed position (rata-rata dari history) jika ada cukup data dan akurasi baik
+        let smoothedLatLng = e.latlng;
+        if (gpsHistory.length >= 3 && accuracy < 50) { // Hanya smooth jika akurasi baik (< 50m)
+            const avgLat = gpsHistory.reduce((sum, p) => sum + p.lat, 0) / gpsHistory.length;
+            const avgLng = gpsHistory.reduce((sum, p) => sum + p.lng, 0) / gpsHistory.length;
+            smoothedLatLng = L.latLng(avgLat, avgLng);
+        }
+        
+        // Hanya update marker jika user bergerak cukup jauh (reduces jitter)
+        const distanceMoved = oldLatLng ? oldLatLng.distanceTo(smoothedLatLng) : 0;
+        if (distanceMoved >= MIN_DISTANCE_FOR_UPDATE || !oldLatLng) {
+            currentUserPosition.setLatLng(smoothedLatLng);
+            // Tampilkan accuracy aktual di popup, bukan radius terbatas
+            currentUserPosition.setPopupContent("📍 Lokasi Anda (Akurasi GPS: " + actualAccuracy.toFixed(0) + "m)");
+            
+            // Log untuk debugging - memastikan marker selalu update
+            if (distanceMoved > 1) { // Hanya log jika bergerak lebih dari 1 meter
+                console.log('📍 Marker updated - moved ' + distanceMoved.toFixed(1) + 'm to:', smoothedLatLng.lat.toFixed(6) + ', ' + smoothedLatLng.lng.toFixed(6));
+            }
+        } else {
+            // Jitter detected - tidak update marker untuk mengurangi noise
+            if (Math.random() < 0.01) { // Log hanya 1% dari waktu untuk menghindari spam
+                console.log('📍 GPS jitter filtered - movement < ' + MIN_DISTANCE_FOR_UPDATE + 'm');
+            }
         }
         
         // Verifikasi marker benar-benar di posisi yang benar
         const currentMarkerPos = currentUserPosition.getLatLng();
-        if (Math.abs(currentMarkerPos.lat - e.latlng.lat) > 0.000001 || 
-            Math.abs(currentMarkerPos.lng - e.latlng.lng) > 0.000001) {
-            console.warn('⚠️ Marker position mismatch detected - correcting...');
-            currentUserPosition.setLatLng(e.latlng); // Force update jika ada mismatch
+        const finalLatLng = smoothedLatLng;
+        if (Math.abs(currentMarkerPos.lat - finalLatLng.lat) > 0.000001 || 
+            Math.abs(currentMarkerPos.lng - finalLatLng.lng) > 0.000001) {
+            // Only correct if distance is significant (avoid unnecessary updates)
+            const correctionDistance = currentMarkerPos.distanceTo(finalLatLng);
+            if (correctionDistance > 1) { // Only correct if > 1 meter
+                console.warn('⚠️ Marker position mismatch detected - correcting...');
+                currentUserPosition.setLatLng(finalLatLng); // Force update jika ada mismatch
+            }
         }
     } else {
         // Create marker untuk pertama kali - PASTIKAN menggunakan lokasi GPS AKURAT
@@ -835,7 +980,7 @@ function onLocationFound(e) {
         L.latLng(bestGPSLocation.lat, bestGPSLocation.lng) : 
         e.latlng;
     const circleRadius = (bestGPSLocation && isUnacceptableAccuracy) ? 
-        Math.min(bestGPSLocation.accuracy / 2, 1000) : 
+        Math.min(bestGPSLocation.accuracy, 1000) : // Accuracy sudah dalam meter, tidak perlu dibagi 2
         radius;
     
     if (currentAccuracy) {
@@ -1045,6 +1190,9 @@ function forceUpdateRoute(userLatLng) {
         createMarker: function() { return null; }
     }).addTo(map);
     
+    // Move routing directions to custom container after creation
+    moveRoutingDirectionsToContainer();
+    
     // Handle routing errors
     route.on('routingerror', function(e) {
         console.error('❌ Routing error:', e);
@@ -1078,6 +1226,9 @@ function forceUpdateRoute(userLatLng) {
         console.log('✅✅✅ NEW ROUTE FOUND FOR NEW DESTINATION!');
         console.log('📍 Route distance:', e.routes[0].summary.totalDistance / 1000, 'km');
         console.log('⏱️ Route time:', e.routes[0].summary.totalTime / 60, 'minutes');
+        
+        // Move routing directions to custom container after route is found
+        moveRoutingDirectionsToContainer();
         
         // CRITICAL: Pastikan marker biru tetap di lokasi GPS user saat ini
         // JANGAN biarkan route creation mengubah marker position
@@ -1225,6 +1376,9 @@ function updateRoute(userLatLng) {
             createMarker: function() { return null; } // Hide default markers
         }).addTo(map);
         
+        // Move routing directions to custom container after creation
+        moveRoutingDirectionsToContainer();
+        
         // Handle routing errors
         route.on('routingerror', function(e) {
             console.error('❌ Routing error:', e);
@@ -1255,6 +1409,9 @@ function updateRoute(userLatLng) {
         
         // Listen for route found events to announce directions
         route.on('routesfound', function(e) {
+        // Move routing directions to custom container after route is found
+        moveRoutingDirectionsToContainer();
+        
         // Save route data for navigation tracking
         const routeData = e.routes[0];
         currentLegIndex = 0;
@@ -1395,9 +1552,15 @@ function updateRoute(userLatLng) {
                             createMarker: function() { return null; }
                         }).addTo(map);
                         
+                        // Move routing directions to custom container after creation
+                        moveRoutingDirectionsToContainer();
+                        
                         // Re-attach event listener for new route
                         route.on('routesfound', function(e) {
                             console.log('✅✅✅ NEW ROUTE FOUND AFTER DESTINATION CHANGE!');
+                            
+                            // Move routing directions to custom container after route is found
+                            moveRoutingDirectionsToContainer();
                             console.log('📍 Route distance:', e.routes[0].summary.totalDistance / 1000, 'km');
                             console.log('⏱️ Route time:', e.routes[0].summary.totalTime / 60, 'minutes');
                             
@@ -5572,4 +5735,374 @@ function formatDurationSeconds(seconds) {
         parts.push('kurang dari satu menit');
     }
     return parts.join(' ');
+}
+
+// ========== POI (POINTS OF INTEREST) SYSTEM ==========
+// Sistem untuk mencari dan menampilkan rumah makan dan supermarket di sekitar user
+
+// Store POI markers
+let poiMarkers = [];
+let currentPOIList = [];
+const POI_SEARCH_RADIUS = 2000; // 2 km radius
+
+// Search POI using Overpass API
+async function searchPOI(type = 'all') {
+    if (!currentUserPosition) {
+        updatePOIStatus('⚠️ Tunggu hingga lokasi GPS terdeteksi');
+        return;
+    }
+    
+    const userLatLng = currentUserPosition.getLatLng();
+    const lat = userLatLng.lat;
+    const lng = userLatLng.lng;
+    
+    // Update button states
+    const buttons = document.querySelectorAll('.poi-filter-btn');
+    buttons.forEach(btn => {
+        if (btn.dataset.type === type) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+    
+    updatePOIStatus('🔍 Mencari tempat terdekat...');
+    
+    // Clear existing markers
+    clearPOIMarkers();
+    
+    try {
+        // Build Overpass query based on type
+        let query = '';
+        const radius = POI_SEARCH_RADIUS;
+        
+        if (type === 'restaurant') {
+            query = `
+                [out:json][timeout:25];
+                (
+                    node["amenity"="restaurant"](around:${radius},${lat},${lng});
+                    node["amenity"="fast_food"](around:${radius},${lat},${lng});
+                    node["amenity"="cafe"](around:${radius},${lat},${lng});
+                    node["amenity"="food_court"](around:${radius},${lat},${lng});
+                    way["amenity"="restaurant"](around:${radius},${lat},${lng});
+                    way["amenity"="fast_food"](around:${radius},${lat},${lng});
+                    way["amenity"="cafe"](around:${radius},${lat},${lng});
+                );
+                out center meta;
+            `;
+        } else if (type === 'supermarket') {
+            query = `
+                [out:json][timeout:25];
+                (
+                    node["shop"="supermarket"](around:${radius},${lat},${lng});
+                    node["shop"="mall"](around:${radius},${lat},${lng});
+                    node["amenity"="marketplace"](around:${radius},${lat},${lng});
+                    way["shop"="supermarket"](around:${radius},${lat},${lng});
+                    way["shop"="mall"](around:${radius},${lat},${lng});
+                );
+                out center meta;
+            `;
+        } else if (type === 'electronics') {
+            query = `
+                [out:json][timeout:25];
+                (
+                    node["shop"="electronics"](around:${radius},${lat},${lng});
+                    node["shop"="computer"](around:${radius},${lat},${lng});
+                    node["shop"="mobile_phone"](around:${radius},${lat},${lng});
+                    node["shop"="hifi"](around:${radius},${lat},${lng});
+                    node["shop"="appliance"](around:${radius},${lat},${lng});
+                    way["shop"="electronics"](around:${radius},${lat},${lng});
+                    way["shop"="computer"](around:${radius},${lat},${lng});
+                    way["shop"="mobile_phone"](around:${radius},${lat},${lng});
+                    way["shop"="hifi"](around:${radius},${lat},${lng});
+                    way["shop"="appliance"](around:${radius},${lat},${lng});
+                );
+                out center meta;
+            `;
+        } else if (type === 'service') {
+            query = `
+                [out:json][timeout:25];
+                (
+                    node["shop"="repair"](around:${radius},${lat},${lng});
+                    node["craft"="electronics_repair"](around:${radius},${lat},${lng});
+                    node["craft"="computer_repair"](around:${radius},${lat},${lng});
+                    node["craft"="watchmaker"](around:${radius},${lat},${lng});
+                    node["craft"="key_cutter"](around:${radius},${lat},${lng});
+                    node["amenity"="service"](around:${radius},${lat},${lng});
+                    way["shop"="repair"](around:${radius},${lat},${lng});
+                    way["craft"="electronics_repair"](around:${radius},${lat},${lng});
+                    way["craft"="computer_repair"](around:${radius},${lat},${lng});
+                );
+                out center meta;
+            `;
+        } else {
+            // All types
+            query = `
+                [out:json][timeout:25];
+                (
+                    node["amenity"="restaurant"](around:${radius},${lat},${lng});
+                    node["amenity"="fast_food"](around:${radius},${lat},${lng});
+                    node["amenity"="cafe"](around:${radius},${lat},${lng});
+                    node["amenity"="food_court"](around:${radius},${lat},${lng});
+                    node["shop"="supermarket"](around:${radius},${lat},${lng});
+                    node["shop"="mall"](around:${radius},${lat},${lng});
+                    node["amenity"="marketplace"](around:${radius},${lat},${lng});
+                    node["shop"="electronics"](around:${radius},${lat},${lng});
+                    node["shop"="computer"](around:${radius},${lat},${lng});
+                    node["shop"="mobile_phone"](around:${radius},${lat},${lng});
+                    node["shop"="hifi"](around:${radius},${lat},${lng});
+                    node["shop"="appliance"](around:${radius},${lat},${lng});
+                    node["shop"="repair"](around:${radius},${lat},${lng});
+                    node["craft"="electronics_repair"](around:${radius},${lat},${lng});
+                    node["craft"="computer_repair"](around:${radius},${lat},${lng});
+                    node["craft"="watchmaker"](around:${radius},${lat},${lng});
+                    node["craft"="key_cutter"](around:${radius},${lat},${lng});
+                    way["amenity"="restaurant"](around:${radius},${lat},${lng});
+                    way["amenity"="fast_food"](around:${radius},${lat},${lng});
+                    way["amenity"="cafe"](around:${radius},${lat},${lng});
+                    way["shop"="supermarket"](around:${radius},${lat},${lng});
+                    way["shop"="mall"](around:${radius},${lat},${lng});
+                    way["shop"="electronics"](around:${radius},${lat},${lng});
+                    way["shop"="computer"](around:${radius},${lat},${lng});
+                    way["shop"="mobile_phone"](around:${radius},${lat},${lng});
+                    way["shop"="repair"](around:${radius},${lat},${lng});
+                );
+                out center meta;
+            `;
+        }
+        
+        // Use Overpass API
+        const overpassUrl = 'https://overpass-api.de/api/interpreter';
+        const response = await fetch(overpassUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'data=' + encodeURIComponent(query)
+        });
+        
+        if (!response.ok) {
+            throw new Error('Gagal mencari tempat: ' + response.statusText);
+        }
+        
+        const data = await response.json();
+        const elements = data.elements || [];
+        
+        if (elements.length === 0) {
+            updatePOIStatus('📍 Tidak ada tempat ditemukan dalam radius 2 km');
+            renderPOIList([]);
+            return;
+        }
+        
+        // Process POI data
+        const poiList = elements.map(element => {
+            const tags = element.tags || {};
+            // Handle both node (has lat/lon) and way (has center) elements
+            const poiLat = element.lat || (element.center && element.center.lat);
+            const poiLng = element.lon || (element.center && element.center.lng);
+            
+            if (!poiLat || !poiLng) return null;
+            
+            // Determine POI type and icon
+            let poiType = 'other';
+            let icon = '📍';
+            
+            if (tags.amenity === 'restaurant' || tags.amenity === 'fast_food' || tags.amenity === 'cafe' || tags.amenity === 'food_court') {
+                poiType = 'restaurant';
+                icon = '🍽️';
+            } else if (tags.shop === 'supermarket' || tags.shop === 'mall' || tags.amenity === 'marketplace') {
+                poiType = 'supermarket';
+                icon = '🛒';
+            } else if (tags.shop === 'electronics' || tags.shop === 'computer' || tags.shop === 'mobile_phone' || tags.shop === 'hifi' || tags.shop === 'appliance') {
+                poiType = 'electronics';
+                icon = '📱';
+            } else if (tags.shop === 'repair' || tags.craft === 'electronics_repair' || tags.craft === 'computer_repair' || tags.craft === 'watchmaker' || tags.craft === 'key_cutter' || tags.amenity === 'service') {
+                poiType = 'service';
+                icon = '🔧';
+            }
+            
+            // Get name
+            const name = tags.name || tags['name:id'] || tags['name:en'] || 'Tempat Tanpa Nama';
+            
+            // Calculate distance from user
+            const poiLatLng = L.latLng(poiLat, poiLng);
+            const distance = userLatLng.distanceTo(poiLatLng);
+            
+            return {
+                id: element.id,
+                name: name,
+                lat: poiLat,
+                lng: poiLng,
+                type: poiType,
+                icon: icon,
+                distance: distance,
+                tags: tags
+            };
+        }).filter(poi => poi !== null);
+        
+        // Sort by distance
+        poiList.sort((a, b) => a.distance - b.distance);
+        
+        // Limit to 20 nearest
+        const limitedList = poiList.slice(0, 20);
+        
+        currentPOIList = limitedList;
+        
+        // Display markers on map
+        displayPOIMarkers(limitedList);
+        
+        // Render list in UI
+        renderPOIList(limitedList);
+        
+        updatePOIStatus(`✅ Ditemukan ${limitedList.length} tempat terdekat`);
+        
+    } catch (error) {
+        console.error('Error searching POI:', error);
+        updatePOIStatus('❌ Error: ' + error.message);
+        renderPOIList([]);
+    }
+}
+
+// Display POI markers on map
+function displayPOIMarkers(poiList) {
+    poiList.forEach(poi => {
+        // Create custom icon based on type
+        let markerColor = '#999';
+        if (poi.type === 'restaurant') {
+            markerColor = '#ff6b6b';
+        } else if (poi.type === 'supermarket') {
+            markerColor = '#4ecdc4';
+        } else if (poi.type === 'electronics') {
+            markerColor = '#9b59b6';
+        } else if (poi.type === 'service') {
+            markerColor = '#f39c12';
+        }
+        
+        const customIcon = L.divIcon({
+            className: 'poi-marker',
+            html: `<div style="background: ${markerColor}; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; font-size: 12px;">${poi.icon}</div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+        
+        const marker = L.marker([poi.lat, poi.lng], {
+            icon: customIcon
+        }).addTo(map);
+        
+        // Create popup content
+        const distanceText = formatDistance(poi.distance);
+        const popupContent = `
+            <div style="min-width: 200px;">
+                <strong>${poi.icon} ${poi.name}</strong><br>
+                <span style="color: #666; font-size: 12px;">📍 Jarak: ${distanceText}</span><br>
+                <button onclick="selectPOIAsDestination(${poi.lat}, ${poi.lng}, '${poi.name.replace(/'/g, "\\'")}')" 
+                        style="margin-top: 8px; padding: 6px 12px; background: #3b49df; color: white; border: none; border-radius: 6px; cursor: pointer; width: 100%;">
+                    🧭 Tuju Lokasi Ini
+                </button>
+            </div>
+        `;
+        
+        marker.bindPopup(popupContent);
+        poiMarkers.push(marker);
+    });
+}
+
+// Clear all POI markers
+function clearPOIMarkers() {
+    poiMarkers.forEach(marker => {
+        map.removeLayer(marker);
+    });
+    poiMarkers = [];
+}
+
+// Render POI list in UI
+function renderPOIList(poiList) {
+    const container = document.getElementById('poiListContainer');
+    if (!container) return;
+    
+    // Clear placeholder
+    const placeholder = container.querySelector('.poi-placeholder');
+    if (placeholder) placeholder.remove();
+    
+    if (poiList.length === 0) {
+        container.innerHTML = '<div class="poi-placeholder"><p>📍 Tidak ada tempat ditemukan</p></div>';
+        return;
+    }
+    
+    // Create list
+    const listHTML = poiList.map(poi => {
+        const distanceText = formatDistance(poi.distance);
+        return `
+            <div class="poi-item" onclick="selectPOIAsDestination(${poi.lat}, ${poi.lng}, '${poi.name.replace(/'/g, "\\'")}')">
+                <div class="poi-item-icon">${poi.icon}</div>
+                <div class="poi-item-content">
+                    <div class="poi-item-name">${escapeHtml(poi.name)}</div>
+                    <div class="poi-item-distance">📍 ${distanceText}</div>
+                </div>
+                <div class="poi-item-action">🧭</div>
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = listHTML;
+}
+
+// Select POI as destination
+function selectPOIAsDestination(lat, lng, name) {
+    console.log('📍 Selecting POI as destination:', name, lat, lng);
+    
+    // Set destination
+    latLngB = [lat, lng];
+    currentDestinationName = name;
+    
+    // Remove old destination marker if exists
+    if (destinationMarker) {
+        map.removeLayer(destinationMarker);
+    }
+    
+    // Create destination marker
+    const destIcon = L.divIcon({
+        className: 'destination-marker',
+        html: '<div style="background: #28a745; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 10px rgba(0,0,0,0.3);"></div>',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
+    });
+    
+    destinationMarker = L.marker([lat, lng], {
+        icon: destIcon
+    }).addTo(map);
+    
+    destinationMarker.bindPopup(`🎯 Tujuan: ${name}`);
+    
+    // Pan map to show both user and destination
+    if (currentUserPosition) {
+        const userLatLng = currentUserPosition.getLatLng();
+        const group = new L.featureGroup([currentUserPosition, destinationMarker]);
+        map.fitBounds(group.getBounds().pad(0.1));
+    } else {
+        map.setView([lat, lng], 15);
+    }
+    
+    // Create route
+    if (currentUserPosition) {
+        const userLatLng = currentUserPosition.getLatLng();
+        forceUpdateRoute(userLatLng);
+        
+        // Announce destination
+        speakText(`Tujuan ditetapkan ke ${name}. Rute sedang dihitung.`, 'id-ID', true, function() {
+            // After route is calculated, it will be announced automatically
+        });
+    } else {
+        updateVoiceStatus('📍 Tujuan ditetapkan: ' + name);
+        speakText(`Tujuan ditetapkan ke ${name}. Tunggu hingga lokasi GPS terdeteksi untuk menghitung rute.`, 'id-ID', true);
+    }
+    
+    // Switch to route tab
+    switchNavbarTab('route');
+}
+
+// Update POI status message
+function updatePOIStatus(message) {
+    // You can add a status element in the POI tab if needed
+    console.log('[POI]', message);
 }

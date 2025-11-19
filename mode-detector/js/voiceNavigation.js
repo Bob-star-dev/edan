@@ -207,39 +207,37 @@ function speakText(text, lang = 'id-ID', priority = 'normal') {
       
       // During navigation, retry more aggressively to allow both voices to speak quickly
       const isNavigating = window.SpeechCoordinator.isNavigating || false;
-      const retryDelay = isNavigating ? 300 : 1000; // Faster retry during navigation (300ms vs 1000ms)
+      const retryDelay = isNavigating ? 200 : 1000; // Much faster retry during navigation (200ms vs 1000ms)
       
-      // Retry after a short delay, but only if speechSynthesis is not speaking
-      setTimeout(() => {
+      // Retry mechanism - lebih agresif saat navigasi aktif
+      let retryCount = 0;
+      const maxRetries = isNavigating ? 10 : 3; // Lebih banyak retry saat navigasi aktif
+      
+      const trySpeak = () => {
+        retryCount++;
         const speechSynthesisSpeaking = (typeof window.speechSynthesis !== 'undefined') && 
                                        window.speechSynthesis.speaking;
+        
+        // Check if we can speak now
         if (!voiceNavigationState.isSpeaking && !speechSynthesisSpeaking) {
-          // Double check with SpeechCoordinator before retrying
           if (window.SpeechCoordinator.requestSpeak(priority)) {
-            console.log('[ModeDetector] ✅ Retry successful - speaking now');
+            console.log('[ModeDetector] ✅ Retry successful (attempt ' + retryCount + ') - speaking now');
             speakText(text, lang, priority);
-          } else {
-            // If still cannot speak and navigation is active, retry again more quickly
-            if (isNavigating && !speechSynthesisSpeaking) {
-              console.log('[ModeDetector] 🔄 Retrying again (navigation mode - quick retry)');
-              setTimeout(() => {
-                if (!voiceNavigationState.isSpeaking && !speechSynthesisSpeaking) {
-                  if (window.SpeechCoordinator.requestSpeak(priority)) {
-                    console.log('[ModeDetector] ✅ Second retry successful - speaking now');
-                    speakText(text, lang, priority);
-                  } else {
-                    console.log('[ModeDetector] ⏸️ Still cannot speak - giving up for this announcement');
-                  }
-                }
-              }, 300); // Quick retry after 300ms
-            } else {
-              console.log('[ModeDetector] ⏸️ Still cannot speak - giving up for this announcement');
-            }
+            return; // Success, stop retrying
           }
-        } else {
-          console.log('[ModeDetector] ⏸️ Still cannot speak - speech active or already speaking');
         }
-      }, retryDelay);
+        
+        // If still cannot speak and haven't exceeded max retries, try again
+        if (retryCount < maxRetries) {
+          const nextDelay = isNavigating ? 200 : 1000;
+          setTimeout(trySpeak, nextDelay);
+        } else {
+          console.log('[ModeDetector] ⏸️ Max retries reached - giving up for this announcement');
+        }
+      };
+      
+      // Start retry after initial delay
+      setTimeout(trySpeak, retryDelay);
       return;
     }
   }

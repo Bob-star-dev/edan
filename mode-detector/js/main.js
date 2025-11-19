@@ -15,6 +15,87 @@ const appState = {
 // DOM Elements (will be initialized in init)
 let elements = {};
 
+// ---------- Focal Length & Distance Calibration Helpers ----------
+const FOCAL_STORAGE_PREFIX = 'senavision_focal_';
+
+function getFocalStorageKey(source = 'webcam') {
+  return `${FOCAL_STORAGE_PREFIX}${source}`;
+}
+
+function loadSavedFocalLength(source = 'webcam') {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const value = localStorage.getItem(getFocalStorageKey(source));
+    return value ? parseFloat(value) : null;
+  } catch (error) {
+    console.warn('[Distance] Unable to read saved focal length:', error);
+    return null;
+  }
+}
+
+function saveFocalLengthForCamera(source = 'webcam', focalLength) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(getFocalStorageKey(source), String(focalLength));
+  } catch (error) {
+    console.warn('[Distance] Unable to save calibrated focal length:', error);
+  }
+}
+
+function getDefaultFocalLength(source = 'webcam') {
+  if (typeof window !== 'undefined' && typeof window.getDefaultFocalLengthForCamera === 'function') {
+    return window.getDefaultFocalLengthForCamera(source);
+  }
+  return (typeof DEFAULT_FOCAL_LENGTH !== 'undefined') ? DEFAULT_FOCAL_LENGTH : 600;
+}
+
+function updateFocalLengthForCamera(source = 'webcam', log = true) {
+  const normalizedSource = (source || 'webcam').toLowerCase();
+  const saved = loadSavedFocalLength(normalizedSource);
+  const fallback = getDefaultFocalLength(normalizedSource);
+  const newFocal = saved || fallback;
+  appState.focalLength = newFocal;
+
+  if (log) {
+    console.log(`[Distance] 📏 Using focal length ${newFocal}px for ${normalizedSource.toUpperCase()}`);
+  }
+
+  // Optional UI indicator (update label to reflect calibration source)
+  if (log) {
+    const statusTextEl = document.getElementById('voice-status-text');
+    if (statusTextEl) {
+      const label = normalizedSource === 'esp32' ? 'ESP32-CAM' : 'Webcam';
+      statusTextEl.textContent = `Aktif · ${label} (${newFocal}px)`;
+    }
+  }
+
+  return newFocal;
+}
+
+function applyCalibratedFocalLength(focalLength, source = null) {
+  if (!focalLength || Number.isNaN(focalLength)) {
+    console.warn('[Distance] Invalid focal length provided for calibration');
+    return;
+  }
+
+  const normalizedSource = (source || (typeof cameraState !== 'undefined' ? cameraState.source : 'webcam') || 'webcam').toLowerCase();
+  const rounded = Math.round(focalLength);
+  appState.focalLength = rounded;
+  saveFocalLengthForCamera(normalizedSource, rounded);
+  console.log(`[Distance] ✅ Calibrated focal length saved: ${rounded}px for ${normalizedSource.toUpperCase()}`);
+  updateFocalLengthForCamera(normalizedSource, true);
+}
+
+// Expose helpers globally for camera module & console usage
+if (typeof window !== 'undefined') {
+  window.updateFocalLengthForCamera = updateFocalLengthForCamera;
+  window.applyCalibratedFocalLength = applyCalibratedFocalLength;
+}
+
+// Initialize focal length based on current camera source (default: webcam)
+const initialCameraSource = (typeof cameraState !== 'undefined' && cameraState.source) ? cameraState.source : 'webcam';
+updateFocalLengthForCamera(initialCameraSource, false);
+
 /**
  * Initialize DOM elements
  */

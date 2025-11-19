@@ -84,6 +84,14 @@
       <span class="tab-icon">🗺️</span>
       <span class="tab-label">Rute</span>
     </button>
+    <button class="navbar-tab" data-tab="directions" onclick="switchNavbarTab('directions')">
+      <span class="tab-icon">🧭</span>
+      <span class="tab-label">Petunjuk</span>
+    </button>
+    <button class="navbar-tab" data-tab="poi" onclick="switchNavbarTab('poi')">
+      <span class="tab-icon">🏪</span>
+      <span class="tab-label">Tempat</span>
+    </button>
     <button class="navbar-tab" data-tab="debug" onclick="switchNavbarTab('debug')">
       <span class="tab-icon">🐛</span>
       <span class="tab-label">Debug</span>
@@ -187,6 +195,53 @@
           </form>
           
           <div id="routeFormStatus" class="route-form-status"></div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Directions Tab Content -->
+    <div id="navbarTabDirections" class="navbar-tab-content">
+      <div class="directions-header">
+        <h3><span class="icon">🧭</span> Petunjuk Arah</h3>
+        <p class="directions-description">Instruksi navigasi rute Anda akan ditampilkan di sini</p>
+      </div>
+      
+      <!-- Routing Directions Container -->
+      <div id="routingDirectionsContainer" class="routing-directions-container">
+        <div class="directions-placeholder">
+          <p>📍 Tetapkan tujuan untuk melihat petunjuk arah</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- POI Tab Content -->
+    <div id="navbarTabPoi" class="navbar-tab-content">
+      <div class="poi-header">
+        <h3><span class="icon">🏪</span> Tempat Terdekat</h3>
+        <p class="poi-description">Cari rumah makan, supermarket, toko elektronik, dan tempat servis di sekitar Anda</p>
+      </div>
+      
+      <div class="poi-controls">
+        <button class="poi-filter-btn active" data-type="restaurant" onclick="searchPOI('restaurant')">
+          🍽️ Rumah Makan
+        </button>
+        <button class="poi-filter-btn" data-type="supermarket" onclick="searchPOI('supermarket')">
+          🛒 Supermarket
+        </button>
+        <button class="poi-filter-btn" data-type="electronics" onclick="searchPOI('electronics')">
+          📱 Elektronik
+        </button>
+        <button class="poi-filter-btn" data-type="service" onclick="searchPOI('service')">
+          🔧 Servis
+        </button>
+        <button class="poi-filter-btn" data-type="all" onclick="searchPOI('all')">
+          📍 Semua
+        </button>
+      </div>
+      
+      <div id="poiListContainer" class="poi-list-container">
+        <div class="poi-placeholder">
+          <p>📍 Klik tombol di atas untuk mencari tempat terdekat</p>
         </div>
       </div>
     </div>

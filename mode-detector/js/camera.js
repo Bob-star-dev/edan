@@ -1002,6 +1002,11 @@ function setCameraSource(source) {
   console.log(`[Camera] 🔄 Switching camera source from ${cameraState.source} to ${source}`);
   cameraState.source = source;
   updateCameraButtons();
+
+  // Update focal length calibration for the newly selected camera
+  if (typeof window !== 'undefined' && typeof window.updateFocalLengthForCamera === 'function') {
+    window.updateFocalLengthForCamera(source, true);
+  }
   
   // If switching to ESP32-CAM, log the DNS
   if (source === 'esp32') {
