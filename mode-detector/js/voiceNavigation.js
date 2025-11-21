@@ -6,20 +6,28 @@
  */
 
 // Voice navigation state
+// BARU: Suara mode detector disembunyikan secara default - hanya suara navigator yang aktif
 const voiceNavigationState = {
-  enabled: true,
+  enabled: false, // Disabled by default - only navigator voice is active
   announcedObjects: new Set(),
   lastAnnounceTime: {},
   minAnnounceInterval: 3000, // 3 detik untuk menghindari spam
   isSpeaking: false,
   distanceMin: 100, // Minimum distance dalam cm
   distanceMax: 150, // Maximum distance dalam cm
-  lastDetectionTime: 0
+  lastDetectionTime: 0,
+  suspendedByCoordinator: false,
+  suspensionDepth: 0,
+  suspensionReason: '',
+  navigatorPriorityActive: false,
+  navigatorPriorityDepth: 0,
+  navigatorPriorityMonitor: null
 };
 
 // Collision warning state (untuk deteksi tabrakan)
+// BARU: Collision warning juga dimatikan - hanya suara navigator yang aktif
 const collisionWarningState = {
-  enabled: true,
+  enabled: false, // Disabled by default - only navigator voice is active
   warningThreshold: 50, // Jarak dalam cm untuk trigger warning
   criticalThreshold: 30, // Jarak dalam cm untuk critical warning
   lastWarningTime: {},
@@ -194,50 +202,91 @@ function getIndonesianVoice() {
  * @param {string} priority - Priority: 'critical' (collision warning), 'normal' (object announcement)
  */
 function speakText(text, lang = 'id-ID', priority = 'normal') {
+  // BARU: Suara mode detector disembunyikan - hanya suara navigator yang aktif
+  // Deteksi object tetap berjalan, tapi tidak ada suara yang dikeluarkan
+  if (!voiceNavigationState.enabled && priority !== 'critical') {
+    console.log('[ModeDetector] 🔇 Voice disabled - only navigator voice is active');
+    return;
+  }
+  
+  // Critical warnings juga dimatikan jika collision warning disabled
+  if (priority === 'critical' && !collisionWarningState.enabled) {
+    console.log('[ModeDetector] 🔇 Collision warning disabled - only navigator voice is active');
+    return;
+  }
+  
   // Check browser support
   if (!('speechSynthesis' in window)) {
     console.warn('[Voice] Speech synthesis not supported by browser');
     return;
   }
 
+  // Jangan ganggu navigator: jika navigator sedang berbicara, hentikan suara object detector (kecuali warning kritis)
+  // TAPI: Jangan block jika navigator belum benar-benar mulai berbicara (hanya check jika sudah speaking)
+  if (priority !== 'critical') {
+    const coordinator = (typeof window !== 'undefined') ? window.SpeechCoordinator : null;
+    if (coordinator) {
+      // Check apakah navigator BENAR-BENAR sedang berbicara (bukan hanya flag)
+      const navigatorActuallySpeaking = coordinator.isNavigationSpeaking && 
+                                       (typeof window.speechSynthesis !== 'undefined') && 
+                                       window.speechSynthesis.speaking;
+      
+      if (navigatorActuallySpeaking) {
+        if (!voiceNavigationState.navigatorPriorityActive) {
+          pauseVoiceNavigation('navigation-priority');
+        }
+        console.log('[ModeDetector] ⏸️ Navigation actually speaking - suppressing object detector voice');
+        return;
+      }
+      
+      // Jika suspended by coordinator tapi navigator tidak benar-benar speaking, biarkan
+      if (voiceNavigationState.suspendedByCoordinator && !navigatorActuallySpeaking) {
+        // Navigator tidak benar-benar speaking, resume jika perlu
+        if (voiceNavigationState.navigatorPriorityActive) {
+          resumeVoiceNavigation('navigation-priority');
+        }
+      }
+    }
+  }
+
   // Use SpeechCoordinator to check if we can speak (coordinate with navigation)
   if (typeof window.SpeechCoordinator !== 'undefined') {
     if (!window.SpeechCoordinator.requestSpeak(priority)) {
-      console.log('[ModeDetector] ⏸️ Speech delayed - waiting for navigation to finish:', text.substring(0, 50));
+      const navigatorSpeaking = !!window.SpeechCoordinator.isNavigationSpeaking;
+      const navigatorActive = navigatorSpeaking || window.SpeechCoordinator.isNavigating;
       
-      // During navigation, retry more aggressively to allow both voices to speak quickly
-      const isNavigating = window.SpeechCoordinator.isNavigating || false;
-      const retryDelay = isNavigating ? 200 : 1000; // Much faster retry during navigation (200ms vs 1000ms)
+      if (priority === 'normal' && navigatorActive) {
+        console.log('[ModeDetector] ⏸️ Navigation priority active - dropping object announcement');
+        if (navigatorActive && !voiceNavigationState.navigatorPriorityActive) {
+          pauseVoiceNavigation('navigation-priority');
+        }
+        return;
+      }
       
-      // Retry mechanism - lebih agresif saat navigasi aktif
+      console.log('[ModeDetector] ⏸️ Speech delayed - retrying for priority:', priority);
       let retryCount = 0;
-      const maxRetries = isNavigating ? 10 : 3; // Lebih banyak retry saat navigasi aktif
+      const maxRetries = (priority === 'critical') ? 10 : 3;
       
       const trySpeak = () => {
         retryCount++;
-        const speechSynthesisSpeaking = (typeof window.speechSynthesis !== 'undefined') && 
-                                       window.speechSynthesis.speaking;
+        const speechSynthesisSpeaking = (typeof window.speechSynthesis !== 'undefined') && window.speechSynthesis.speaking;
         
-        // Check if we can speak now
         if (!voiceNavigationState.isSpeaking && !speechSynthesisSpeaking) {
           if (window.SpeechCoordinator.requestSpeak(priority)) {
-            console.log('[ModeDetector] ✅ Retry successful (attempt ' + retryCount + ') - speaking now');
+            console.log('[ModeDetector] ✅ Retry successful (attempt ' + retryCount + ')');
             speakText(text, lang, priority);
-            return; // Success, stop retrying
+            return;
           }
         }
         
-        // If still cannot speak and haven't exceeded max retries, try again
         if (retryCount < maxRetries) {
-          const nextDelay = isNavigating ? 200 : 1000;
-          setTimeout(trySpeak, nextDelay);
+          setTimeout(trySpeak, 400);
         } else {
-          console.log('[ModeDetector] ⏸️ Max retries reached - giving up for this announcement');
+          console.log('[ModeDetector] ⏸️ Max retries reached for priority:', priority);
         }
       };
       
-      // Start retry after initial delay
-      setTimeout(trySpeak, retryDelay);
+      setTimeout(trySpeak, 400);
       return;
     }
   }
@@ -258,9 +307,36 @@ function speakText(text, lang = 'id-ID', priority = 'normal') {
     }
   }
   
-  // For critical warnings, cancel all speech
+  // For critical warnings, cancel all speech EXCEPT if navigator is speaking
+  // Critical warnings (collision) harus bisa menginterupsi, tapi tetap respect navigator priority
   if (priority === 'critical') {
-    window.speechSynthesis.cancel();
+    const coordinator = (typeof window !== 'undefined') ? window.SpeechCoordinator : null;
+    const speechApi = (typeof window !== 'undefined' && 'speechSynthesis' in window) ? window.speechSynthesis : null;
+    
+    const navigatorActive = coordinator
+      ? (typeof coordinator.isNavigationActive === 'function'
+          ? coordinator.isNavigationActive()
+          : !!coordinator.isNavigationSpeaking)
+      : false;
+    
+    if (!navigatorActive && speechApi && speechApi.speaking) {
+      console.log('[ModeDetector] 🚨 Clearing non-navigation speech before critical warning');
+      speechApi.cancel();
+    } else if (!coordinator && speechApi) {
+      // Tanpa coordinator kita tetap cancel agar warning segera terdengar
+      speechApi.cancel();
+    } else if (navigatorActive) {
+      console.log('[ModeDetector] ⏸️ Critical warning waiting for navigation to finish');
+      if (coordinator && typeof coordinator.markSpeechEnd === 'function') {
+        coordinator.markSpeechEnd('critical');
+      } else if (coordinator) {
+        coordinator.isModeDetectorWarning = false;
+      }
+      setTimeout(() => {
+        speakText(text, lang, priority);
+      }, 400);
+      return;
+    }
   }
 
   // Create utterance
@@ -348,6 +424,11 @@ function announceObjectIfNearby(classId, distance, className) {
     return;
   }
 
+  if (voiceNavigationState.suspendedByCoordinator) {
+    console.log('[Voice] Voice navigation is temporarily suspended by navigator priority');
+    return;
+  }
+
   // Check distance range (100cm - 150cm)
   if (distance < voiceNavigationState.distanceMin || distance > voiceNavigationState.distanceMax) {
     console.log(`[Voice] Object ${className} out of range (${distance.toFixed(1)}cm, required: ${voiceNavigationState.distanceMin}-${voiceNavigationState.distanceMax}cm)`);
@@ -395,6 +476,7 @@ function announceObjectIfNearby(classId, distance, className) {
  */
 function checkCollisionWarnings(detections) {
   if (!collisionWarningState.enabled) return;
+  if (voiceNavigationState.suspendedByCoordinator) return;
   if (!detections || !Array.isArray(detections) || detections.length === 0) return;
 
   const now = Date.now();
@@ -636,6 +718,11 @@ function processDetectionsForVoice(detections) {
     return; // No detections to process
   }
 
+  if (voiceNavigationState.suspendedByCoordinator) {
+    console.log('[Voice] Voice navigation suspended - skipping detections');
+    return;
+  }
+
   // First, check for collision warnings (prioritas tinggi - always check)
   // Collision warning works independently of voice navigation
   checkCollisionWarnings(detections);
@@ -722,6 +809,139 @@ function setVoiceNavigationEnabled(enabled) {
     voiceNavigationState.isSpeaking = false;
   }
   console.log(`[Voice] ${enabled ? '✅ Enabled' : '❌ Disabled'} voice navigation`);
+}
+
+/**
+ * Pause voice navigation temporarily (used when navigation instructions have priority)
+ * @param {string} reason - Reason for the pause (e.g., 'navigation')
+ */
+function pauseVoiceNavigation(reason = 'navigation') {
+  voiceNavigationState.suspensionDepth = Math.max(voiceNavigationState.suspensionDepth || 0, 0) + 1;
+  const isNavigationReason = reason === 'navigation' || reason === 'navigation-priority';
+  if (isNavigationReason) {
+    voiceNavigationState.navigatorPriorityDepth = Math.max(voiceNavigationState.navigatorPriorityDepth || 0, 0) + 1;
+    voiceNavigationState.navigatorPriorityActive = true;
+  }
+  
+  if (!voiceNavigationState.suspendedByCoordinator) {
+    voiceNavigationState.suspendedByCoordinator = true;
+    voiceNavigationState.suspensionReason = reason;
+    console.log(`[Voice] 🔇 Voice navigation paused (${reason})`);
+    
+    // Hanya cancel object detector speech, JANGAN cancel navigator speech!
+    // Check apakah yang sedang berbicara adalah object detector (bukan navigator)
+    if (voiceNavigationState.isSpeaking && 'speechSynthesis' in window) {
+      // Hanya cancel jika object detector yang berbicara
+      // Navigator speech tidak boleh dibatalkan
+      const coordinator = (typeof window !== 'undefined') ? window.SpeechCoordinator : null;
+      const navigatorSpeaking = coordinator ? coordinator.isNavigationSpeaking : false;
+      
+      if (!navigatorSpeaking) {
+        // Bukan navigator yang berbicara, safe to cancel (object detector speech)
+        window.speechSynthesis.cancel();
+        voiceNavigationState.isSpeaking = false;
+        console.log('[Voice] ✅ Canceled object detector speech (not navigator)');
+      } else {
+        // Navigator sedang berbicara, jangan cancel!
+        console.log('[Voice] ⚠️ Navigator speaking - NOT canceling speech');
+        // Tapi tetap set isSpeaking = false untuk object detector
+        voiceNavigationState.isSpeaking = false;
+      }
+    }
+    
+    // Reset collision warning state while paused
+    collisionWarningState.isWarning = false;
+  } else {
+    console.log(`[Voice] ⏳ Voice navigation pause depth increased (${voiceNavigationState.suspensionDepth})`);
+  }
+}
+
+/**
+ * Resume voice navigation after temporary suspension
+ * @param {string} reason - Reason for resume
+ */
+function resumeVoiceNavigation(reason = 'navigation') {
+  if (!voiceNavigationState.suspensionDepth) return;
+  
+  voiceNavigationState.suspensionDepth = Math.max(voiceNavigationState.suspensionDepth - 1, 0);
+  const isNavigationReason = reason === 'navigation' || reason === 'navigation-priority';
+  if (isNavigationReason && voiceNavigationState.navigatorPriorityDepth) {
+    voiceNavigationState.navigatorPriorityDepth = Math.max(voiceNavigationState.navigatorPriorityDepth - 1, 0);
+    if (voiceNavigationState.navigatorPriorityDepth === 0) {
+      voiceNavigationState.navigatorPriorityActive = false;
+    }
+  }
+  
+  if (voiceNavigationState.suspensionDepth === 0 && voiceNavigationState.suspendedByCoordinator) {
+    voiceNavigationState.suspendedByCoordinator = false;
+    voiceNavigationState.suspensionReason = '';
+    console.log(`[Voice] 🔔 Voice navigation resumed (${reason})`);
+  } else if (voiceNavigationState.suspendedByCoordinator) {
+    console.log(`[Voice] ⏳ Waiting to resume voice navigation (depth: ${voiceNavigationState.suspensionDepth})`);
+  }
+}
+
+function isVoiceNavigationSuspended() {
+  return !!voiceNavigationState.suspendedByCoordinator;
+}
+
+function isVoiceNavigationEnabledState() {
+  return !!voiceNavigationState.enabled;
+}
+
+if (typeof window !== 'undefined') {
+  window.setVoiceNavigationEnabled = setVoiceNavigationEnabled;
+  window.pauseVoiceNavigation = pauseVoiceNavigation;
+  window.resumeVoiceNavigation = resumeVoiceNavigation;
+  window.isVoiceNavigationSuspended = isVoiceNavigationSuspended;
+  window.isVoiceNavigationEnabled = isVoiceNavigationEnabledState;
+}
+
+function setupNavigatorPriorityMonitor() {
+  if (typeof window === 'undefined') return;
+  if (voiceNavigationState.navigatorPriorityMonitor) return;
+  
+  voiceNavigationState.navigatorPriorityMonitor = setInterval(() => {
+    const coordinator = window.SpeechCoordinator;
+    if (!coordinator) return;
+    
+    // Check apakah navigator BENAR-BENAR sedang berbicara (bukan hanya flag)
+    const navigatorActuallySpeaking = coordinator.isNavigationSpeaking && 
+                                     (typeof window.speechSynthesis !== 'undefined') && 
+                                     window.speechSynthesis.speaking;
+    
+    if (navigatorActuallySpeaking) {
+      // Navigator benar-benar sedang berbicara - pause object detector
+      if (!voiceNavigationState.navigatorPriorityActive) {
+        pauseVoiceNavigation('navigation-priority');
+        console.log('[ModeDetector] 🔇 Paused by navigator priority monitor (actually speaking)');
+      }
+    } else {
+      // Navigator tidak berbicara - resume object detector jika paused karena navigator
+      if (voiceNavigationState.navigatorPriorityActive && 
+          voiceNavigationState.navigatorPriorityDepth > 0 &&
+          voiceNavigationState.suspensionDepth > 0) {
+        // Tunggu sedikit untuk memastikan navigator benar-benar selesai
+        setTimeout(() => {
+          const stillSpeaking = coordinator.isNavigationSpeaking && 
+                               (typeof window.speechSynthesis !== 'undefined') && 
+                               window.speechSynthesis.speaking;
+          if (!stillSpeaking) {
+            resumeVoiceNavigation('navigation-priority');
+            console.log('[ModeDetector] 🔔 Resumed by navigator priority monitor (navigation finished)');
+          }
+        }, 300); // Delay 300ms untuk memastikan navigator benar-benar selesai
+      }
+    }
+  }, 200); // Check setiap 200ms (lebih sering untuk responsif)
+}
+
+if (typeof window !== 'undefined') {
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setupNavigatorPriorityMonitor();
+  } else {
+    window.addEventListener('DOMContentLoaded', setupNavigatorPriorityMonitor, { once: true });
+  }
 }
 
 /**

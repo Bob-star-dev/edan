@@ -144,8 +144,8 @@ let lastVoiceCommand = '';
 let suppressMicActivationSpeech = false;
 
 // Global Speech Coordinator - Koordinasi suara antara navigasi dan mode detector
-// Prioritas: Collision Warning (mode detector) > Navigation Directions > Object Announcements (mode detector)
-// Mode: Kedua suara bisa berbicara bergantian dengan cepat setelah navigasi dimulai
+// Prioritas terbaru: Navigation Directions > Collision Warning (mode detector) > Object Announcements
+// Mode: Navigator selalu memegang prioritas utama; mode detector otomatis pause & resume
 window.SpeechCoordinator = {
     // State tracking
     isNavigationSpeaking: false,
@@ -154,6 +154,9 @@ window.SpeechCoordinator = {
     isNavigating: false, // Flag untuk menandakan navigasi sedang aktif
     modeDetectorQueue: [], // Queue untuk mode detector announcements
     navigationQueue: [], // Queue untuk navigation announcements
+    modeDetectorVoicePauseDepth: 0,
+    _modeDetectorVoiceFallbackActive: false,
+    _modeDetectorVoiceFallbackPrevEnabled: null,
     
     // Check if navigation is currently speaking
     isNavigationActive: function() {
@@ -183,18 +186,26 @@ window.SpeechCoordinator = {
     // Request permission to speak (returns true if allowed)
     // priority: 'critical' (collision warning), 'high' (navigation), 'normal' (object announcement)
     requestSpeak: function(priority = 'normal') {
-        // Critical priority (collision warning) - always allowed, cancel others
+        // Critical priority (collision warning) - wait for navigation to finish, but interrupt other speech
         if (priority === 'critical') {
             if (this.isNavigationActive()) {
-                console.log('[SpeechCoordinator] 🚨 Critical warning - canceling navigation speech');
+                console.log('[SpeechCoordinator] ⏸️ Critical warning delayed - navigation speaking');
+                return false;
+            }
+            
+            const speechSynthesisActive = (typeof window.speechSynthesis !== 'undefined') && 
+                                          window.speechSynthesis.speaking;
+            if (speechSynthesisActive) {
+                console.log('[SpeechCoordinator] 🚨 Critical warning - canceling non-navigation speech');
                 if (typeof window.speechSynthesis !== 'undefined') {
                     window.speechSynthesis.cancel();
                 }
-                this.isNavigationSpeaking = false;
+                this.isModeDetectorSpeaking = false;
                 if (typeof isSpeaking !== 'undefined') {
                     isSpeaking = false;
                 }
             }
+            
             this.isModeDetectorWarning = true;
             return true;
         }
@@ -216,73 +227,57 @@ window.SpeechCoordinator = {
                     this.isModeDetectorWarning = false;
                 }
             }
-            // Navigation can always speak (can interrupt normal mode detector speech)
-            // Cancel any normal mode detector speech if needed
+            
+            // Navigation HARUS bisa interrupt mode detector (prioritas tertinggi setelah critical)
+            // Cancel any mode detector speech immediately
             if (this.isModeDetectorSpeaking && !this.isModeDetectorWarning) {
-                // Check if mode detector is actually speaking
                 const actuallySpeaking = (typeof window.speechSynthesis !== 'undefined') && 
                                         window.speechSynthesis.speaking;
                 if (actuallySpeaking) {
-                    console.log('[SpeechCoordinator] 🔄 Navigation interrupting normal mode detector speech');
+                    console.log('[SpeechCoordinator] 🚨 Navigation FORCE interrupting mode detector speech');
                     if (typeof window.speechSynthesis !== 'undefined') {
                         window.speechSynthesis.cancel();
                     }
                 }
                 this.isModeDetectorSpeaking = false;
             }
+            
+            // Set navigation state BEFORE allowing speech
             this.isNavigationSpeaking = true;
-            console.log('[SpeechCoordinator] ✅ Navigation speech allowed');
+            if (typeof isSpeaking !== 'undefined') {
+                isSpeaking = true;
+            }
+            
+            console.log('[SpeechCoordinator] ✅ Navigation speech allowed (HIGH PRIORITY)');
             return true;
         }
         
-        // Normal priority (object announcements) - can speak immediately if navigation not speaking
-        // During navigation, mode detector can speak right after navigation finishes
+        // Normal priority (object announcements) - MUST wait for navigation
+        // Navigation has absolute priority over object detector
         if (priority === 'normal') {
             // Check if speechSynthesis is actually speaking
             const speechSynthesisSpeaking = (typeof window.speechSynthesis !== 'undefined') && 
                                            window.speechSynthesis.speaking;
             
-            // CRITICAL: Saat navigasi aktif, mode detector HARUS bisa berbicara
-            // Hanya tunggu jika navigasi benar-benar sedang berbicara SAAT INI
+            // PRIORITAS: Navigator selalu lebih penting dari object detector
+            // Object detector HARUS menunggu jika navigator sedang/sedang akan berbicara
+            if (this.isNavigationSpeaking || this.isNavigationActive()) {
+                console.log('[SpeechCoordinator] ⏸️ Mode detector BLOCKED - navigation has priority');
+                return false; // Object detector harus menunggu
+            }
+            
+            // Jika navigasi aktif tapi tidak berbicara, tetap tunggu sebentar
+            // untuk memastikan navigator tidak akan berbicara
             if (this.isNavigating) {
-                // Jika tidak ada speech aktif, mode detector bisa langsung berbicara
-                if (!speechSynthesisSpeaking) {
-                    // Reset stale states
-                    if (this.isNavigationSpeaking) {
-                        console.log('[SpeechCoordinator] 🔄 Navigation state is stale - resetting');
-                        this.isNavigationSpeaking = false;
-                        if (typeof isSpeaking !== 'undefined') {
-                            isSpeaking = false;
-                        }
-                    }
-                    if (this.isModeDetectorWarning && !speechSynthesisSpeaking) {
-                        console.log('[SpeechCoordinator] 🔄 Warning state is stale - resetting');
-                        this.isModeDetectorWarning = false;
-                    }
-                    // Mode detector bisa langsung berbicara
-                    this.isModeDetectorSpeaking = true;
-                    console.log('[SpeechCoordinator] ✅ Mode detector speech allowed (navigation active, no speech)');
-                    return true;
-                }
-                
-                // Jika ada speech aktif, cek apakah itu navigasi atau mode detector
                 if (speechSynthesisSpeaking) {
-                    // Jika navigasi sedang berbicara, mode detector harus menunggu
-                    if (this.isNavigationActive() && !this.isModeDetectorWarning) {
-                        console.log('[SpeechCoordinator] ⏸️ Mode detector waiting - navigation speaking (will speak after)');
-                        return false; // Mode detector akan retry setelah navigasi selesai
-                    }
-                    // Jika warning aktif, tunggu warning selesai
-                    if (this.isModeDetectorWarning) {
-                        console.log('[SpeechCoordinator] ⏸️ Mode detector waiting - critical warning active');
-                        return false;
-                    }
-                    // Jika mode detector sendiri yang berbicara, tidak perlu berbicara lagi
-                    if (this.isModeDetectorSpeaking) {
-                        console.log('[SpeechCoordinator] ⏸️ Mode detector already speaking');
-                        return false;
-                    }
+                    // Ada yang berbicara, tunggu
+                    console.log('[SpeechCoordinator] ⏸️ Mode detector waiting - speech active during navigation');
+                    return false;
                 }
+                // Tidak ada yang berbicara, tapi navigasi aktif
+                // Tunggu sedikit untuk memastikan navigator tidak akan berbicara
+                console.log('[SpeechCoordinator] ⏸️ Mode detector waiting - navigation mode active');
+                return false;
             } else {
                 // Saat navigasi TIDAK aktif, logika normal
                 if (!speechSynthesisSpeaking) {
@@ -355,6 +350,7 @@ window.SpeechCoordinator = {
                     this.processQueues();
                 }, 100); // Small delay to ensure speechSynthesis is ready
             }
+            this.handleNavigationSpeechEnd();
         } else if (priority === 'normal') {
             this.isModeDetectorSpeaking = false;
             console.log('[SpeechCoordinator] ✅ Mode detector speech ended');
@@ -411,6 +407,9 @@ window.SpeechCoordinator = {
         if (typeof isSpeaking !== 'undefined') {
             isSpeaking = false;
         }
+        while (this.modeDetectorVoicePauseDepth > 0) {
+            this.resumeModeDetectorVoice('cancel');
+        }
         console.log('[SpeechCoordinator] 🛑 All speech canceled');
     },
     
@@ -422,7 +421,64 @@ window.SpeechCoordinator = {
         if (typeof isSpeaking !== 'undefined') {
             isSpeaking = false;
         }
+        while (this.modeDetectorVoicePauseDepth > 0) {
+            this.resumeModeDetectorVoice('reset');
+        }
         console.log('[SpeechCoordinator] 🔄 All states reset');
+    },
+    
+    pauseModeDetectorVoice: function(reason = 'navigation') {
+        this.modeDetectorVoicePauseDepth = Math.max(this.modeDetectorVoicePauseDepth || 0, 0);
+        if (this.modeDetectorVoicePauseDepth === 0) {
+            if (typeof window.pauseVoiceNavigation === 'function') {
+                window.pauseVoiceNavigation(reason);
+                this._modeDetectorVoiceFallbackActive = false;
+                this._modeDetectorVoiceFallbackPrevEnabled = null;
+            } else if (typeof window.setVoiceNavigationEnabled === 'function') {
+                const prevEnabled = (typeof window.isVoiceNavigationEnabled === 'function')
+                    ? window.isVoiceNavigationEnabled()
+                    : true;
+                if (prevEnabled) {
+                    window.setVoiceNavigationEnabled(false);
+                    this._modeDetectorVoiceFallbackActive = true;
+                } else {
+                    this._modeDetectorVoiceFallbackActive = false;
+                }
+                this._modeDetectorVoiceFallbackPrevEnabled = prevEnabled;
+            }
+        }
+        this.modeDetectorVoicePauseDepth++;
+        console.log('[SpeechCoordinator] 🔇 Mode detector voice paused (depth:', this.modeDetectorVoicePauseDepth, ')');
+    },
+    
+    resumeModeDetectorVoice: function(reason = 'navigation') {
+        if (!this.modeDetectorVoicePauseDepth) return;
+        this.modeDetectorVoicePauseDepth = Math.max(this.modeDetectorVoicePauseDepth - 1, 0);
+        
+        if (this.modeDetectorVoicePauseDepth === 0) {
+            if (typeof window.resumeVoiceNavigation === 'function') {
+                window.resumeVoiceNavigation(reason);
+            } else if (this._modeDetectorVoiceFallbackActive && typeof window.setVoiceNavigationEnabled === 'function') {
+                if (this._modeDetectorVoiceFallbackPrevEnabled) {
+                    window.setVoiceNavigationEnabled(true);
+                }
+            }
+            this._modeDetectorVoiceFallbackActive = false;
+             this._modeDetectorVoiceFallbackPrevEnabled = null;
+            console.log('[SpeechCoordinator] 🔔 Mode detector voice resumed');
+        } else {
+            console.log('[SpeechCoordinator] ⏳ Mode detector voice pause depth decreased (depth:', this.modeDetectorVoicePauseDepth, ')');
+        }
+    },
+    
+    handleNavigationSpeechStart: function(reason = 'navigation') {
+        this.pauseModeDetectorVoice(reason);
+    },
+    
+    handleNavigationSpeechEnd: function(reason = 'navigation') {
+        if (this.modeDetectorVoicePauseDepth > 0) {
+            this.resumeModeDetectorVoice(reason);
+        }
     },
     
     // Get current state for debugging
@@ -1260,12 +1316,19 @@ function forceUpdateRoute(userLatLng) {
         isNavigating = false; // Not navigating yet - wait for user command
         shouldAnnounceRoute = false; // Don't auto-announce route yet
         
+        // CRITICAL: Always populate lastRouteSummarySpeech when route is found
         if (routeData && routeData.summary) {
             const sum = routeData.summary;
             const destinationName = (pendingRouteAnnouncement && pendingRouteAnnouncement.endName) || currentDestinationName || 'tujuan Anda';
             const distanceSpeech = formatDistanceForSummary(sum.totalDistance);
             const durationSpeech = formatDurationSeconds(sum.totalTime);
             lastRouteSummarySpeech = 'Rute menuju ' + destinationName + '. Jarak ' + distanceSpeech + ', perkiraan waktu ' + durationSpeech + '.';
+            console.log('[Navigation] ✅ lastRouteSummarySpeech populated:', lastRouteSummarySpeech);
+        } else {
+            // Fallback: generate basic announcement even if summary is missing
+            const destinationName = (pendingRouteAnnouncement && pendingRouteAnnouncement.endName) || currentDestinationName || 'tujuan Anda';
+            lastRouteSummarySpeech = 'Rute menuju ' + destinationName + '. Navigasi siap.';
+            console.log('[Navigation] ⚠️ Route summary missing - using fallback:', lastRouteSummarySpeech);
         }
         
         if (routeData && routeData.instructions && routeData.instructions.length) {
@@ -1591,13 +1654,20 @@ function updateRoute(userLatLng) {
                             isNavigating = false; // Not navigating yet - wait for user command
                             shouldAnnounceRoute = false; // Don't auto-announce route yet
                             
-                            if (routeData && routeData.summary) {
-                                const sum = routeData.summary;
-                                const destinationName = (pendingRouteAnnouncement && pendingRouteAnnouncement.endName) || currentDestinationName || 'tujuan Anda';
-                                const distanceSpeech = formatDistanceForSummary(sum.totalDistance);
-                                const durationSpeech = formatDurationSeconds(sum.totalTime);
-                                lastRouteSummarySpeech = 'Rute menuju ' + destinationName + '. Jarak ' + distanceSpeech + ', perkiraan waktu ' + durationSpeech + '.';
-                            }
+        // CRITICAL: Always populate lastRouteSummarySpeech when route is found
+        if (routeData && routeData.summary) {
+            const sum = routeData.summary;
+            const destinationName = (pendingRouteAnnouncement && pendingRouteAnnouncement.endName) || currentDestinationName || 'tujuan Anda';
+            const distanceSpeech = formatDistanceForSummary(sum.totalDistance);
+            const durationSpeech = formatDurationSeconds(sum.totalTime);
+            lastRouteSummarySpeech = 'Rute menuju ' + destinationName + '. Jarak ' + distanceSpeech + ', perkiraan waktu ' + durationSpeech + '.';
+            console.log('[Navigation] ✅ lastRouteSummarySpeech populated:', lastRouteSummarySpeech);
+        } else {
+            // Fallback: generate basic announcement even if summary is missing
+            const destinationName = (pendingRouteAnnouncement && pendingRouteAnnouncement.endName) || currentDestinationName || 'tujuan Anda';
+            lastRouteSummarySpeech = 'Rute menuju ' + destinationName + '. Navigasi siap.';
+            console.log('[Navigation] ⚠️ Route summary missing - using fallback:', lastRouteSummarySpeech);
+        }
                             
                             if (routeData && routeData.instructions && routeData.instructions.length) {
                                 const firstMeaningfulInstruction = routeData.instructions.find(function(inst) {
@@ -3874,140 +3944,103 @@ function startTurnByTurnNavigation() {
         console.log('📍 Map focused on user location at start of navigation:', userLatLng.lat.toFixed(6), userLatLng.lng.toFixed(6));
     }
     
-    // Announce start of navigation and read full route details
-    speakText('Memulai navigasi.', 'id-ID', true, function() {
-        // Announce full route summary (distance, time, and directions)
-        announceRouteDirections(true, function() {
-            // After route announced, announce first few instructions
-            announceFirstDirections(function() {
-                // MODIFIED: Setelah semua announcement selesai, restart mikrofon untuk menerima command "Mode 2"
-                // Tunggu hingga semua announcement benar-benar selesai (termasuk queue)
-                // Kita perlu menunggu beberapa kali untuk memastikan queue benar-benar kosong
-                let consecutiveEmptyChecks = 0;
-                const requiredEmptyChecks = 3; // Butuh 3 check berturut-turut yang kosong untuk memastikan benar-benar selesai
-                
-                const waitForAllSpeechComplete = function(checkCount = 0) {
-                    const maxChecks = 120; // Maximum 60 seconds (120 * 500ms)
-                    
-                    // Check if speech synthesis is still speaking OR if queue is not empty
-                    const speechSynthesisSpeaking = (typeof window.speechSynthesis !== 'undefined') ? window.speechSynthesis.speaking : false;
-                    const queueLength = (typeof announcementQueue !== 'undefined') ? announcementQueue.length : 0;
-                    const queueEmpty = queueLength === 0;
-                    const isSpeakingVar = (typeof isSpeaking !== 'undefined') ? isSpeaking : false;
-                    const pendingUtterances = (typeof window.speechSynthesis !== 'undefined' && window.speechSynthesis.pending !== undefined) ? window.speechSynthesis.pending : false;
-                    
-                    // Check if everything is really done
-                    const allDone = !speechSynthesisSpeaking && queueEmpty && !isSpeakingVar && !pendingUtterances;
-                    
-                    if (allDone) {
-                        consecutiveEmptyChecks++;
-                        console.log('✅ Speech appears complete (check ' + consecutiveEmptyChecks + '/' + requiredEmptyChecks + ')', {
-                            speechSynthesisSpeaking: speechSynthesisSpeaking,
-                            queueLength: queueLength,
-                            isSpeaking: isSpeakingVar,
-                            pendingUtterances: pendingUtterances
-                        });
-                        
-                        // Need multiple consecutive checks to be sure
-                        if (consecutiveEmptyChecks >= requiredEmptyChecks) {
-                            console.log('✅✅✅ All speech confirmed complete after ' + consecutiveEmptyChecks + ' consecutive empty checks');
-                            restartMicrophoneAfterNavigasi();
-                            return;
-                        }
-                    } else {
-                        // Reset counter if something is still active
-                        consecutiveEmptyChecks = 0;
-                        console.log('⏳ Waiting for all speech to complete...', {
-                            check: checkCount + '/' + maxChecks,
-                            speechSynthesisSpeaking: speechSynthesisSpeaking,
-                            queueLength: queueLength,
-                            isSpeaking: isSpeakingVar,
-                            pendingUtterances: pendingUtterances
-                        });
-                    }
-                    
-                    // Continue checking
-                    if (checkCount < maxChecks) {
-                        setTimeout(function() {
-                            waitForAllSpeechComplete(checkCount + 1);
-                        }, 500);
-                    } else {
-                        console.warn('⚠️ Speech check timeout after ' + maxChecks + ' checks - proceeding anyway');
-                        console.warn('⚠️ Final state:', {
-                            speechSynthesisSpeaking: speechSynthesisSpeaking,
-                            queueLength: queueLength,
-                            isSpeaking: isSpeakingVar,
-                            pendingUtterances: pendingUtterances
-                        });
-                        // Even on timeout, try to restart microphone
-                        restartMicrophoneAfterNavigasi();
-                    }
-                };
-                
-                // Helper function to restart microphone
-                function restartMicrophoneAfterNavigasi() {
-                    console.log('🔄 Attempting to restart microphone after all announcements complete...');
+    // CRITICAL FIX: Langsung announce tanpa test - bypass semua logika kompleks
+    console.log('[Navigation] 🎯 Starting navigation announcement directly...');
+    console.log('[Navigation] 📊 Route state:', {
+        route: !!route,
+        lastRouteSummarySpeech: lastRouteSummarySpeech,
+        currentDestinationName: currentDestinationName
+    });
+    
+    if (!('speechSynthesis' in window)) {
+        console.error('[Navigation] ❌ speechSynthesis NOT available');
+        updateVoiceStatus('⚠️ Browser tidak mendukung Text-to-Speech');
+        return;
+    }
+    
+    // CRITICAL: Request permission from SpeechCoordinator BEFORE canceling
+    if (typeof window.SpeechCoordinator !== 'undefined') {
+        const canSpeak = window.SpeechCoordinator.requestSpeak('high');
+        if (!canSpeak) {
+            console.log('[Navigation] ⏸️ SpeechCoordinator blocked - will retry in 500ms');
+            setTimeout(function() {
+                startTurnByTurnNavigation();
+            }, 500);
+            return;
+        }
+    }
+    
+    // Cancel apapun yang sedang berbicara
+    window.speechSynthesis.cancel();
+    
+    // Small delay to ensure cancel is complete
+    setTimeout(function() {
+        // Langsung announce tanpa delay
+        console.log('[Navigation] 📢 Calling speakText for "Memulai navigasi"');
+        speakText('Memulai navigasi.', 'id-ID', true, function() {
+            console.log('[Navigation] ✅ "Memulai navigasi" completed, calling announceRouteDirections');
+            // Announce full route summary (distance, time, and directions)
+            announceRouteDirections(true, function() {
+                console.log('[Navigation] ✅ announceRouteDirections completed, calling announceFirstDirections');
+                // After route announced, announce first few instructions
+                announceFirstDirections(function() {
+                    console.log('[Navigation] ✅ announceFirstDirections completed');
+                    restartMicrophoneAfterNavigasi();
+                });
+            });
+        });
+    }, 200);
+    
+    // Helper function to restart microphone
+    function restartMicrophoneAfterNavigasi() {
+        console.log('🔄 Attempting to restart microphone after all announcements complete...');
+        setTimeout(function() {
+            if (recognition && !isListening) {
+                try {
+                    recognition._stopped = false;
+                    recognition.start();
+                    isListening = true;
+                    console.log('✅✅✅ Microphone restarted after "Navigasi" - listening for "Mode 2" command');
+                    updateVoiceStatus('🎤 Mikrofon aktif - Ucapkan "Mode 2" untuk deteksi objek');
+                    recognition._waitingForMode2 = true;
+                } catch (error) {
+                    console.error('❌ Failed to restart microphone after Navigasi:', error);
                     setTimeout(function() {
                         if (recognition && !isListening) {
                             try {
-                                recognition._stopped = false; // Clear stopped flag agar mikrofon bisa menerima command
+                                recognition._stopped = false;
                                 recognition.start();
                                 isListening = true;
-                                console.log('✅✅✅ Microphone restarted after "Navigasi" - listening for "Mode 2" command');
-                                updateVoiceStatus('🎤 Mikrofon aktif - Ucapkan "Mode 2" untuk deteksi objek');
-                                
-                                // Set flag bahwa mikrofon siap menerima "Mode 2"
                                 recognition._waitingForMode2 = true;
-                            } catch (error) {
-                                console.error('❌ Failed to restart microphone after Navigasi:', error);
-                                // Retry setelah delay lebih lama
-                                setTimeout(function() {
-                                    if (recognition && !isListening) {
-                                        try {
-                                            recognition._stopped = false;
-                                            recognition.start();
-                                            isListening = true;
-                                            recognition._waitingForMode2 = true;
-                                            console.log('✅✅✅ Microphone restarted (retry) - listening for "Mode 2" command');
-                                            updateVoiceStatus('🎤 Mikrofon aktif - Ucapkan "Mode 2" untuk deteksi objek');
-                                        } catch (retryError) {
-                                            console.error('❌ Failed to restart microphone (retry):', retryError);
-                                            recognition._stopped = true;
-                                            updateVoiceStatus('📍 Navigasi aktif - Ucapkan "Halo" untuk aktivasi mikrofon');
-                                        }
-                                    }
-                                }, 2000);
-                            }
-                        } else {
-                            console.warn('⚠️ Cannot restart microphone:', {
-                                recognition: !!recognition,
-                                isListening: isListening
-                            });
-                            // If microphone is already listening, just update status
-                            if (isListening && recognition) {
-                                recognition._waitingForMode2 = true;
+                                console.log('✅✅✅ Microphone restarted (retry) - listening for "Mode 2" command');
                                 updateVoiceStatus('🎤 Mikrofon aktif - Ucapkan "Mode 2" untuk deteksi objek');
-                                console.log('✅ Microphone already listening - updated status for "Mode 2"');
-                            } else if (!recognition) {
-                                console.error('❌ Recognition object not available');
+                            } catch (retryError) {
+                                console.error('❌ Failed to restart microphone (retry):', retryError);
+                                recognition._stopped = true;
                                 updateVoiceStatus('📍 Navigasi aktif - Ucapkan "Halo" untuk aktivasi mikrofon');
                             }
                         }
-                    }, 1000); // Delay 1 second setelah semua speech selesai untuk memastikan
+                    }, 2000);
                 }
-                
-                // Start waiting for all speech to complete (wait 2 seconds first to let callback complete)
-                console.log('⏳ Starting wait for all speech to complete (will check queue and speechSynthesis)...');
-                setTimeout(function() {
-                    waitForAllSpeechComplete();
-                }, 2000);
-            });
-            
-            // Start turn-by-turn navigation
-            isNavigating = true;
-        });
-    });
+            } else {
+                console.warn('⚠️ Cannot restart microphone:', {
+                    recognition: !!recognition,
+                    isListening: isListening
+                });
+                if (isListening && recognition) {
+                    recognition._waitingForMode2 = true;
+                    updateVoiceStatus('🎤 Mikrofon aktif - Ucapkan "Mode 2" untuk deteksi objek');
+                    console.log('✅ Microphone already listening - updated status for "Mode 2"');
+                } else if (!recognition) {
+                    console.error('❌ Recognition object not available');
+                    updateVoiceStatus('📍 Navigasi aktif - Ucapkan "Halo" untuk aktivasi mikrofon');
+                }
+            }
+        }, 1000);
+    }
     
+    // Start turn-by-turn navigation
+    isNavigating = true;
     updateVoiceStatus('📍 Memulai navigasi...');
 }
 
@@ -4699,127 +4732,141 @@ function toggleVoiceDirections() {
 }
 
 // Speak text using browser's built-in Web Speech API (works offline, no CORS issues)
+// CRITICAL FIX: Versi yang sangat sederhana - langsung speak tanpa logika kompleks
 function speakText(text, lang = 'id-ID', priority = false, onComplete = null) {
+    // Validasi dasar
+    if (!text || typeof text !== 'string' || text.trim() === '') {
+        console.warn('[Navigation] ⚠️ Empty text');
+        if (onComplete) setTimeout(onComplete, 100);
+        return;
+    }
+    
     if (!('speechSynthesis' in window)) {
-        console.error('Browser tidak mendukung Text-to-Speech');
+        console.error('[Navigation] ❌ speechSynthesis not available');
+        if (onComplete) setTimeout(onComplete, 100);
         return;
     }
     
-    // Skip if this exact message was just spoken (prevent duplicate announcements)
+    // Skip duplicate (kecuali priority)
+    // CRITICAL: Jika priority=true, jangan skip meskipun duplicate
     if (text === lastSpokenMessage && !priority) {
-        console.log('⏭️ Duplicate message skipped:', text);
+        console.log('[Navigation] ⏭️ Duplicate skipped (no priority)');
+        if (onComplete) setTimeout(onComplete, 100);
         return;
     }
     
-    // Use SpeechCoordinator to check if we can speak (if available)
-    // If SpeechCoordinator not available, allow navigation to speak directly
-    let canSpeak = true;
-    if (typeof window.SpeechCoordinator !== 'undefined') {
-        const speechPriority = 'high'; // Navigation always high priority
-        canSpeak = window.SpeechCoordinator.requestSpeak(speechPriority);
-        
-        if (!canSpeak) {
-            // If cannot speak now (only if critical warning is active), queue it
-            // But if it's just normal mode detector speech, we can interrupt it
-            if (window.SpeechCoordinator.isModeDetectorWarning) {
-                announcementQueue.push({ text, lang, onComplete, priority });
-                console.log('[Navigation] ⏸️ Speech queued - waiting for critical warning to finish:', text.substring(0, 50));
-                return;
-            } else {
-                // If it's just normal mode detector speech, allow navigation to interrupt
-                console.log('[Navigation] 🔄 Navigation interrupting normal mode detector speech');
-                if (typeof window.speechSynthesis !== 'undefined') {
-                    window.speechSynthesis.cancel();
-                }
-                window.SpeechCoordinator.isModeDetectorSpeaking = false;
-                window.SpeechCoordinator.isNavigationSpeaking = true;
-                canSpeak = true; // Allow navigation to proceed
-            }
-        }
-    } else {
-        // SpeechCoordinator not available - use old behavior (allow navigation to speak)
-        console.log('[Navigation] ⚠️ SpeechCoordinator not available - using direct speech');
+    // CRITICAL: Jika priority=true, clear lastSpokenMessage untuk memastikan announcement berbunyi
+    if (priority) {
+        const oldMessage = lastSpokenMessage;
+        lastSpokenMessage = '';
+        console.log('[Navigation] ✅ Priority announcement - cleared lastSpokenMessage:', oldMessage);
     }
     
-    // If there's ongoing speech and this is priority, cancel current speech
-    if (isSpeaking && priority) {
+    const preview = text.length > 100 ? text.substring(0, 100) + '...' : text;
+    console.log('[Navigation] 🎯 speakText called:', preview);
+    console.log('[Navigation] 🔍 speakText params:', {
+        textLength: text.length,
+        lang: lang,
+        priority: priority,
+        hasOnComplete: !!onComplete,
+        lastSpokenMessage: lastSpokenMessage
+    });
+    console.log('[Navigation] 📊 Current state:', {
+        isSpeaking: isSpeaking,
+        speechSynthesisSpeaking: window.speechSynthesis.speaking,
+        speechSynthesisPending: window.speechSynthesis.pending,
+        voiceDirectionsEnabled: voiceDirectionsEnabled
+    });
+    
+    // CRITICAL: Cancel SEMUA yang sedang berbicara - navigator HARUS prioritas
+    if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+        console.log('[Navigation] 🔄 Canceling ALL existing speech...');
         window.speechSynthesis.cancel();
-    }
-    
-    // Cancel any pending speech (except critical warnings)
-    if (typeof window.SpeechCoordinator !== 'undefined') {
-        if (!window.SpeechCoordinator.isModeDetectorWarning) {
-            window.speechSynthesis.cancel();
-        }
+        // Wait untuk cancel benar-benar selesai
+        setTimeout(() => {
+            _doSpeak(text, lang, priority, onComplete, preview);
+        }, 300);
     } else {
-        // Fallback: cancel all speech if SpeechCoordinator not available
-        window.speechSynthesis.cancel();
+        _doSpeak(text, lang, priority, onComplete, preview);
     }
+}
+
+// Helper function untuk benar-benar melakukan speak
+function _doSpeak(text, lang, priority, onComplete, preview) {
+    console.log('[Navigation] 🎤 _doSpeak called:', preview);
     
-    // Wait a bit before creating new utterance
-    setTimeout(function() {
-        // Create speech utterance
-        const utterance = new SpeechSynthesisUtterance(text);
-        
-        // Try to set language, but fallback if not available
-        try {
-            utterance.lang = lang;
-        } catch(e) {
-            utterance.lang = 'en-US'; // Fallback to English
-        }
-        
-        utterance.rate = 0.85; // Slower for clarity
-        utterance.pitch = 1;
-        utterance.volume = 1;
-        
-        // Add event handlers
-        utterance.onstart = function() {
-            markNavigatorSpeechStart();
-            isSpeaking = true;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang;
+    utterance.rate = 0.85;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    
+    // Event handlers dengan logging detail
+    utterance.onstart = function() {
+        console.log('[Navigation] 🔊🔊🔊 Speech STARTED:', preview);
+        console.log('[Navigation] 📊 Speech state after start:', {
+            isSpeaking: true,
+            speechSynthesisSpeaking: window.speechSynthesis.speaking,
+            speechSynthesisPending: window.speechSynthesis.pending
+        });
+        isSpeaking = true;
+        lastSpokenMessage = text;
+        if (typeof window.SpeechCoordinator !== 'undefined') {
             window.SpeechCoordinator.isNavigationSpeaking = true;
-            lastSpokenMessage = text; // Remember this message
-            // Only log short preview to avoid cluttering console
-            const preview = text.length > 100 ? text.substring(0, 100) + '...' : text;
-            console.log('[Navigation] 🔊 Speech started:', preview);
-        };
-        utterance.onerror = function(event) {
-            markNavigatorSpeechEnd();
-            window.SpeechCoordinator.markSpeechEnd('high');
-            if (event.error !== 'interrupted') {
-                console.error('Speech error:', event.error);
-            }
-            isSpeaking = false;
-            // Process next in queue
-            processAnnouncementQueue();
-        };
-        utterance.onend = function() {
-            markNavigatorSpeechEnd();
-            window.SpeechCoordinator.markSpeechEnd('high');
-            console.log('[Navigation] ✅ Speech ended');
-            isSpeaking = false;
-            
-            // Clear lastSpokenMessage after 5 seconds to allow same message again later
-            setTimeout(function() {
-                lastSpokenMessage = '';
-            }, 5000);
-            
-            // Call onComplete callback if provided
-            if (onComplete) {
-                setTimeout(onComplete, 100);
-            }
-            
-            // Process next in queue
-            processAnnouncementQueue();
-        };
-        
-        // Speak
-        try {
-            window.speechSynthesis.speak(utterance);
-        } catch(error) {
-            console.error('Error speaking:', error);
-            isSpeaking = false;
         }
-    }, 100);
+        markNavigatorSpeechStart();
+    };
+    
+    utterance.onend = function() {
+        console.log('[Navigation] ✅✅✅ Speech ENDED:', preview);
+        isSpeaking = false;
+        if (typeof window.SpeechCoordinator !== 'undefined') {
+            window.SpeechCoordinator.markSpeechEnd('high');
+        }
+        markNavigatorSpeechEnd();
+        setTimeout(() => { lastSpokenMessage = ''; }, 5000);
+        if (onComplete) {
+            console.log('[Navigation] 📞 Calling onComplete callback');
+            setTimeout(onComplete, 100);
+        }
+        processAnnouncementQueue();
+    };
+    
+    utterance.onerror = function(event) {
+        console.error('[Navigation] ❌❌❌ Speech ERROR:', {
+            error: event.error,
+            type: event.type,
+            charIndex: event.charIndex,
+            charLength: event.charLength,
+            elapsedTime: event.elapsedTime,
+            name: event.name
+        });
+        isSpeaking = false;
+        if (typeof window.SpeechCoordinator !== 'undefined') {
+            window.SpeechCoordinator.markSpeechEnd('high');
+        }
+        markNavigatorSpeechEnd();
+        if (onComplete) setTimeout(onComplete, 100);
+        processAnnouncementQueue();
+    };
+    
+    // CRITICAL: Langsung speak tanpa pengecekan lagi
+    try {
+        console.log('[Navigation] 🎯 Calling window.speechSynthesis.speak() NOW...');
+        window.speechSynthesis.speak(utterance);
+        console.log('[Navigation] ✅✅✅ window.speechSynthesis.speak() CALLED');
+        
+        // Double check setelah 100ms
+        setTimeout(() => {
+            if (!window.speechSynthesis.speaking && !isSpeaking) {
+                console.warn('[Navigation] ⚠️ Speech did not start - may need user interaction');
+            }
+        }, 100);
+    } catch(error) {
+        console.error('[Navigation] ❌ Exception in _doSpeak:', error);
+        isSpeaking = false;
+        if (onComplete) setTimeout(onComplete, 100);
+    }
 }
 
 // Process announcement queue
@@ -4830,99 +4877,167 @@ function processAnnouncementQueue() {
     }
 }
 
+// CRITICAL: Test function untuk debugging - bisa dipanggil dari console
+// Usage: testNavigationVoice("Halo, ini adalah test suara navigasi")
+window.testNavigationVoice = function(text = 'Test suara navigasi') {
+    console.log('[Test] 🧪 Testing navigation voice with text:', text);
+    console.log('[Test] 📊 speechSynthesis available:', 'speechSynthesis' in window);
+    if ('speechSynthesis' in window) {
+        console.log('[Test] 📊 Current state:', {
+            speaking: window.speechSynthesis.speaking,
+            pending: window.speechSynthesis.pending,
+            paused: window.speechSynthesis.paused
+        });
+    }
+    speakText(text, 'id-ID', true, function() {
+        console.log('[Test] ✅ Test completed');
+    });
+};
+
 // Announce detailed route directions like Google Maps/Assistant
 function announceRouteDirections(priority = false, onComplete = null) {
     if (!voiceDirectionsEnabled) {
+        console.log('[Navigation] ⚠️ Voice directions disabled');
         if (onComplete) onComplete();
         return;
     }
     
-    // Find the routing control container
-    const routingContainer = document.querySelector('.leaflet-routing-alternatives-container');
-    if (!routingContainer) {
-        if (lastRouteSummarySpeech) {
-            speakText(lastRouteSummarySpeech, 'id-ID', priority, function() {
-                if (onComplete) onComplete();
-            });
-        } else if (onComplete) {
-            onComplete();
-        }
-        return;
-    }
-    
-    // Get the first (active) route
-    const activeRoute = routingContainer.querySelector('.leaflet-routing-alt:not(.leaflet-routing-alt-minimized)');
-    if (!activeRoute) {
-        if (lastRouteSummarySpeech) {
-            speakText(lastRouteSummarySpeech, 'id-ID', priority, function() {
-                if (onComplete) onComplete();
-            });
-        } else if (onComplete) {
-            onComplete();
-        }
-        return;
-    }
-    
-    // Get h2 (nama jalan) and h3 (jarak dan waktu)
-    const routeName = activeRoute.querySelector('h2'); // Nama jalan
-    const routeInfo = activeRoute.querySelector('h3'); // Jarak dan waktu
-    
-    // Build announcement: hanya h2 dan h3 saja
-    let announcement = '';
-    
-    // Ambil nama jalan dari h2
-    if (routeName) {
-        const roadName = routeName.textContent.trim();
-        console.log('🛣️ Nama jalan (h2):', roadName);
-        announcement = roadName + '. '; // Ucapkan nama jalan
-    }
-    
-    // Ambil jarak dan waktu dari h3
-    if (routeInfo) {
-        const info = convertDistanceToIndonesian(routeInfo.textContent.trim());
-        console.log('📏 Jarak dan waktu (h3):', info);
-        announcement += info; // Ucapkan jarak dan waktu
-    }
-    
-    // Jika tidak ada data, beri pesan default
-    if (!announcement && lastRouteSummarySpeech) {
-        console.log('⚠️ No route data found in DOM - using stored summary');
-        announcement = lastRouteSummarySpeech;
-    } else if (!announcement) {
-        console.log('⚠️ No route data found in h2 or h3');
-        announcement = 'Rute sedang dimuat...';
-    }
-    
-    // Debug: log the announcement to be spoken
-    console.log('📢 Announcement to be spoken (h2 + h3 only):');
-    console.log('=========================================');
-    console.log(announcement);
-    console.log('=================================');
-    
-    // Callback after announcement is done
-    function afterRouteAnnouncement() {
-        console.log('✓ Route announcement completed');
-        
-        // Keep microphone listening for blind users (hands-free operation)
-        // Microphone remains active so user can give more commands
-        
-        // Update status with instructions for user
-        updateVoiceStatus('📍 Navigasi aktif - Klik mikrofon untuk perintah');
-        
-        // Call onComplete callback if provided (for starting turn-by-turn navigation)
-        if (onComplete && typeof onComplete === 'function') {
-            onComplete();
-        } else {
-            // Only announce microphone availability if not starting turn-by-turn navigation
+    // CRITICAL: Request permission from SpeechCoordinator BEFORE attempting to speak
+    if (typeof window.SpeechCoordinator !== 'undefined') {
+        const canSpeak = window.SpeechCoordinator.requestSpeak('high');
+        if (!canSpeak) {
+            console.log('[Navigation] ⏸️ SpeechCoordinator blocked announcement - will retry');
+            // Retry after a short delay
             setTimeout(function() {
-                console.log('✓ Announcing microphone availability');
-                speakText('Navigasi sudah aktif. Ucapkan perintah lain kapan saja.', 'id-ID', false);
-            }, 2000); // Wait 2 seconds after route announcement
+                announceRouteDirections(priority, onComplete);
+            }, 500);
+            return;
         }
     }
     
-    // Speak the announcement using browser's Web Speech API with priority
-    speakText(announcement, 'id-ID', priority, afterRouteAnnouncement);
+    // Retry mechanism untuk menunggu DOM ready
+    let retryCount = 0;
+    const maxRetries = 10;
+    
+    function attemptAnnouncement() {
+        // Find the routing control container
+        const routingContainer = document.querySelector('.leaflet-routing-alternatives-container');
+        if (!routingContainer && retryCount < maxRetries) {
+            retryCount++;
+            console.log('[Navigation] ⏳ Waiting for routing container... retry', retryCount);
+            setTimeout(attemptAnnouncement, 300);
+            return;
+        }
+        
+        // Get the first (active) route
+        const activeRoute = routingContainer ? routingContainer.querySelector('.leaflet-routing-alt:not(.leaflet-routing-alt-minimized)') : null;
+        if (!activeRoute && retryCount < maxRetries) {
+            retryCount++;
+            console.log('[Navigation] ⏳ Waiting for active route... retry', retryCount);
+            setTimeout(attemptAnnouncement, 300);
+            return;
+        }
+        
+        // Build announcement
+        let announcement = '';
+        
+        if (activeRoute) {
+            // Get h2 (nama jalan) and h3 (jarak dan waktu)
+            const routeName = activeRoute.querySelector('h2'); // Nama jalan
+            const routeInfo = activeRoute.querySelector('h3'); // Jarak dan waktu
+            
+            // Ambil nama jalan dari h2
+            if (routeName) {
+                const roadName = routeName.textContent.trim();
+                console.log('🛣️ Nama jalan (h2):', roadName);
+                announcement = roadName + '. '; // Ucapkan nama jalan
+            }
+            
+            // Ambil jarak dan waktu dari h3
+            if (routeInfo) {
+                const info = convertDistanceToIndonesian(routeInfo.textContent.trim());
+                console.log('📏 Jarak dan waktu (h3):', info);
+                announcement += info; // Ucapkan jarak dan waktu
+            }
+        }
+        
+        // Fallback: gunakan lastRouteSummarySpeech jika DOM belum ready
+        if (!announcement || announcement.trim() === '') {
+            if (lastRouteSummarySpeech) {
+                console.log('⚠️ No route data found in DOM - using stored summary');
+                announcement = lastRouteSummarySpeech;
+            } else {
+                console.log('⚠️ No route data found - generating from currentDestinationName');
+                // Generate announcement from available data
+                const destinationName = currentDestinationName || 'tujuan Anda';
+                announcement = 'Rute menuju ' + destinationName + '. Navigasi dimulai.';
+            }
+        }
+        
+        // Debug: log the announcement to be spoken
+        console.log('[Navigation] 📢 Announcement to be spoken:');
+        console.log('=========================================');
+        console.log(announcement);
+        console.log('=========================================');
+        
+        // Callback after announcement is done
+        function afterRouteAnnouncement() {
+            console.log('[Navigation] ✅ Route announcement completed');
+            
+            // Update status with instructions for user
+            updateVoiceStatus('📍 Navigasi aktif - Klik mikrofon untuk perintah');
+            
+            // Call onComplete callback if provided (for starting turn-by-turn navigation)
+            if (onComplete && typeof onComplete === 'function') {
+                onComplete();
+            } else {
+                // Only announce microphone availability if not starting turn-by-turn navigation
+                setTimeout(function() {
+                    console.log('✓ Announcing microphone availability');
+                    speakText('Navigasi sudah aktif. Ucapkan perintah lain kapan saja.', 'id-ID', false);
+                }, 2000); // Wait 2 seconds after route announcement
+            }
+        }
+        
+        // CRITICAL: Pastikan announcement tidak kosong
+        if (!announcement || announcement.trim() === '') {
+            console.warn('[Navigation] ⚠️ Empty announcement in announceRouteDirections after retries');
+            if (onComplete) onComplete();
+            return;
+        }
+        
+        console.log('[Navigation] 📢 Calling speakText for route announcement:', {
+            announcement: announcement.substring(0, 100),
+            fullLength: announcement.length,
+            priority: priority,
+            voiceDirectionsEnabled: voiceDirectionsEnabled,
+            lastSpokenMessage: lastSpokenMessage,
+            speechSynthesisSpeaking: window.speechSynthesis ? window.speechSynthesis.speaking : 'N/A',
+            speechSynthesisPending: window.speechSynthesis ? window.speechSynthesis.pending : 'N/A'
+        });
+        
+        // CRITICAL: Clear lastSpokenMessage SEBELUM memanggil speakText untuk memastikan announcement tidak di-skip
+        const previousMessage = lastSpokenMessage;
+        lastSpokenMessage = ''; // Clear untuk memastikan announcement tidak di-skip
+        
+        // CRITICAL: Pastikan speechSynthesis tidak sedang berbicara sebelum announcement route
+        // Cancel any pending speech
+        if (window.speechSynthesis && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
+            console.log('[Navigation] 🔄 Canceling existing speech before route announcement');
+            window.speechSynthesis.cancel();
+            // Wait a bit for cancel to complete
+            setTimeout(function() {
+                console.log('[Navigation] 🎯 Calling speakText after cancel delay');
+                speakText(announcement, 'id-ID', true, afterRouteAnnouncement);
+            }, 200);
+        } else {
+            console.log('[Navigation] 🎯 Calling speakText immediately (no speech active)');
+            speakText(announcement, 'id-ID', true, afterRouteAnnouncement);
+        }
+    }
+    
+    // Start attempt
+    attemptAnnouncement();
 }
 
 // Convert distance to Indonesian format
@@ -5183,14 +5298,21 @@ function announceNextDirection() {
                         lastAnnouncedInstruction = text;
                         announcedInstructions.push(text); // Mark as announced
                         
-                        // Announce the turn instruction (optimized for visually impaired users)
-                        if (distanceInMeters >= 2) {
-                            // Format: "Setelah X meter Belok kiri" (for easier understanding)
-                            speakText('Setelah ' + Math.round(distanceInMeters) + ' meter ' + text, 'id-ID', true);
-                        } else {
-                            // Very close to turn (< 2m) - announce immediate action
-                            speakText(text + ' sekarang', 'id-ID', true);
+                        // BARU: Mode detector sudah dimatikan, jadi navigator bisa langsung berbicara
+                        const turnInstruction = distanceInMeters >= 2 
+                            ? 'Setelah ' + Math.round(distanceInMeters) + ' meter ' + text
+                            : text + ' sekarang';
+                        
+                        console.log('[Navigation] 🔊 Announcing turn instruction:', turnInstruction);
+                        
+                        // Pastikan text tidak kosong sebelum speak
+                        if (!turnInstruction || turnInstruction.trim() === '') {
+                            console.warn('[Navigation] ⚠️ Empty turn instruction, skipping');
+                            return;
                         }
+                        
+                        // Announce the turn instruction (optimized for visually impaired users)
+                        speakText(turnInstruction, 'id-ID', true);
                     }
                     break; // Only announce one instruction at a time
                 }
@@ -5623,6 +5745,9 @@ function goToHomePage() {
 function markNavigatorSpeechStart() {
     navigatorSpeechDepth++;
     isNavigatorSpeaking = true;
+    if (typeof window.SpeechCoordinator !== 'undefined' && typeof window.SpeechCoordinator.handleNavigationSpeechStart === 'function') {
+        window.SpeechCoordinator.handleNavigationSpeechStart();
+    }
     // Extend suppression window slightly so we ignore recognition results triggered by speaker output
     suppressRecognitionUntil = Date.now() + 1500;
 }

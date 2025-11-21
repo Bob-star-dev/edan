@@ -220,6 +220,14 @@ function postprocessYolov7(ctx, modelResolution, tensor, conf2color, focalLength
     console.warn(' [Postprocess] processDetectionsForVoice function not found! Make sure voiceNavigation.js is loaded.');
   }
 
+  // Update Firebase with ML detection results for ESP32 vibration motor
+  // This will send direction (left/right/both/none) to Firebase Realtime Database
+  if (typeof throttleUpdateFirebase === 'function') {
+    throttleUpdateFirebase(detectionsForVoice);
+  } else if (typeof integrateMLDetectionWithFirebase === 'function') {
+    integrateMLDetectionWithFirebase(detectionsForVoice);
+  }
+
   // Check and trigger vibration for objects within 150cm
   // This will send vibration signal to vibration motor when distance <= 150cm
   if (typeof checkAndTriggerVibration === 'function') {
@@ -381,6 +389,14 @@ function postprocessYolov10(ctx, modelResolution, tensor, conf2color, focalLengt
     }
   } else {
     console.warn(' [Postprocess] processDetectionsForVoice function not found! Make sure voiceNavigation.js is loaded.');
+  }
+
+  // Update Firebase with ML detection results for ESP32 vibration motor
+  // This will send direction (left/right/both/none) to Firebase Realtime Database
+  if (typeof throttleUpdateFirebase === 'function') {
+    throttleUpdateFirebase(detectionsForVoice);
+  } else if (typeof integrateMLDetectionWithFirebase === 'function') {
+    integrateMLDetectionWithFirebase(detectionsForVoice);
   }
 
   // Check and trigger vibration for objects within 150cm
@@ -560,6 +576,14 @@ function postprocessYolov11(ctx, modelResolution, tensor, conf2color, focalLengt
     }
   } else {
     console.warn(' [Postprocess] processDetectionsForVoice function not found! Make sure voiceNavigation.js is loaded.');
+  }
+
+  // Update Firebase with ML detection results for ESP32 vibration motor
+  // This will send direction (left/right/both/none) to Firebase Realtime Database
+  if (typeof throttleUpdateFirebase === 'function') {
+    throttleUpdateFirebase(detectionsForVoice);
+  } else if (typeof integrateMLDetectionWithFirebase === 'function') {
+    integrateMLDetectionWithFirebase(detectionsForVoice);
   }
 
   // Check and trigger vibration for objects within 150cm
