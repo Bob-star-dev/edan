@@ -18,14 +18,18 @@
     measurementId: "G-7HJF81K0GE"
   };
 
-  let app, auth, db, googleProvider, currentUser = null;
+  let app, auth, db, rtdb, googleProvider, currentUser = null;
+  let vibrationListener = null;
+  let reconnectTimer = null;
+  const RECONNECT_DELAY = 5000; // 5 seconds
 
   async function initFirebaseIfNeeded() {
     if (app) return;
-    const [{ initializeApp }, { getAuth, onAuthStateChanged, GoogleAuthProvider }, { getFirestore } ] = await Promise.all([
+    const [{ initializeApp }, { getAuth, onAuthStateChanged, GoogleAuthProvider }, { getFirestore }, { getDatabase } ] = await Promise.all([
       import(`${firebaseCdnBase}/firebase-app.js`),
       import(`${firebaseCdnBase}/firebase-auth.js`),
-      import(`${firebaseCdnBase}/firebase-firestore.js`)
+      import(`${firebaseCdnBase}/firebase-firestore.js`),
+      import(`${firebaseCdnBase}/firebase-database.js`)
     ]);
 
     if (!config || !config.apiKey) {
@@ -35,6 +39,10 @@
     app = initializeApp(config);
     auth = getAuth(app);
     db = getFirestore(app);
+    
+    // Initialize Realtime Database with custom host
+    const databaseURL = 'https://senavision-id-default-rtdb.asia-southeast1.firebasedatabase.app';
+    rtdb = getDatabase(app, databaseURL);
     googleProvider = new GoogleAuthProvider();
 
     onAuthStateChanged(auth, (user) => {
@@ -51,6 +59,7 @@
     window.firebaseApp = app;
     window.firebaseAuth = auth;
     window.firebaseDB = db;
+    window.firebaseRTDB = rtdb;
     window.firebaseGoogleProvider = googleProvider;
   }
 
@@ -146,6 +155,147 @@
     } catch (err) {
       console.warn('[Firebase] Failed to load savedRoutes:', err);
       return null;
+    }
+  };
+
+  // Public: Initialize vibration control with Firebase Realtime Database
+  window.initVibrationControl = async function() {
+    try {
+      await initFirebaseIfNeeded();
+      if (!rtdb) {
+        console.error('[Vibration] Realtime Database not initialized');
+        return false;
+      }
+
+      const { ref, onValue, set } = await import(`${firebaseCdnBase}/firebase-database.js`);
+      
+      // Reference to vibration/side path
+      const vibrationSideRef = ref(rtdb, 'vibration/side');
+      
+      // Function to control GPIO pins
+      const controlGPIO = async (side) => {
+        try {
+          const gpio12Ref = ref(rtdb, 'vibration/gpio12');
+          const gpio13Ref = ref(rtdb, 'vibration/gpio13');
+          
+          let gpio12State = false;
+          let gpio13State = false;
+          
+          if (side === 'left') {
+            gpio12State = true;  // HIGH
+            gpio13State = false; // LOW
+            console.log('[Vibration] Left: GPIO12 HIGH, GPIO13 LOW');
+          } else if (side === 'right') {
+            gpio12State = false; // LOW
+            gpio13State = true;  // HIGH
+            console.log('[Vibration] Right: GPIO12 LOW, GPIO13 HIGH');
+          } else if (side === 'stop') {
+            gpio12State = false; // LOW
+            gpio13State = false; // LOW
+            console.log('[Vibration] Stop: GPIO12 LOW, GPIO13 LOW');
+          }
+          
+          // Write GPIO states to Firebase
+          await Promise.all([
+            set(gpio12Ref, gpio12State),
+            set(gpio13Ref, gpio13State)
+          ]);
+          
+          console.log(`[Vibration] ✅ GPIO states updated: GPIO12=${gpio12State}, GPIO13=${gpio13State}`);
+        } catch (error) {
+          console.error('[Vibration] ❌ Error controlling GPIO:', error);
+        }
+      };
+      
+      // Listen for changes in vibration/side
+      const handleValueChange = (snapshot) => {
+        const value = snapshot.val();
+        if (value && typeof value === 'string') {
+          const side = value.toLowerCase().trim();
+          console.log('[Vibration] 📡 Received vibration side:', side);
+          controlGPIO(side);
+        }
+      };
+      
+      // Set up listener (onValue returns an unsubscribe function)
+      const unsubscribe = onValue(vibrationSideRef, handleValueChange, (error) => {
+        console.error('[Vibration] ❌ Error reading vibration/side:', error);
+        // Schedule reconnect
+        scheduleReconnect();
+      });
+      
+      vibrationListener = { ref: vibrationSideRef, handler: handleValueChange, unsubscribe: unsubscribe };
+      
+      // Set up disconnect handler for automatic reconnect
+      const setupDisconnectHandler = async () => {
+        try {
+          const connectedRef = ref(rtdb, '.info/connected');
+          onValue(connectedRef, (snapshot) => {
+            const connected = snapshot.val();
+            if (connected === false) {
+              console.warn('[Vibration] ⚠️ Firebase Realtime Database disconnected');
+              scheduleReconnect();
+            } else if (connected === true) {
+              console.log('[Vibration] ✅ Firebase Realtime Database connected');
+              if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+              }
+            }
+          });
+        } catch (error) {
+          console.error('[Vibration] Error setting up disconnect handler:', error);
+        }
+      };
+      
+      setupDisconnectHandler();
+      
+      console.log('[Vibration] ✅ Vibration control initialized');
+      return true;
+    } catch (error) {
+      console.error('[Vibration] ❌ Failed to initialize vibration control:', error);
+      scheduleReconnect();
+      return false;
+    }
+  };
+  
+  // Function to schedule reconnection
+  function scheduleReconnect() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+    }
+    
+    console.log(`[Vibration] ⏳ Scheduling reconnect in ${RECONNECT_DELAY}ms...`);
+    reconnectTimer = setTimeout(async () => {
+      console.log('[Vibration] 🔄 Attempting to reconnect...');
+      // Remove old listener if exists
+      if (vibrationListener && vibrationListener.unsubscribe) {
+        try {
+          vibrationListener.unsubscribe();
+        } catch (error) {
+          console.warn('[Vibration] Error removing old listener:', error);
+        }
+        vibrationListener = null;
+      }
+      // Reinitialize
+      await window.initVibrationControl();
+    }, RECONNECT_DELAY);
+  }
+  
+  // Public: Stop vibration control
+  window.stopVibrationControl = async function() {
+    if (vibrationListener && vibrationListener.unsubscribe) {
+      try {
+        vibrationListener.unsubscribe();
+        vibrationListener = null;
+        console.log('[Vibration] ✅ Vibration control stopped');
+      } catch (error) {
+        console.error('[Vibration] Error stopping vibration control:', error);
+      }
+    }
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
     }
   };
 })();

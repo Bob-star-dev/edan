@@ -787,6 +787,32 @@ document.addEventListener('DOMContentLoaded', function() {
     // Handle window resize events
     window.addEventListener('resize', handleResize);
     
+    // Initialize vibration control with Firebase Realtime Database
+    if (window.onAuthReady && window.initVibrationControl) {
+        window.onAuthReady(async function(user) {
+            // Initialize vibration control after Firebase is ready
+            // This will listen to /vibration/side and control GPIO12/GPIO13
+            try {
+                await window.initVibrationControl();
+                console.log('[Map] ✅ Vibration control initialized');
+            } catch (error) {
+                console.error('[Map] ❌ Failed to initialize vibration control:', error);
+            }
+        });
+    } else {
+        // Fallback: try to initialize after a delay if onAuthReady is not available
+        setTimeout(async () => {
+            if (window.initVibrationControl) {
+                try {
+                    await window.initVibrationControl();
+                    console.log('[Map] ✅ Vibration control initialized (fallback)');
+                } catch (error) {
+                    console.error('[Map] ❌ Failed to initialize vibration control:', error);
+                }
+            }
+        }, 2000);
+    }
+    
     // Only add click-outside behavior on mobile devices
     if (mapContainer && statusPanel && toggleBtn) {
         mapContainer.addEventListener('click', function(e) {

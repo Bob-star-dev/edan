@@ -7,7 +7,7 @@
 const firebaseConfig = {
   apiKey: "AIzaSyDrKWMsQvJgtgGRvE2FEHPTnpq7MrKLQTQ",
   authDomain: "senavision-id.firebaseapp.com",
-  databaseURL: "https://senavision-id-default-rtdb.firebaseio.com",
+  databaseURL: "https://senavision-id-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "senavision-id",
   storageBucket: "senavision-id.firebasestorage.app",
   messagingSenderId: "1073477417711",
@@ -157,7 +157,7 @@ async function setupESP32StatusListener() {
 /**
  * Update ML Direction ke Firebase (dari ML processing)
  */
-async function updateMLDirection(direction, confidence = null, objectDetected = null) {
+async function updateMLDirection(direction, confidence = null, objectDetected = null, distance = null, detections = null) {
   if (!database) {
     console.warn('[Firebase Realtime] Database not initialized');
     return false;
@@ -175,8 +175,31 @@ async function updateMLDirection(direction, confidence = null, objectDetected = 
       object_detected: objectDetected || 'none'
     };
     
+    // Tambahkan distance jika tersedia
+    if (distance !== null && distance !== undefined) {
+      data.distance = distance;
+      data.min_distance = distance; // Untuk kompatibilitas dengan ESP32
+    }
+    
+    // Tambahkan detections array jika tersedia (untuk ESP32 membaca distance)
+    if (detections && Array.isArray(detections) && detections.length > 0) {
+      // Simpan detections dengan distance
+      const detectionsData = detections.map((det, index) => ({
+        distance: det.distance || 999,
+        className: det.className || 'unknown',
+        confidence: det.confidence || 0,
+        classId: det.classId || -1
+      }));
+      data.detections = detectionsData;
+      
+      // Simpan juga min_distance dari detections terdekat
+      const minDistance = Math.min(...detections.map(d => d.distance || 999));
+      data.min_distance = minDistance;
+      data.distance = minDistance;
+    }
+    
     await set(mlRef, data);
-    console.log(`[Firebase Realtime] ✅ ML Direction updated: ${direction}`);
+    console.log(`[Firebase Realtime] ✅ ML Direction updated: ${direction}${distance !== null ? `, distance: ${distance.toFixed(1)}cm` : ''}`);
     return true;
   } catch (error) {
     console.error('[Firebase Realtime] ❌ Failed to update ML direction:', error);

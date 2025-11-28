@@ -100,15 +100,23 @@ async function updateFirebaseFromDetections(detections) {
   // Tentukan direction dari detections
   const directionInfo = determineDirectionFromDetections(detections);
 
-  // Update ke Firebase
+  // Hitung distance terdekat dari semua detections
+  let minDistance = 999;
+  if (detections && detections.length > 0) {
+    minDistance = Math.min(...detections.map(d => d.distance || 999));
+  }
+
+  // Update ke Firebase dengan distance dan detections
   if (typeof window.updateMLDirection === 'function') {
     try {
       await window.updateMLDirection(
         directionInfo.direction,
         directionInfo.confidence,
-        directionInfo.objectDetected
+        directionInfo.objectDetected,
+        minDistance < 999 ? minDistance : null,
+        detections
       );
-      console.log(`[ML Firebase] ✅ Updated Firebase: ${directionInfo.direction}`);
+      console.log(`[ML Firebase] ✅ Updated Firebase: ${directionInfo.direction}, distance: ${minDistance < 999 ? minDistance.toFixed(1) + 'cm' : 'N/A'}`);
     } catch (error) {
       console.error('[ML Firebase] ❌ Failed to update Firebase:', error);
     }
@@ -126,11 +134,11 @@ async function updateFirebaseFromDetections(detections) {
  */
 function integrateMLDetectionWithFirebase(detectionsForVoice) {
   if (!detectionsForVoice || detectionsForVoice.length === 0) {
-    // Tidak ada detection, set direction ke 'none'
+    // Tidak ada detection, set direction ke 'none' dan distance ke null
     if (typeof window.updateMLDirection === 'function' && 
         window.firebaseRealtimeState && 
         window.firebaseRealtimeState.initialized) {
-      window.updateMLDirection('none', 0, 'none').catch(err => {
+      window.updateMLDirection('none', 0, 'none', null, []).catch(err => {
         console.error('[ML Firebase] Failed to update none direction:', err);
       });
     }
