@@ -179,13 +179,10 @@ const ModeDetector = {
         };
         
         // List of scripts to load (in order)
-        // Firebase scripts harus dimuat sebelum postprocessing.js karena postprocessing akan memanggil updateFirebaseFromDetections
         const scripts = [
             '../mode-detector/js/yoloClasses.js',
             '../mode-detector/js/utils.js',
             '../mode-detector/js/distance.js',
-            '../mode-detector/js/firebase-realtime.js',      // Firebase Realtime Database integration
-            '../mode-detector/js/ml-firebase-integration.js', // ML Firebase integration (distance & direction)
             '../mode-detector/js/voiceNavigation.js',
             '../mode-detector/js/vibration.js',
             '../mode-detector/js/preprocessing.js',
@@ -226,24 +223,6 @@ const ModeDetector = {
                 
                 script.onload = () => {
                     console.log(`[ModeDetector] ✅ Loaded ${scriptName}`);
-                    
-                    // After firebase-realtime.js loads, verify it's available
-                    if (scriptName === 'firebase-realtime') {
-                        if (typeof window.initFirebaseRealtime === 'function') {
-                            console.log('[ModeDetector] ✅ Firebase Realtime functions available');
-                        } else {
-                            console.warn('[ModeDetector] ⚠️ Firebase Realtime functions not found after load');
-                        }
-                    }
-                    
-                    // After ml-firebase-integration.js loads, verify it's available
-                    if (scriptName === 'ml-firebase-integration') {
-                        if (typeof window.updateFirebaseFromDetections === 'function') {
-                            console.log('[ModeDetector] ✅ ML Firebase integration functions available');
-                        } else {
-                            console.warn('[ModeDetector] ⚠️ ML Firebase integration functions not found after load');
-                        }
-                    }
                     
                     // After model.js loads, override getStaticBasePath if it exists
                     if (scriptName === 'model' && typeof getStaticBasePath === 'function') {
@@ -444,15 +423,6 @@ const ModeDetector = {
         console.log('[ModeDetector] Initializing components...');
         
         try {
-            // Initialize Firebase Realtime Database FIRST (required for distance detection)
-            if (typeof window.initFirebaseRealtime === 'function') {
-                console.log('[ModeDetector] Initializing Firebase Realtime Database...');
-                await window.initFirebaseRealtime();
-                console.log('[ModeDetector] ✅ Firebase Realtime Database initialized');
-            } else {
-                console.warn('[ModeDetector] ⚠️ initFirebaseRealtime not available - Firebase integration may not work');
-            }
-            
             // Initialize elements (from main.js)
             if (typeof initElements === 'function') {
                 initElements();
@@ -512,19 +482,6 @@ const ModeDetector = {
                 }
             }
             
-            // Ensure Firebase Realtime Database is initialized (required for distance detection)
-            if (typeof window.initFirebaseRealtime === 'function') {
-                if (!window.firebaseRealtimeState || !window.firebaseRealtimeState.initialized) {
-                    console.log('[ModeDetector] Initializing Firebase Realtime Database...');
-                    await window.initFirebaseRealtime();
-                    // Wait a bit for Firebase to be ready
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                }
-                console.log('[ModeDetector] ✅ Firebase Realtime Database ready for distance detection');
-            } else {
-                console.warn('[ModeDetector] ⚠️ Firebase Realtime Database not available - distance detection to Firebase will not work');
-            }
-            
             // Load model if not loaded
             if (!modeDetectorState.modelLoaded) {
                 await this.loadModel();
@@ -538,8 +495,6 @@ const ModeDetector = {
             
             modeDetectorState.isActive = true;
             console.log('[ModeDetector] ✅ Activated successfully');
-            console.log('[ModeDetector] 📡 Distance detection will be sent to Firebase Realtime Database');
-            console.log('[ModeDetector] 📡 ESP32 will read distance from /ml_results/distance or /ml_results/min_distance');
             return true;
         } catch (error) {
             console.error('[ModeDetector] ❌ Activation failed:', error);

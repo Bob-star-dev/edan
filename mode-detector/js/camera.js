@@ -98,34 +98,60 @@ function getGetUserMedia() {
   return null;
 }
 
-// ESP32 Configuration
-// Update DNS sesuai ESP32-CAM Anda
-const ESP32_DNS = 'esp32cam.local';
-// Fallback IP address jika DNS tidak bekerja (khusus Windows desktop)
-// Cara menemukan IP ESP32-CAM:
-// 1. Buka Serial Monitor di Arduino IDE (115200 baud) - akan menampilkan IP
-// 2. Atau cek di router WiFi Anda
-// 3. Atau gunakan aplikasi network scanner
-const ESP32_IP = null; // Set ke IP ESP32-CAM Anda, contoh: '192.168.1.100'
-// Make ESP32_DNS globally available for vibration.js
+// ESP32 Configuration - IP Static Priority System
+// Primary: Static IP (192.168.1.12) - No mDNS dependency
+// Fallback: mDNS (esp32cam.local) - Only if static IP fails
+
+const ESP32_STATIC_IP = '192.168.1.12'; // Primary: Static IP
+const ESP32_STATIC_BASE_URL = `http://${ESP32_STATIC_IP}`;
+
+const ESP32_MDNS_HOST = 'esp32cam.local'; // Fallback: mDNS (only if static IP fails)
+const ESP32_MDNS_BASE_URL = `http://${ESP32_MDNS_HOST}`;
+
+// Legacy variables for backward compatibility
+const ESP32_DNS = ESP32_MDNS_HOST;
+const ESP32_IP = ESP32_STATIC_IP;
+
+// Make globally available for vibration.js and other modules
 if (typeof window !== 'undefined') {
-  window.ESP32_DNS = ESP32_DNS;
-  window.ESP32_IP = ESP32_IP; // Make IP available too
-}
-// Helper function untuk mendapatkan base URL ESP32-CAM
-// Mencoba IP address terlebih dahulu jika tersedia (lebih reliable di Windows)
-// Fallback ke DNS jika IP tidak tersedia
-function getESP32BaseURL() {
-  if (ESP32_IP) {
-    return `http://${ESP32_IP}`;
-  }
-  return `http://${ESP32_DNS}`;
+  window.ESP32_STATIC_IP = ESP32_STATIC_IP;
+  window.ESP32_STATIC_BASE_URL = ESP32_STATIC_BASE_URL;
+  window.ESP32_MDNS_HOST = ESP32_MDNS_HOST;
+  window.ESP32_DNS = ESP32_DNS; // Legacy
+  window.ESP32_IP = ESP32_IP; // Legacy
 }
 
-// ESP32-S3 CAM biasanya menggunakan endpoint langsung
-// Jika menggunakan proxy server, ganti dengan URL proxy Anda
-const ESP32_STREAM_URL = `${getESP32BaseURL()}:81/stream`;  // Port 81 untuk stream
-const ESP32_CAPTURE_URL = `${getESP32BaseURL()}/capture`;   // Port 80 untuk capture
+/**
+ * Get ESP32 Base URL - Always returns Static IP (Primary)
+ * Fallback to mDNS is handled in connection logic, not here
+ * @returns {string} Base URL using static IP
+ */
+function getESP32BaseURL() {
+  // Always use static IP as primary
+  // Fallback mechanism handled in connection functions
+  return ESP32_STATIC_BASE_URL;
+}
+
+/**
+ * Get ESP32 Stream URL - Uses Static IP (Port 80)
+ * @returns {string} Stream URL
+ */
+function getESP32StreamURL() {
+  return `${ESP32_STATIC_BASE_URL}/stream`;
+}
+
+/**
+ * Get ESP32 Capture URL - Uses Static IP (Port 80)
+ * @returns {string} Capture URL
+ */
+function getESP32CaptureURL() {
+  return `${ESP32_STATIC_BASE_URL}/capture`;
+}
+
+// ESP32-CAM Endpoints - All using Static IP (Port 80)
+// Note: Port 81 removed, all endpoints use Port 80
+const ESP32_STREAM_URL = getESP32StreamURL();   // http://192.168.1.12/stream
+const ESP32_CAPTURE_URL = getESP32CaptureURL(); // http://192.168.1.12/capture
 // Fallback jika proxy digunakan (ganti dengan URL proxy jika ada)
 const ESP32_PROXY_STREAM_URL = `/api/esp32-stream`;
 const ESP32_PROXY_CAPTURE_URL = `/api/esp32-capture`;
@@ -445,36 +471,19 @@ function readMJPEGStream() {
   // Stop any existing stream first
   stopESP32Stream();
   
-  // Set crossOrigin attribute for mobile browsers
-  // This helps with CORS issues on mobile
-  img.crossOrigin = 'anonymous';
+  // CORS Bypass: Remove crossOrigin to avoid CORS check
+  // ESP32 doesn't send CORS headers, so we bypass CORS check
+  // Image will still load and display, but we need to handle pixel data differently
+  img.crossOrigin = null; // Remove CORS requirement - allows image to load without CORS headers
   
   console.log(`[ESP32-CAM] 📡 Starting MJPEG stream from: ${ESP32_STREAM_URL}`);
+  console.log(`[ESP32-CAM] ✅ Connecting directly to: http://192.168.1.12/stream`);
+  console.log(`[ESP32-CAM] 🎥 STREAM MODE ONLY - No capture mode`);
+  console.log(`[ESP32-CAM] ⚡ CORS bypass: crossOrigin = null (no CORS check)`);
   
-  const isMobile = isMobileDevice();
-  if (isMobile) {
-    console.log(`[ESP32-CAM] 📱 Mobile device detected - using enhanced connection method`);
-    console.log(`[ESP32-CAM] 💡 Testing connection first (mDNS may take time on mobile)...`);
-    
-    // Test connection first on mobile (mDNS resolution can be slow)
-    testESP32Connection(ESP32_STREAM_URL).then((connected) => {
-      if (connected) {
-        console.log(`[ESP32-CAM] ✅ Connection test passed, starting stream...`);
-        startStream();
-      } else {
-        console.warn(`[ESP32-CAM] ⚠️ Connection test failed, trying anyway (may still work)...`);
-        // Try anyway - sometimes test fails but stream works
-        startStream();
-      }
-    }).catch((error) => {
-      console.error(`[ESP32-CAM] ❌ Connection test error:`, error);
-      console.warn(`[ESP32-CAM] ⚠️ Proceeding with stream anyway...`);
-      startStream();
-    });
-  } else {
-    // Desktop: start immediately
-    startStream();
-  }
+  // Skip connection test - directly connect to stream
+  // Connection test often fails even when stream works
+  startStream();
   
   function startStream() {
     // Method 1: Try direct img.src approach (works in most browsers)
@@ -551,29 +560,45 @@ function readMJPEGStream() {
     };
     
     img.onerror = () => {
-      console.error(`[ESP32-CAM] ❌ Stream frame error`);
       cameraState.espErrorCount += 1;
       
-      // If stream doesn't work after 3 errors, try alternative method
-      if (cameraState.espErrorCount >= 3 && !img.dataset.streamMethod) {
-        console.warn(`[ESP32-CAM] ⚠️ Direct stream failed, trying alternative method...`);
+      // Don't show error immediately - give stream time to establish connection
+      if (cameraState.espErrorCount <= 5) {
+        console.warn(`[ESP32-CAM] ⚠️ Stream connecting... (attempt ${cameraState.espErrorCount}/10)`);
+        console.log(`[ESP32-CAM] 📡 Retrying: ${ESP32_STREAM_URL}`);
+        // Retry with same stream URL
+        setTimeout(() => {
+          const retryUrl = `${ESP32_STATIC_BASE_URL}/stream?t=${Date.now()}`;
+          img.src = retryUrl;
+        }, 1000);
+        return;
+      }
+      
+      console.error(`[ESP32-CAM] ❌ Stream frame error (${cameraState.espErrorCount} attempts)`);
+      console.error(`[ESP32-CAM] 📡 Stream URL: ${ESP32_STREAM_URL}`);
+      
+      // If stream doesn't work after 5 errors, try alternative polling method (still using /stream)
+      if (cameraState.espErrorCount >= 5 && cameraState.espErrorCount < 10 && !img.dataset.streamMethod) {
+        console.warn(`[ESP32-CAM] ⚠️ Direct stream failed, trying polling method (still using /stream endpoint)...`);
         img.dataset.streamMethod = 'polling';
-        // Switch to fast polling method
+        // Switch to fast polling method - IMPORTANT: Still uses /stream endpoint for ML
         startStreamPolling();
         return;
       }
       
-      // If still failing, fallback to capture mode
+      // Keep retrying stream - no fallback to capture mode
+      // Stream is required for ML, so we keep trying
       if (cameraState.espErrorCount >= 10) {
-        console.warn(`[ESP32-CAM] ⚠️ Stream failed repeatedly, switching to capture mode`);
-        cameraState.espEndpointMode = 'capture';
-        updateESP32Buttons();
-        initCamera();
-        return;
+        console.error(`[ESP32-CAM] ❌ Stream failed after 10 attempts`);
+        console.error(`[ESP32-CAM] ⚠️ Stream is required for ML - will keep retrying`);
+        // Don't switch to capture - keep trying stream
       }
       
-      const errorMsg = `ESP32-CAM stream error (${cameraState.espErrorCount}/10). Retrying...`;
-      showError(errorMsg);
+      // Show error only after 5 attempts
+      if (cameraState.espErrorCount > 5) {
+        const errorMsg = `ESP32-CAM stream error (${cameraState.espErrorCount}/10). Retrying...\n\nStream URL: ${ESP32_STREAM_URL}\n\nMake sure ESP32 web server is running on port 80 with /stream endpoint.`;
+        showError(errorMsg);
+      }
     };
     
     // Keep track of last flash disable time for stream mode
@@ -581,10 +606,30 @@ function readMJPEGStream() {
     const STREAM_FLASH_DISABLE_INTERVAL = 10000; // Disable flash every 10 seconds in stream mode
     
     // Set stream URL directly - browser should handle MJPEG automatically
-    // Add timestamp only once to establish connection, then let stream continue
-    const streamUrl = `${ESP32_STREAM_URL}?t=${Date.now()}`;
-    console.log(`[ESP32-CAM] 📡 Setting stream URL: ${streamUrl}`);
-    console.log(`[ESP32-CAM] 📡 Image crossOrigin: ${img.crossOrigin || 'not set'}`);
+    // Primary: Use Static IP (192.168.1.12/stream)
+    // Fallback: mDNS handled in onerror handler
+    const streamUrl = `${ESP32_STATIC_BASE_URL}/stream?t=${Date.now()}`;
+    console.log(`[ESP32-CAM] 📡 Setting stream URL (Static IP): ${streamUrl}`);
+    console.log(`[ESP32-CAM] ✅ Primary: http://192.168.1.12/stream`);
+    console.log(`[ESP32-CAM] 📡 Image crossOrigin: ${img.crossOrigin || 'null (CORS bypass)'}`);
+    console.log(`[ESP32-CAM] ⚡ CORS bypass enabled - image should load without CORS headers`);
+    
+    // Setup fallback handler before setting src
+    let fallbackAttempted = false;
+    const originalOnError = img.onerror;
+    img.onerror = function() {
+      if (!fallbackAttempted) {
+        fallbackAttempted = true;
+        console.warn(`[ESP32-CAM] ⚠️ Static IP failed, trying mDNS fallback...`);
+        const fallbackUrl = `${ESP32_MDNS_BASE_URL}/stream?t=${Date.now()}`;
+        console.log(`[ESP32-CAM] 🔄 Fallback URL: ${fallbackUrl}`);
+        img.src = fallbackUrl;
+      } else {
+        // Both failed, call original error handler
+        if (originalOnError) originalOnError.call(this);
+      }
+    };
+    
     img.src = streamUrl;
     
     // Periodically disable flash in stream mode
@@ -618,6 +663,10 @@ function readMJPEGStream() {
   // Alternative: Fast polling method if direct stream doesn't work
   function startStreamPolling() {
     console.log(`[ESP32-CAM] 📡 Using fast polling method for stream`);
+    console.log(`[ESP32-CAM] ⚡ CORS bypass: crossOrigin = null for polling`);
+    
+    // Ensure crossOrigin is null for polling (CORS bypass)
+    img.crossOrigin = null;
     
     let pollingFlashDisableTime = 0;
     const STREAM_FLASH_DISABLE_INTERVAL = 10000; // Re-declare for polling function
@@ -671,15 +720,12 @@ function readMJPEGStream() {
       console.warn(`[ESP32-CAM] ⚠️ Frame error in polling method`);
       cameraState.espErrorCount += 1;
       
-      // Auto fallback to capture mode after 3 errors
-      if (cameraState.espErrorCount >= 3 && cameraState.espEndpointMode === 'stream') {
-        console.warn('⚠️ Switching ESP32-CAM to capture mode (polling failed)');
-        cameraState.espEndpointMode = 'capture';
-        if (typeof updateESP32Buttons === 'function') {
-          updateESP32Buttons();
-        }
-        initESP32(); // Reinitialize with capture mode
-        return;
+      // Keep retrying stream - no fallback to capture
+      // Stream is required for ML
+      if (cameraState.espErrorCount >= 5) {
+        console.warn(`[ESP32-CAM] ⚠️ Stream polling failed (${cameraState.espErrorCount} attempts)`);
+        console.warn(`[ESP32-CAM] ⚠️ Will keep retrying - stream required for ML`);
+        // Continue retrying - don't switch to capture
       }
     };
     
@@ -696,8 +742,13 @@ function readMJPEGStream() {
       }
       
       // Fast polling: request new frame every 50-100ms
+      // IMPORTANT: Still using /stream endpoint (not /capture) for ML compatibility
+      // CORS bypass: Ensure crossOrigin is null for polling too
+      if (img.crossOrigin !== null) {
+        img.crossOrigin = null; // Remove CORS requirement
+      }
       const timestamp = Date.now();
-      const url = `${ESP32_STREAM_URL}?t=${timestamp}&frame=${Date.now()}`;
+      const url = `${ESP32_STATIC_BASE_URL}/stream?t=${timestamp}&frame=${Date.now()}`;
       img.src = url;
       
       // Schedule next poll
@@ -728,8 +779,8 @@ function initESP32() {
   // Detect mobile device
   const isMobile = isMobileDevice();
   const loadingMsg = isMobile 
-    ? `Menghubungkan ke ESP32-CAM dari HP (${ESP32_DNS})...`
-    : `Menghubungkan ke ESP32-CAM (${ESP32_DNS})...`;
+    ? `Menghubungkan ke ESP32-CAM dari HP (${ESP32_STATIC_IP})...`
+    : `Menghubungkan ke ESP32-CAM (${ESP32_STATIC_IP})...`;
   
   showLoading(loadingMsg);
   cameraState.isStreamReady = false; // Set to false initially, will be true when frame loads
@@ -737,23 +788,19 @@ function initESP32() {
   
   console.log(`[ESP32-CAM] 🔌 Initializing ESP32-CAM connection...`);
   console.log(`[ESP32-CAM] 📱 Mobile device: ${isMobile ? 'Yes' : 'No'}`);
-  console.log(`[ESP32-CAM] 📡 DNS: ${ESP32_DNS}`);
-  if (ESP32_IP) {
-    console.log(`[ESP32-CAM] 📡 IP Address: ${ESP32_IP} (using IP instead of DNS)`);
-  } else {
-    console.log(`[ESP32-CAM] ⚠️ IP Address: Not set - using DNS only`);
-    console.log(`[ESP32-CAM] 💡 TIP: Set ESP32_IP in camera.js if DNS doesn't work (common on Windows)`);
-  }
+  console.log(`[ESP32-CAM] 📡 Primary (Static IP): ${ESP32_STATIC_IP}`);
+  console.log(`[ESP32-CAM] 📡 Fallback (mDNS): ${ESP32_MDNS_HOST}`);
   console.log(`[ESP32-CAM] 📡 Stream URL: ${ESP32_STREAM_URL}`);
-  console.log(`[ESP32-CAM] 📡 Capture URL: ${ESP32_CAPTURE_URL}`);
-  console.log(`[ESP32-CAM] 📡 Mode: ${cameraState.espEndpointMode}`);
+  console.log(`[ESP32-CAM] 📡 Mode: STREAM ONLY (no capture mode)`);
+  console.log(`[ESP32-CAM] ✅ Machine Learning will use: ${ESP32_STREAM_URL}`);
   
   // Mobile-specific tips
   if (isMobile) {
     console.log(`[ESP32-CAM] 💡 TIPS untuk mobile:`);
     console.log(`[ESP32-CAM] 💡 - Pastikan HP dan ESP32 di WiFi yang sama`);
-    console.log(`[ESP32-CAM] 💡 - Pastikan DNS ESP32 benar: ${ESP32_DNS}`);
-    console.log(`[ESP32-CAM] 💡 - Jika tidak connect, coba mode Capture (lebih stabil)`);
+    console.log(`[ESP32-CAM] 💡 - IP ESP32: ${ESP32_STATIC_IP}`);
+    console.log(`[ESP32-CAM] 💡 - Stream endpoint: /stream (for ML)`);
+    console.log(`[ESP32-CAM] 💡 - Jika tidak connect, akan fallback ke mDNS`);
   }
   
   // Disable flash LED immediately when initializing ESP32-CAM
@@ -764,198 +811,10 @@ function initESP32() {
     updateStatusIndicators();
   }
 
-  // Use different approach for stream vs capture mode
-  if (cameraState.espEndpointMode === 'stream') {
-    // Use MJPEG stream reader for stream mode
-    readMJPEGStream();
-    return;
-  }
-  
-  // Capture mode: use simple polling with img.src
-  // Reset handlers for capture mode
-  img.onload = null;
-  img.onerror = null;
-  
-  // Set crossOrigin attribute for mobile browsers
-  // This helps with CORS issues on mobile
-  img.crossOrigin = 'anonymous';
-  
-  // Keep track of last flash disable time
-  let lastFlashDisableTime = 0;
-  const FLASH_DISABLE_INTERVAL = 5000; // Disable flash every 5 seconds to prevent it from turning on
-  
-  // For mobile: test connection first before starting capture polling
-  // Use isMobile from function scope (already declared at top of initESP32)
-  if (isMobile) {
-    console.log(`[ESP32-CAM] 📱 Mobile device - testing connection before capture mode...`);
-    testESP32Connection(ESP32_CAPTURE_URL).then((connected) => {
-      if (connected) {
-        console.log(`[ESP32-CAM] ✅ Connection test passed, starting capture polling...`);
-        startCapturePolling();
-      } else {
-        console.warn(`[ESP32-CAM] ⚠️ Connection test failed, trying anyway...`);
-        // Try anyway - sometimes test fails but capture works
-        startCapturePolling();
-      }
-    }).catch((error) => {
-      console.error(`[ESP32-CAM] ❌ Connection test error:`, error);
-      console.warn(`[ESP32-CAM] ⚠️ Proceeding with capture polling anyway...`);
-      startCapturePolling();
-    });
-  } else {
-    // Desktop: start immediately
-    startCapturePolling();
-  }
-  
-  function startCapturePolling() {
-    function setNextSrc() {
-      if (!img) return;
-      
-      // Periodically disable flash to prevent it from turning on automatically
-      // This is especially important in capture mode where each capture might trigger flash
-      const now = Date.now();
-      if (now - lastFlashDisableTime > FLASH_DISABLE_INTERVAL) {
-        disableESP32Flash();
-        lastFlashDisableTime = now;
-      }
-      
-      // Gunakan URL langsung ke ESP32-CAM untuk capture mode
-      // Tambahkan timestamp untuk menghindari cache browser
-      const timestamp = Date.now();
-      const url = `${ESP32_CAPTURE_URL}?t=${timestamp}`;
-      
-      console.log(`[ESP32-CAM] 📡 Fetching frame: ${url}`);
-      console.log(`[ESP32-CAM] 📡 Image crossOrigin: ${img.crossOrigin || 'not set'}`);
-      img.src = url;
-    }
-    
-    // Start first frame immediately
-    setNextSrc();
-    
-    img.onload = () => {
-    console.log(`[ESP32-CAM] ✅ Frame loaded successfully`);
-    console.log(`[ESP32-CAM] 📐 Frame dimensions: ${img.naturalWidth}x${img.naturalHeight}`);
-    
-    // Set ready on first successful load with valid dimensions
-    // Check dimensions to ensure frame is actually loaded
-    if (!cameraState.isStreamReady && img.naturalWidth > 0 && img.naturalHeight > 0) {
-      cameraState.isStreamReady = true;
-      hideLoading();
-      hideError();
-      
-      console.log(`[ESP32-CAM] ✅ Camera ready for detection`);
-      
-      // Update status indicators if function exists
-      if (typeof updateStatusIndicators === 'function') {
-        updateStatusIndicators();
-      }
-    }
-
-    // Update buffer immediately when new frame arrives
-    // This ensures buffer always has latest frame for detection
-    if (img.naturalWidth && img.naturalHeight) {
-      // Ensure buffer canvas exists
-      if (!espBufferCanvas) {
-        espBufferCanvas = document.createElement('canvas');
-      }
-      
-      espBufferCanvas.width = img.naturalWidth;
-      espBufferCanvas.height = img.naturalHeight;
-      const ctx = espBufferCanvas.getContext('2d');
-      if (ctx) {
-        // Copy latest frame to buffer for fallback use
-        ctx.drawImage(img, 0, 0);
-        espBufferHasFrame = true;
-        console.log(`📸 Buffer updated: ${espBufferCanvas.width}x${espBufferCanvas.height}`);
-      }
-      
-      // Also ensure isStreamReady is set if we have valid frame data
-      // This handles cases where ready state might not have been set properly
-      if (!cameraState.isStreamReady) {
-        cameraState.isStreamReady = true;
-        console.log(`[ESP32-CAM] ✅ Camera ready (set from frame data)`);
-        hideLoading();
-        hideError();
-        if (typeof updateStatusIndicators === 'function') {
-          updateStatusIndicators();
-        }
-      }
-    }
-
-    setCanvasSize(img.naturalWidth || 640, img.naturalHeight || 480);
-    img.style.display = 'block';
-    document.getElementById('video-element').style.display = 'none';
-
-    // Auto-start live detection when ESP32 camera is ready
-    // Live detection should always be active
-    if (typeof startLiveDetection === 'function' && cameraState.isStreamReady) {
-      startLiveDetection();
-    }
-
-      // Schedule next frame
-      // Use slightly longer delay to ensure frame is fully processed
-      const delay = cameraState.espEndpointMode === 'stream' ? 70 : 180;
-      if (espPollingTimer) clearTimeout(espPollingTimer);
-      espPollingTimer = setTimeout(setNextSrc, delay);
-    };
-
-    img.onerror = () => {
-      const errorUrl = cameraState.espEndpointMode === 'stream' ? ESP32_STREAM_URL : ESP32_CAPTURE_URL;
-      // Use isMobile from function scope (already declared at top of initESP32)
-      
-      console.error(`[ESP32-CAM] ❌ Frame error`);
-      console.error(`[ESP32-CAM] ❌ Failed to load from: ${errorUrl}`);
-      console.error(`[ESP32-CAM] 📡 DNS: ${ESP32_DNS}`);
-      console.error(`[ESP32-CAM] 📡 Mode: ${cameraState.espEndpointMode}`);
-      console.error(`[ESP32-CAM] 📱 Mobile device: ${isMobile ? 'Yes' : 'No'}`);
-      
-      cameraState.espErrorCount += 1;
-
-      // Auto fallback to capture mode after 3 errors in stream mode
-      if (cameraState.espEndpointMode === 'stream' && cameraState.espErrorCount >= 3) {
-        console.warn('⚠️ Switching ESP32-CAM to capture mode (stream failed)');
-        cameraState.espEndpointMode = 'capture';
-        updateESP32Buttons();
-      }
-
-      // Enhanced error messages for mobile
-      let errorMsg;
-      if (isMobile) {
-        if (cameraState.espErrorCount <= 3) {
-          errorMsg = `ESP32-CAM tidak connect (${cameraState.espErrorCount}/3). Pastikan HP dan ESP32 di WiFi yang sama. Retrying...`;
-        } else {
-          errorMsg = `ESP32-CAM tidak bisa diakses. Periksa:\n1. HP dan ESP32 di WiFi yang sama\n2. DNS ESP32 benar: ${ESP32_DNS}\n3. ESP32 sudah running\n4. Coba mode Capture`;
-        }
-      } else {
-        // Desktop error message
-        if (cameraState.espErrorCount <= 3) {
-          errorMsg = `ESP32-CAM connection failed (${cameraState.espErrorCount}/3). Retrying...`;
-        } else {
-          let troubleshooting = `ESP32-CAM connection failed.\n\n`;
-          troubleshooting += `TROUBLESHOOTING:\n\n`;
-          troubleshooting += `1. Check DNS: ${ESP32_DNS}\n`;
-          if (!ESP32_IP) {
-            troubleshooting += `2. ⚠️ IP Address not set!\n`;
-            troubleshooting += `   → Set ESP32_IP in camera.js (line ~103)\n`;
-            troubleshooting += `   → Find IP in Serial Monitor or router\n`;
-            troubleshooting += `   → Example: const ESP32_IP = '192.168.1.100';\n`;
-          } else {
-            troubleshooting += `2. IP Address: ${ESP32_IP}\n`;
-          }
-          troubleshooting += `3. Ensure ESP32-CAM is connected to same WiFi\n`;
-          troubleshooting += `4. Check if ESP32-CAM is running\n`;
-          troubleshooting += `5. Test in browser: ${ESP32_CAPTURE_URL}`;
-          errorMsg = troubleshooting;
-        }
-      }
-      
-      showError(errorMsg);
-      
-      const delay = cameraState.espEndpointMode === 'stream' ? 350 : 500;
-      if (espPollingTimer) clearTimeout(espPollingTimer);
-      espPollingTimer = setTimeout(setNextSrc, delay);
-    };
-  }
+  // STREAM MODE ONLY - No capture mode
+  // Always use MJPEG stream for Machine Learning
+  console.log(`[ESP32-CAM] 🎥 Starting STREAM mode only (no capture mode)`);
+  readMJPEGStream();
 }
 
 /**
@@ -1008,9 +867,10 @@ function setCameraSource(source) {
     window.updateFocalLengthForCamera(source, true);
   }
   
-  // If switching to ESP32-CAM, log the DNS
+  // If switching to ESP32-CAM, log the IP
   if (source === 'esp32') {
-    console.log(`[Camera] 📡 Switching to ESP32-CAM at DNS: ${ESP32_DNS}`);
+    console.log(`[Camera] 📡 Switching to ESP32-CAM at IP: ${ESP32_STATIC_IP}`);
+    console.log(`[Camera] ✅ Stream URL: ${ESP32_STREAM_URL}`);
   }
   
   initCamera();
@@ -1296,7 +1156,7 @@ function getErrorMessage(error) {
 document.addEventListener('DOMContentLoaded', () => {
   const esp32IpEl = document.getElementById('esp32-ip');
   if (esp32IpEl) {
-    esp32IpEl.textContent = ESP32_DNS;
+    esp32IpEl.textContent = ESP32_STATIC_IP;
   }
   
   // Log mobile device status on page load
