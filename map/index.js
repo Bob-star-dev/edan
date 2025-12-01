@@ -2020,20 +2020,37 @@ function setupLocationTracking() {
 function initSpeechRecognition() {
     // Check if browser supports speech recognition
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        console.log('Speech recognition not supported');
+        console.error('❌ Speech recognition not supported in this browser');
+        console.log('💡 Use Chrome or Edge for best compatibility');
         const voiceBtn = document.getElementById('voiceBtn');
         if (voiceBtn) voiceBtn.style.display = 'none';
-        return;
+        updateVoiceStatus('❌ Speech recognition tidak tersedia di browser ini. Gunakan Chrome atau Edge.');
+        return false;
     }
     
     // Create speech recognition object
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognition = new SpeechRecognition();
+    try {
+        recognition = new SpeechRecognition();
+        console.log('✅ Speech recognition object created');
+    } catch (error) {
+        console.error('❌ Failed to create speech recognition object:', error);
+        updateVoiceStatus('❌ Gagal membuat speech recognition: ' + error.message);
+        return false;
+    }
     
     // Configure speech recognition
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'id-ID'; // Using Indonesian language
+    
+    // Handle speech recognition start (for debugging)
+    recognition.onstart = function() {
+        console.log('🎤 Speech recognition started - microphone is now listening');
+        isListening = true;
+        updateVoiceStatus('🎤 Mikrofon aktif - Mendengarkan...');
+        updateVoiceButton();
+    };
     
     // Handle speech recognition results
     recognition.onresult = function(event) {
@@ -2122,16 +2139,30 @@ function initSpeechRecognition() {
             document.addEventListener('touchstart', clickHandler, { once: true });
         } else if (event.error === 'no-speech') {
             // No speech detected - normal, just continue listening
-            console.log('ℹ️ No speech detected, continuing to listen...');
+            // This is NOT an error - it's normal when user is not speaking
+            // Only log occasionally to avoid console spam (1% of the time)
+            if (Math.random() < 0.01) {
+                console.log('ℹ️ No speech detected (normal - microphone is listening, waiting for voice input)');
+            }
             // Don't update status for no-speech, just silently continue
+            // Microphone will auto-restart and continue listening
             return;
         } else if (event.error === 'aborted') {
             // Speech recognition was stopped intentionally
             console.log('ℹ️ Speech recognition stopped');
             return;
+        } else if (event.error === 'audio-capture') {
+            // No microphone found or microphone not accessible
+            updateVoiceStatus('❌ Mikrofon tidak ditemukan atau tidak dapat diakses');
+            console.error('❌ Microphone not found or not accessible');
+        } else if (event.error === 'network') {
+            // Network error
+            updateVoiceStatus('❌ Error jaringan - coba lagi');
+            console.error('❌ Network error');
         } else {
             // Other errors
             updateVoiceStatus('❌ Error: ' + event.error);
+            console.error('❌ Speech recognition error:', event.error);
         }
         
         isListening = false;
@@ -2140,7 +2171,9 @@ function initSpeechRecognition() {
     
     // Handle speech recognition end
     recognition.onend = function() {
-        console.log('Speech recognition ended');
+        // Log reason for ending
+        const reason = recognition._stopped ? 'stopped manually' : 'ended automatically (will auto-restart)';
+        console.log('🔇 Speech recognition ended -', reason);
         isListening = false;
         updateVoiceButton();
         
@@ -4587,23 +4620,101 @@ function updateDestination(lat, lng, name) {
 function toggleVoiceListening() {
     if (!recognition) {
         initSpeechRecognition();
-        recognition = recognition; // Re-assign in case it was created
+        if (!recognition) {
+            console.error('❌ Speech recognition not available');
+            updateVoiceStatus('❌ Speech recognition tidak tersedia di browser ini');
+            return;
+        }
     }
     
     if (isListening) {
         // Stop listening
-        recognition.stop();
-        isListening = false;
+        try {
+            recognition.stop();
+            isListening = false;
+            updateVoiceStatus('🔇 Mikrofon dimatikan');
+            console.log('🔇 Microphone stopped');
+        } catch (error) {
+            console.error('Error stopping microphone:', error);
+        }
     } else {
-            // Start listening
+        // Start listening
+        // Check if user has interacted (required for browser security)
+        if (!hasUserInteraction) {
+            updateVoiceStatus('⚠️ Klik layar sekali untuk mengaktifkan mikrofon');
+            console.log('⚠️ User interaction required - waiting for click...');
+            
+            // Wait for user click
+            const clickHandler = function() {
+                hasUserInteraction = true;
+                document.removeEventListener('click', clickHandler);
+                document.removeEventListener('touchstart', clickHandler);
+                // Retry after click
+                toggleVoiceListening();
+            };
+            
+            document.addEventListener('click', clickHandler, { once: true });
+            document.addEventListener('touchstart', clickHandler, { once: true });
+            return;
+        }
+        
+        // Clear stopped flag if set
+        if (recognition._stopped) {
+            recognition._stopped = false;
+            console.log('🔄 Cleared stopped flag');
+        }
+        
+        try {
+            // Ensure recognition is initialized
+            if (!recognition) {
+                console.warn('⚠️ Recognition not initialized, initializing now...');
+                const initResult = initSpeechRecognition();
+                if (!initResult && !recognition) {
+                    throw new Error('Speech recognition initialization failed');
+                }
+            }
+            
             finalTranscript = '';
+            
+            // Check if already started (prevent duplicate starts)
+            if (isListening) {
+                console.log('ℹ️ Microphone already listening');
+                return;
+            }
+            
             recognition.start();
             isListening = true;
             updateVoiceStatus('🎤 Mendengarkan... Ucapkan tujuan Anda');
-            speakText('Mendengarkan, ucapkan tujuan Anda', 'id-ID', true);
+            console.log('🎤 Microphone started successfully');
+            
+            // Small delay before speaking to ensure microphone is ready
+            setTimeout(() => {
+                speakText('Mendengarkan, ucapkan tujuan Anda', 'id-ID', true);
+            }, 500);
+        } catch (error) {
+            console.error('❌ Error starting microphone:', error);
+            isListening = false;
+            
+            // Detailed error handling
+            let errorMessage = '❌ Gagal mengaktifkan mikrofon';
+            if (error.message) {
+                errorMessage += ': ' + error.message;
+            }
+            
+            if (error.name === 'NotAllowedError' || (error.message && error.message.includes('not-allowed'))) {
+                errorMessage = '⚠️ Izin mikrofon diperlukan - klik layar sekali dan pilih Allow';
+                hasUserInteraction = true; // Mark interaction for retry
+                console.log('💡 User needs to grant microphone permission');
+            } else if (error.name === 'NotFoundError' || (error.message && error.message.includes('audio-capture'))) {
+                errorMessage = '❌ Mikrofon tidak ditemukan - pastikan mikrofon terhubung';
+                console.error('💡 No microphone found or accessible');
+            }
+            
+            updateVoiceStatus(errorMessage);
         }
-        updateVoiceButton();
     }
+    updateVoiceButton();
+}
 
 // Update voice status display
 function updateVoiceStatus(message) {
@@ -4844,6 +4955,12 @@ function _doSpeak(text, lang, priority, onComplete, preview) {
     };
     
     utterance.onend = function() {
+        // Log saat navigator selesai berbicara
+        if (priority) {
+            console.log('✅ [NAVIGATOR] Selesai berbicara:', text);
+            const timestamp = new Date().toLocaleTimeString('id-ID');
+            console.log(`[${timestamp}] ✅ NAVIGATOR SELESAI BERBICARA: "${text}"`);
+        }
         console.log('[Navigation] ✅✅✅ Speech ENDED:', preview);
         isSpeaking = false;
         if (typeof window.SpeechCoordinator !== 'undefined') {
@@ -5338,7 +5455,21 @@ function announceNextDirection() {
                         }
                         
                         // Announce the turn instruction (optimized for visually impaired users)
-                        speakText(turnInstruction, 'id-ID', true);
+                        console.log('🔊 [NAVIGATION] Mengumumkan belokan:', turnInstruction);
+                        console.log('📍 [NAVIGATION] Jarak ke belokan:', distanceInMeters, 'meter');
+                        
+                        // Update UI status untuk menunjukkan navigator sedang berbicara
+                        updateVoiceStatus('🔊 ' + turnInstruction);
+                        
+                        // Log ke console dengan timestamp
+                        const timestamp = new Date().toLocaleTimeString('id-ID');
+                        console.log(`[${timestamp}] 🔊 NAVIGATOR BERBICARA: "${turnInstruction}"`);
+                        
+                        speakText(turnInstruction, 'id-ID', true, function() {
+                            // Callback setelah selesai berbicara
+                            console.log('✅ [NAVIGATION] Selesai mengumumkan belokan');
+                            updateVoiceStatus('✅ ' + turnInstruction + ' (selesai)');
+                        });
                     }
                     break; // Only announce one instruction at a time
                 }
@@ -6257,3 +6388,581 @@ function updatePOIStatus(message) {
     // You can add a status element in the POI tab if needed
     console.log('[POI]', message);
 }
+
+// ============================================
+// TESTING HELPER: GPS Simulation untuk Testing di Laptop
+// ============================================
+// Helper script untuk testing navigasi tanpa GPS real
+// Usage: testNavigation.setLocation(-6.2088, 106.8456)
+window.testNavigation = {
+    // Set lokasi awal (simulasi GPS)
+    setLocation: function(lat, lng, accuracy = 10) {
+        if (typeof onLocationFound === 'function') {
+            const mockEvent = {
+                latlng: L.latLng(lat, lng),
+                accuracy: accuracy
+            };
+            onLocationFound(mockEvent);
+            console.log('✅ Lokasi diset:', lat, lng, '(accuracy:', accuracy + 'm)');
+            return true;
+        } else {
+            console.error('❌ onLocationFound function tidak ditemukan');
+            return false;
+        }
+    },
+    
+    // Simulasi pergerakan dari titik A ke titik B
+    simulateMovement: function(startLat, startLng, endLat, endLng, duration = 30) {
+        let currentLat = startLat;
+        let currentLng = startLng;
+        const latStep = (endLat - startLat) / duration;
+        const lngStep = (endLng - startLng) / duration;
+        
+        let step = 0;
+        const interval = setInterval(() => {
+            if (step >= duration) {
+                clearInterval(interval);
+                console.log('✅ Simulasi pergerakan selesai');
+                return;
+            }
+            
+            currentLat += latStep;
+            currentLng += lngStep;
+            
+            this.setLocation(currentLat, currentLng, 10);
+            step++;
+            console.log(`📍 Langkah ${step}/${duration}:`, currentLat.toFixed(6), currentLng.toFixed(6));
+        }, 1000); // Update setiap 1 detik
+        
+        console.log('🚶 Simulasi pergerakan dimulai...');
+        return interval;
+    },
+    
+    // Set destination dan mulai navigasi
+    startNavigation: function(destLat, destLng, destName = 'Tujuan') {
+        // Set destination
+        if (typeof updateDestination === 'function') {
+            updateDestination(destLat, destLng, destName);
+            console.log('✅ Destination diset:', destName, '(', destLat, ',', destLng, ')');
+        } else {
+            console.error('❌ updateDestination function tidak ditemukan');
+            return false;
+        }
+        
+        // Start navigation
+        if (typeof startTurnByTurnNavigation === 'function') {
+            startTurnByTurnNavigation();
+            console.log('✅ Navigasi dimulai');
+            return true;
+        } else {
+            console.error('❌ startTurnByTurnNavigation function tidak ditemukan');
+            return false;
+        }
+    },
+    
+    // Test voice announcement langsung
+    testVoice: function(text = 'Setelah 50 meter Belok kiri') {
+        if (typeof speakText === 'function') {
+            console.log('🧪 Testing navigation voice announcement...');
+            console.log('📢 Text yang akan diucapkan:', text);
+            
+            // Check apakah speechSynthesis tersedia
+            if (!('speechSynthesis' in window)) {
+                console.error('❌ Speech synthesis tidak tersedia');
+                return false;
+            }
+            
+            // Check state sebelum speak
+            const beforeState = {
+                speaking: window.speechSynthesis.speaking,
+                pending: window.speechSynthesis.pending,
+                paused: window.speechSynthesis.paused
+            };
+            console.log('📊 State sebelum speak:', beforeState);
+            
+            // Speak dengan callback
+            speakText(text, 'id-ID', true, function() {
+                console.log('✅ Test: Navigator selesai berbicara');
+                const afterState = {
+                    speaking: window.speechSynthesis.speaking,
+                    pending: window.speechSynthesis.pending,
+                    paused: window.speechSynthesis.paused
+                };
+                console.log('📊 State setelah speak:', afterState);
+            });
+            
+            // Monitor state selama 5 detik
+            let checkCount = 0;
+            const monitorInterval = setInterval(() => {
+                checkCount++;
+                const currentState = {
+                    speaking: window.speechSynthesis.speaking,
+                    pending: window.speechSynthesis.pending,
+                    paused: window.speechSynthesis.paused,
+                    time: checkCount + 's'
+                };
+                console.log('📊 State monitoring (' + checkCount + 's):', currentState);
+                
+                if (checkCount >= 5) {
+                    clearInterval(monitorInterval);
+                    console.log('✅ Test monitoring selesai');
+                }
+            }, 1000);
+            
+            console.log('✅ Test suara dimulai:', text);
+            console.log('💡 Dengarkan suara navigator dan lihat log di console');
+            return true;
+        } else {
+            console.error('❌ speakText function tidak ditemukan');
+            return false;
+        }
+    },
+    
+    // Check apakah navigator sedang berbicara
+    checkNavigatorSpeaking: function() {
+        const state = {
+            speechSynthesisAvailable: 'speechSynthesis' in window,
+            isSpeaking: window.speechSynthesis ? window.speechSynthesis.speaking : false,
+            isPending: window.speechSynthesis ? window.speechSynthesis.pending : false,
+            isPaused: window.speechSynthesis ? window.speechSynthesis.paused : false,
+            isNavigating: typeof isNavigating !== 'undefined' ? isNavigating : 'undefined',
+            voiceDirectionsEnabled: typeof voiceDirectionsEnabled !== 'undefined' ? voiceDirectionsEnabled : 'undefined'
+        };
+        
+        console.log('🔊 Navigator Speaking State:', state);
+        
+        if (state.isSpeaking) {
+            console.log('✅ Navigator SEDANG BERBICARA sekarang');
+        } else if (state.isPending) {
+            console.log('⏳ Navigator akan berbicara (pending)');
+        } else {
+            console.log('🔇 Navigator TIDAK berbicara');
+        }
+        
+        return state;
+    },
+    
+    // Monitor navigator announcements secara real-time
+    monitorNavigator: function(duration = 30) {
+        console.log('📊 Memulai monitoring navigator selama', duration, 'detik...');
+        console.log('💡 Navigator akan log setiap kali berbicara');
+        
+        let count = 0;
+        const interval = setInterval(() => {
+            count++;
+            const isSpeaking = window.speechSynthesis ? window.speechSynthesis.speaking : false;
+            
+            if (isSpeaking) {
+                console.log(`[${count}s] 🔊 Navigator SEDANG BERBICARA`);
+            } else if (count % 5 === 0) {
+                // Log setiap 5 detik jika tidak berbicara
+                console.log(`[${count}s] 🔇 Navigator tidak berbicara (normal jika tidak ada belokan)`);
+            }
+            
+            if (count >= duration) {
+                clearInterval(interval);
+                console.log('✅ Monitoring selesai');
+            }
+        }, 1000);
+        
+        return interval;
+    },
+    
+    // ============================================
+    // DEBUG: Test Turn Announcement (PENTING!)
+    // ============================================
+    // Simulasi lengkap: User bergerak → Mendekati belokan → Navigator berbicara
+    debugTurnAnnouncement: function() {
+        console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║  🔍 DEBUG: TEST TURN ANNOUNCEMENT                            ║
+║  Simulasi: User bergerak → Mendekati belokan → Navigator     ║
+║  berbicara                                                    ║
+╚══════════════════════════════════════════════════════════════╝
+        `);
+        
+        // Step 1: Check prerequisites
+        console.log('\n📋 STEP 1: Checking prerequisites...');
+        const checks = {
+            speechSynthesis: 'speechSynthesis' in window,
+            voiceDirectionsEnabled: typeof voiceDirectionsEnabled !== 'undefined' ? voiceDirectionsEnabled : false,
+            isNavigating: typeof isNavigating !== 'undefined' ? isNavigating : false,
+            hasRoute: route !== null,
+            hasUserPosition: currentUserPosition !== null,
+            hasDestination: latLngB !== null
+        };
+        
+        console.table(checks);
+        
+        const allGood = Object.values(checks).every(v => v === true);
+        if (!allGood) {
+            console.warn('⚠️ Beberapa prerequisites tidak terpenuhi. Setup dulu:');
+            if (!checks.hasUserPosition) {
+                console.log('  → testNavigation.setLocation(-6.2088, 106.8456)');
+            }
+            if (!checks.hasDestination || !checks.hasRoute) {
+                console.log('  → testNavigation.startNavigation(-6.2148, 106.8456, "Tujuan")');
+            }
+            if (!checks.isNavigating) {
+                console.log('  → Pastikan navigasi sudah dimulai (ucapkan "Navigasi")');
+            }
+            return false;
+        }
+        
+        console.log('✅ Semua prerequisites OK!\n');
+        
+        // Step 2: Test voice announcement langsung
+        console.log('📋 STEP 2: Testing voice announcement...');
+        console.log('🔊 Menguji: "Setelah 50 meter Belok kiri"');
+        
+        let announcementStarted = false;
+        let announcementEnded = false;
+        
+        // Monitor speech synthesis
+        const checkInterval = setInterval(() => {
+            const isSpeaking = window.speechSynthesis ? window.speechSynthesis.speaking : false;
+            if (isSpeaking && !announcementStarted) {
+                announcementStarted = true;
+                console.log('✅ [VERIFIED] Navigator MULAI berbicara!');
+                console.log('   🔊 Speech synthesis isSpeaking = true');
+            }
+            if (!isSpeaking && announcementStarted && !announcementEnded) {
+                announcementEnded = true;
+                console.log('✅ [VERIFIED] Navigator SELESAI berbicara!');
+                console.log('   ✅ Speech synthesis isSpeaking = false');
+                clearInterval(checkInterval);
+            }
+        }, 100);
+        
+        // Test announcement
+        this.testVoice('Setelah 50 meter Belok kiri');
+        
+        // Stop monitoring after 10 seconds
+        setTimeout(() => {
+            clearInterval(checkInterval);
+            if (!announcementStarted) {
+                console.warn('⚠️ Navigator TIDAK berbicara - mungkin ada masalah');
+            }
+        }, 10000);
+        
+        return true;
+    },
+    
+    // Simulasi user mendekati belokan (dari 250m → 50m → 0m)
+    simulateApproachingTurn: function() {
+        console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║  🚶 SIMULASI: User Mendekati Belokan                         ║
+║  Simulasi pergerakan dari 250m → 50m → 0m ke belokan        ║
+╚══════════════════════════════════════════════════════════════╝
+        `);
+        
+        // Pastikan navigasi aktif
+        if (typeof isNavigating === 'undefined' || !isNavigating) {
+            console.error('❌ Navigasi belum aktif!');
+            console.log('💡 Jalankan: testNavigation.startNavigation(...) dulu');
+            return false;
+        }
+        
+        if (!currentUserPosition) {
+            console.error('❌ User position tidak ada!');
+            console.log('💡 Jalankan: testNavigation.setLocation(...) dulu');
+            return false;
+        }
+        
+        console.log('✅ Navigasi aktif, mulai simulasi...\n');
+        
+        // Simulasi pergerakan mendekati belokan
+        const startLat = -6.2088;
+        const startLng = 106.8456;
+        const endLat = -6.2148;  // 600m ke selatan
+        const endLng = 106.8456;
+        
+        // Simulasi dengan 30 langkah (setiap langkah = ~20 meter)
+        const steps = 30;
+        const latStep = (endLat - startLat) / steps;
+        const lngStep = (endLng - startLng) / steps;
+        
+        let currentLat = startLat;
+        let currentLng = startLng;
+        let step = 0;
+        
+        console.log('📍 Simulasi dimulai dari:', startLat, startLng);
+        console.log('🎯 Tujuan:', endLat, endLng);
+        console.log('📏 Total jarak: ~600 meter');
+        console.log('⏱️  Setiap langkah = 1 detik (~20 meter)\n');
+        
+        // Monitor navigator announcements
+        let announcementCount = 0;
+        const monitorInterval = setInterval(() => {
+            const isSpeaking = window.speechSynthesis ? window.speechSynthesis.speaking : false;
+            if (isSpeaking) {
+                announcementCount++;
+                const timestamp = new Date().toLocaleTimeString('id-ID');
+                console.log(`[${timestamp}] 🔊 NAVIGATOR BERBICARA (announcement #${announcementCount})`);
+            }
+        }, 500);
+        
+        const moveInterval = setInterval(() => {
+            if (step >= steps) {
+                clearInterval(moveInterval);
+                clearInterval(monitorInterval);
+                
+                console.log('\n✅ Simulasi selesai!');
+                console.log(`📊 Total announcements: ${announcementCount}`);
+                
+                if (announcementCount > 0) {
+                    console.log('✅ [VERIFIED] Navigator BERHASIL berbicara saat user mendekati belokan!');
+                } else {
+                    console.warn('⚠️ Navigator TIDAK berbicara - check:');
+                    console.log('  → Apakah route sudah dibuat?');
+                    console.log('  → Apakah voiceDirectionsEnabled = true?');
+                    console.log('  → Apakah jarak ke belokan < 200m?');
+                }
+                return;
+            }
+            
+            currentLat += latStep;
+            currentLng += lngStep;
+            step++;
+            
+            // Update user position (ini akan trigger announceNextDirection)
+            this.setLocation(currentLat, currentLng, 10);
+            
+            // Calculate approximate distance (for logging)
+            const distanceRemaining = (steps - step) * 20; // ~20 meter per step
+            
+            if (step % 5 === 0 || distanceRemaining <= 200) {
+                console.log(`📍 Langkah ${step}/${steps} - Jarak tersisa: ~${distanceRemaining}m`);
+                
+                if (distanceRemaining <= 200 && distanceRemaining > 0) {
+                    console.log('  ⚠️  MENDEKATI BELOKAN! Navigator seharusnya berbicara...');
+                }
+            }
+        }, 1000); // Update setiap 1 detik
+        
+        console.log('🚶 Simulasi pergerakan dimulai...\n');
+        return moveInterval;
+    },
+    
+    // Test lengkap: Lokasi → Destination → Navigasi → Simulasi Pergerakan
+    fullTest: function() {
+        console.log('🧪 Memulai test lengkap...');
+        
+        // 1. Set lokasi awal (Jakarta)
+        this.setLocation(-6.2088, 106.8456, 10);
+        
+        setTimeout(() => {
+            // 2. Set destination (600m ke selatan)
+            this.startNavigation(-6.2148, 106.8456, 'Tujuan Test');
+            
+            setTimeout(() => {
+                // 3. Simulasi pergerakan
+                this.simulateMovement(-6.2088, 106.8456, -6.2148, 106.8456, 20);
+            }, 3000);
+        }, 2000);
+    },
+    
+    // Check state navigasi (untuk debugging)
+    checkState: function() {
+        const state = {
+            isNavigating: typeof isNavigating !== 'undefined' ? isNavigating : 'undefined',
+            hasUserPosition: currentUserPosition !== null,
+            hasDestination: latLngB !== null,
+            hasRoute: route !== null,
+            isListening: typeof isListening !== 'undefined' ? isListening : 'undefined',
+            voiceEnabled: typeof voiceDirectionsEnabled !== 'undefined' ? voiceDirectionsEnabled : 'undefined'
+        };
+        
+        console.log('📊 Navigation State:', state);
+        return state;
+    },
+    
+    // Simulasi voice command
+    simulateCommand: function(command) {
+        if (typeof handleVoiceCommand === 'function') {
+            handleVoiceCommand(command);
+            console.log('✅ Simulasi command:', command);
+            return true;
+        } else {
+            console.error('❌ handleVoiceCommand function tidak ditemukan');
+            return false;
+        }
+    },
+    
+    // Debug microphone state
+    debugMicrophone: function() {
+        const state = {
+            recognitionAvailable: !!(window.SpeechRecognition || window.webkitSpeechRecognition),
+            recognitionInitialized: !!recognition,
+            isListening: typeof isListening !== 'undefined' ? isListening : 'undefined',
+            hasUserInteraction: typeof hasUserInteraction !== 'undefined' ? hasUserInteraction : 'undefined',
+            isNavigating: typeof isNavigating !== 'undefined' ? isNavigating : 'undefined',
+            recognitionStopped: recognition ? (recognition._stopped || false) : 'N/A',
+            recognitionLang: recognition ? recognition.lang : 'N/A',
+            recognitionContinuous: recognition ? recognition.continuous : 'N/A',
+            recognitionInterimResults: recognition ? recognition.interimResults : 'N/A'
+        };
+        
+        console.log('🎤 Microphone Debug State:', state);
+        
+        // Check microphone permission
+        if (navigator.permissions) {
+            navigator.permissions.query({ name: 'microphone' }).then(function(result) {
+                console.log('🎤 Microphone Permission:', result.state);
+                state.microphonePermission = result.state;
+            }).catch(function(err) {
+                console.log('⚠️ Could not check microphone permission:', err);
+            });
+        }
+        
+        return state;
+    },
+    
+    // Force start microphone (with user interaction)
+    forceStartMicrophone: function() {
+        console.log('🔧 Force starting microphone...');
+        
+        // Mark user interaction
+        hasUserInteraction = true;
+        
+        // Initialize if needed
+        if (!recognition) {
+            console.log('🔄 Initializing speech recognition...');
+            const initResult = initSpeechRecognition();
+            if (!initResult && !recognition) {
+                console.error('❌ Failed to initialize speech recognition');
+                updateVoiceStatus('❌ Gagal menginisialisasi speech recognition');
+                return false;
+            }
+        }
+        
+        // Clear stopped flag
+        if (recognition) {
+            recognition._stopped = false;
+            console.log('🔄 Cleared stopped flag');
+        }
+        
+        // Stop if already listening (to restart fresh)
+        if (isListening && recognition) {
+            try {
+                recognition.stop();
+                isListening = false;
+                console.log('🔄 Stopped existing recognition to restart');
+                // Wait a bit before restarting
+                setTimeout(() => {
+                    this.forceStartMicrophone();
+                }, 500);
+                return;
+            } catch (e) {
+                console.warn('⚠️ Error stopping existing recognition:', e);
+            }
+        }
+        
+        // Start microphone
+        if (recognition && !isListening) {
+            try {
+                finalTranscript = '';
+                recognition.start();
+                isListening = true;
+                console.log('✅ Microphone force started successfully');
+                updateVoiceStatus('🎤 Mikrofon aktif - Force start');
+                
+                // Verify it's actually listening
+                setTimeout(() => {
+                    if (isListening) {
+                        console.log('✅ Microphone confirmed listening');
+                    } else {
+                        console.warn('⚠️ Microphone may not be listening - check permission');
+                    }
+                }, 1000);
+                
+                return true;
+            } catch (error) {
+                console.error('❌ Failed to force start microphone:', error);
+                updateVoiceStatus('❌ Gagal: ' + (error.message || error));
+                
+                // If permission error, provide guidance
+                if (error.name === 'NotAllowedError' || (error.message && error.message.includes('not-allowed'))) {
+                    console.log('💡 TIP: Klik di halaman dan pilih "Allow" saat popup permission muncul');
+                    updateVoiceStatus('⚠️ Klik di halaman dan pilih "Allow" untuk izin mikrofon');
+                }
+                
+                return false;
+            }
+        } else if (!recognition) {
+            console.error('❌ Recognition object not available');
+            updateVoiceStatus('❌ Speech recognition tidak tersedia');
+            return false;
+        } else {
+            console.log('ℹ️ Microphone already listening');
+            return true;
+        }
+    },
+    
+    // Test microphone dengan visual feedback
+    testMicrophone: function() {
+        console.log('🧪 Testing microphone...');
+        
+        // Check support
+        const supported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+        console.log('Browser support:', supported ? '✅' : '❌');
+        
+        if (!supported) {
+            updateVoiceStatus('❌ Browser tidak support speech recognition');
+            return false;
+        }
+        
+        // Check if initialized
+        if (!recognition) {
+            console.log('🔄 Initializing...');
+            initSpeechRecognition();
+        }
+        
+        // Force start
+        const result = this.forceStartMicrophone();
+        
+        if (result) {
+            console.log('✅ Test: Microphone should be listening now');
+            console.log('💡 Ucapkan sesuatu dan lihat apakah muncul "Final transcript" di console');
+            updateVoiceStatus('🧪 Test: Mikrofon aktif - ucapkan sesuatu');
+            
+            // Set timeout to check if speech detected
+            setTimeout(() => {
+                if (isListening) {
+                    console.log('✅ Test: Microphone masih listening');
+                } else {
+                    console.warn('⚠️ Test: Microphone stopped - mungkin ada masalah');
+                }
+            }, 5000);
+        }
+        
+        return result;
+    }
+};
+
+// Print usage instructions saat helper di-load
+console.log(`
+🧪 TESTING HELPER LOADED!
+
+📖 CARA PAKAI:
+1. testNavigation.setLocation(-6.2088, 106.8456)  // Set lokasi awal
+2. testNavigation.startNavigation(-6.2148, 106.8456, 'Tujuan')  // Set tujuan & mulai navigasi
+3. testNavigation.testVoice('Setelah 50 meter Belok kiri')  // Test suara
+4. testNavigation.simulateCommand('Rute 1')  // Simulasi voice command
+5. testNavigation.simulateMovement(-6.2088, 106.8456, -6.2148, 106.8456, 20)  // Simulasi pergerakan
+6. testNavigation.fullTest()  // Test lengkap otomatis
+7. testNavigation.checkState()  // Check state navigasi
+8. testNavigation.testMicrophone()  // Test mikrofon (PENTING!)
+9. testNavigation.debugMicrophone()  // Debug state mikrofon
+10. testNavigation.forceStartMicrophone()  // Force start mikrofon
+
+📍 Contoh Koordinat:
+- Jakarta: -6.2088, 106.8456
+- Solo: -7.5667, 110.8167
+- Bandung: -6.9175, 107.6191
+
+🔊 DEBUG NAVIGATOR:
+- testNavigation.debugTurnAnnouncement()  // Test lengkap announcement belokan
+- testNavigation.simulateApproachingTurn()  // Simulasi mendekati belokan
+`);
