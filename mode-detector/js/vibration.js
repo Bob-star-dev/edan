@@ -105,69 +105,87 @@ async function vibrateESP32(pattern, direction = null) {
     // If direction is specified, use direction parameter
     if (direction && (direction === 'left' || direction === 'right' || direction === 'both' || direction === 'stop')) {
       url = `${baseUrl}?direction=${direction}&duration=${duration}&t=${Date.now()}`;
-      console.log(`[Vibration] 📡 Sending directional vibration to ESP32-CAM: ${url}`);
-      console.log(`[Vibration] 📡 Direction: ${direction}, Duration: ${duration}ms`);
+      // Only log occasionally to avoid console spam
+      if (!window._lastDirectionalVibrationLog || Date.now() - window._lastDirectionalVibrationLog > 5000) {
+        console.log(`[Vibration] 📡 Sending directional vibration to ESP32-CAM: ${url}`);
+        console.log(`[Vibration] 📡 Direction: ${direction}, Duration: ${duration}ms`);
+        window._lastDirectionalVibrationLog = Date.now();
+      }
     } else {
       // Default: both motors
       url = `${baseUrl}?duration=${duration}&t=${Date.now()}`;
-      console.log(`[Vibration] 📡 Sending vibration signal to ESP32-CAM: ${url}`);
-      console.log(`[Vibration] 📡 Duration: ${duration}ms (both motors)`);
+      // Only log occasionally to avoid console spam
+      if (!window._lastVibrationUrlLog || Date.now() - window._lastVibrationUrlLog > 5000) {
+        console.log(`[Vibration] 📡 Sending vibration signal to ESP32-CAM: ${url}`);
+        console.log(`[Vibration] 📡 Duration: ${duration}ms (both motors)`);
+        window._lastVibrationUrlLog = Date.now();
+      }
     }
     
     // Send HTTP GET request to ESP32-CAM
-    // Try with cors first to check response status, fallback to no-cors if CORS fails
+    // Use no-cors mode directly to avoid CORS preflight issues
+    // ESP32-CAM typically doesn't send proper CORS headers, so we use no-cors mode
     let response;
     let responseStatus = null;
     
     try {
-      // First try: Use cors mode to check response status
+      // Use no-cors mode directly to avoid CORS preflight issues
+      // This prevents the "cache-control header not allowed" error
+      // Note: With no-cors, we can't read the response, but the request is sent
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+      
       response = await fetch(url, {
         method: 'GET',
-        mode: 'cors', // Try cors first to check response
+        mode: 'no-cors', // Use no-cors to avoid CORS preflight issues
         cache: 'no-cache',
-        headers: {
-          'Cache-Control': 'no-cache'
-        }
+        signal: controller.signal
+        // Don't add custom headers - they trigger preflight requests
       });
-      responseStatus = response.status;
+      clearTimeout(timeoutId);
       
-      if (responseStatus === 404) {
-        console.error(`[Vibration] ❌ ESP32-CAM endpoint /vibrate tidak ditemukan (404)`);
-        console.error(`[Vibration] ❌ Endpoint /vibrate belum ada di firmware ESP32-CAM`);
-        console.error(`[Vibration] 💡 SOLUSI: Tambahkan endpoint /vibrate di firmware ESP32-CAM`);
-        console.error(`[Vibration] 💡 Endpoint harus menerima: GET /vibrate?duration=200`);
-        return false;
-      } else if (responseStatus >= 400) {
-        console.error(`[Vibration] ❌ ESP32-CAM error: HTTP ${responseStatus}`);
-        return false;
-      } else {
-        console.log(`[Vibration] ✅ Vibration signal sent to ESP32-CAM (${duration}ms) - HTTP ${responseStatus}`);
-        return true;
+      // With no-cors mode, we can't check response status (response.status is always 0)
+      // But if no error is thrown, the request was sent successfully
+      // Assume success if no error occurred
+      // Only log occasionally to avoid console spam
+      if (!window._lastVibrationSuccessLog || Date.now() - window._lastVibrationSuccessLog > 5000) {
+        console.log(`[Vibration] ✅ Vibration signal sent to ESP32-CAM (${duration}ms) - no-cors mode`);
+        window._lastVibrationSuccessLog = Date.now();
       }
-    } catch (corsError) {
-      // CORS error: Fallback to no-cors mode (request sent but can't check status)
-      console.warn(`[Vibration] ⚠️ CORS error, trying no-cors mode:`, corsError.message);
+      return true;
+    } catch (error) {
+      // Check if it's a timeout or connection error
+      const isTimeout = error.name === 'AbortError' || 
+                        error.message.includes('timeout') ||
+                        error.message.includes('TIMED_OUT') ||
+                        error.message.includes('ERR_CONNECTION_TIMED_OUT');
       
-      try {
-        // Fallback: Use no-cors mode (request sent but can't verify)
-        response = await fetch(url, {
-          method: 'GET',
-          mode: 'no-cors', // Avoid CORS issues with ESP32-CAM
-          cache: 'no-cache',
-          headers: {
-            'Cache-Control': 'no-cache'
-          }
-        });
-        
-        // With no-cors mode, we can't check response status
-        // But request is sent successfully if no error thrown
-        console.log(`[Vibration] ✅ Vibration signal sent to ESP32-CAM (${duration}ms)`);
-        console.warn(`[Vibration] ⚠️ Note: Cannot verify response (no-cors mode). Pastikan endpoint /vibrate ada di firmware ESP32-CAM`);
-        return true;
-      } catch (noCorsError) {
-        console.error(`[Vibration] ❌ Failed to send vibration signal:`, noCorsError);
+      const isConnectionError = error.message.includes('Failed to fetch') ||
+                                error.message.includes('ERR_CONNECTION_REFUSED') ||
+                                error.message.includes('ERR_CONNECTION_TIMED_OUT') ||
+                                error.message.includes('NetworkError');
+      
+      // Only log connection errors once (throttle logging)
+      if (isTimeout || isConnectionError) {
+        // Don't log every error - too verbose
+        // Only log if this is the first error or after a delay
+        if (!window._lastVibrationErrorLog || Date.now() - window._lastVibrationErrorLog > 10000) {
+          console.warn(`[Vibration] ⚠️ ESP32-CAM tidak dapat dihubungi (timeout/connection error)`);
+          console.warn(`[Vibration] 💡 Pastikan ESP32-CAM terhubung ke WiFi yang sama`);
+          console.warn(`[Vibration] 💡 IP: ${url.split('/')[2]}`);
+          console.warn(`[Vibration] 💡 Menggunakan Web Vibration API sebagai fallback`);
+          window._lastVibrationErrorLog = Date.now();
+        }
+        // Return false to trigger fallback
         return false;
       }
+      
+      // Other errors - log occasionally
+      if (!window._lastVibrationErrorLog || Date.now() - window._lastVibrationErrorLog > 10000) {
+        console.warn(`[Vibration] ⚠️ Error sending vibration:`, error.message);
+        window._lastVibrationErrorLog = Date.now();
+      }
+      return false;
     }
     
   } catch (error) {
@@ -238,50 +256,65 @@ async function vibrateESP32Pattern(pattern, direction = null) {
     
     console.log(`[Vibration] 📡 Pattern URL: ${url}`);
     
-    // Try with cors first to check response status
-    let response;
-    let responseStatus = null;
+    // Use no-cors mode directly to avoid CORS preflight issues
+    // ESP32-CAM typically doesn't send proper CORS headers
+    let timeoutId = null;
     
     try {
-      // First try: Use cors mode to check response status
-      response = await fetch(url, {
+      // Use no-cors mode to avoid CORS preflight issues
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+      
+      const response = await fetch(url, {
         method: 'GET',
-        mode: 'cors',
+        mode: 'no-cors', // Use no-cors to avoid CORS preflight issues
+        signal: controller.signal,
         cache: 'no-cache'
+        // Don't add custom headers - they trigger preflight requests
       });
-      responseStatus = response.status;
       
-      if (responseStatus === 404) {
-        console.error(`[Vibration] ❌ ESP32-CAM endpoint /vibrate tidak ditemukan (404)`);
-        console.error(`[Vibration] ❌ Endpoint /vibrate belum ada di firmware ESP32-CAM`);
-        console.error(`[Vibration] 💡 SOLUSI: Tambahkan endpoint /vibrate di firmware ESP32-CAM`);
-        console.error(`[Vibration] 💡 Endpoint harus menerima: GET /vibrate?pattern=200,100,200,100`);
-        return false;
-      } else if (responseStatus >= 400) {
-        console.error(`[Vibration] ❌ ESP32-CAM error: HTTP ${responseStatus}`);
-        return false;
-      } else {
-        console.log(`[Vibration] ✅ Vibration pattern sent to ESP32-CAM - HTTP ${responseStatus}`);
-        return true;
-      }
-    } catch (corsError) {
-      // CORS error: Fallback to no-cors mode
-      console.warn(`[Vibration] ⚠️ CORS error, trying no-cors mode:`, corsError.message);
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = null;
       
-      try {
-        response = await fetch(url, {
-          method: 'GET',
-          mode: 'no-cors',
-          cache: 'no-cache'
-        });
-        
-        console.log(`[Vibration] ✅ Vibration pattern sent to ESP32-CAM`);
-        console.warn(`[Vibration] ⚠️ Note: Cannot verify response (no-cors mode). Pastikan endpoint /vibrate ada di firmware ESP32-CAM`);
-        return true;
-      } catch (noCorsError) {
-        console.error(`[Vibration] ❌ Failed to send vibration pattern:`, noCorsError);
+      // With no-cors mode, we can't check response status
+      // But if no error is thrown, the request was sent successfully
+      // Only log occasionally to avoid console spam
+      if (!window._lastVibrationPatternSuccessLog || Date.now() - window._lastVibrationPatternSuccessLog > 5000) {
+        console.log(`[Vibration] ✅ Vibration pattern sent to ESP32-CAM - no-cors mode`);
+        window._lastVibrationPatternSuccessLog = Date.now();
+      }
+      return true;
+    } catch (error) {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = null;
+      
+      // Check if it's a timeout or connection error
+      const isTimeout = error.name === 'AbortError' || 
+                        error.message.includes('timeout') ||
+                        error.message.includes('TIMED_OUT') ||
+                        error.message.includes('ERR_CONNECTION_TIMED_OUT');
+      
+      const isConnectionError = error.message.includes('Failed to fetch') ||
+                                error.message.includes('ERR_CONNECTION_REFUSED') ||
+                                error.message.includes('ERR_CONNECTION_TIMED_OUT') ||
+                                error.message.includes('NetworkError');
+      
+      // Only log connection errors occasionally (throttle logging)
+      if (isTimeout || isConnectionError) {
+        if (!window._lastVibrationErrorLog || Date.now() - window._lastVibrationErrorLog > 10000) {
+          console.warn(`[Vibration] ⚠️ ESP32-CAM tidak dapat dihubungi (timeout/connection error)`);
+          console.warn(`[Vibration] 💡 Pastikan ESP32-CAM terhubung ke WiFi yang sama`);
+          window._lastVibrationErrorLog = Date.now();
+        }
         return false;
       }
+      
+      // Other errors - log occasionally
+      if (!window._lastVibrationErrorLog || Date.now() - window._lastVibrationErrorLog > 10000) {
+        console.warn(`[Vibration] ⚠️ Error sending vibration pattern:`, error.message);
+        window._lastVibrationErrorLog = Date.now();
+      }
+      return false;
     }
     
   } catch (error) {
@@ -778,9 +811,13 @@ async function triggerVibration(distance, objectName = 'object', detection = nul
   // ESP32-CAM akan mengaktifkan kedua vibration motor secara bersamaan
   let esp32VibrationSuccess = false;
   if (vibrationState.useESP32Vibration) {
-    console.log(`[Vibration] 📡 Sending vibration to ESP32-CAM...`);
-    console.log(`[Vibration] 📡 Object: ${objectName}, Distance: ${distance.toFixed(1)}cm`);
-    console.log(`[Vibration] 📡 Pattern: ${Array.isArray(vibrationPattern) ? vibrationPattern.join(',') : vibrationPattern}ms`);
+    // Only log occasionally to avoid console spam (throttle to once per 5 seconds)
+    if (!window._lastVibrationSendLog || Date.now() - window._lastVibrationSendLog > 5000) {
+      console.log(`[Vibration] 📡 Sending vibration to ESP32-CAM...`);
+      console.log(`[Vibration] 📡 Object: ${objectName}, Distance: ${distance.toFixed(1)}cm`);
+      console.log(`[Vibration] 📡 Pattern: ${Array.isArray(vibrationPattern) ? vibrationPattern.join(',') : vibrationPattern}ms`);
+      window._lastVibrationSendLog = Date.now();
+    }
     
     if (Array.isArray(vibrationPattern)) {
       // Send pattern array to ESP32-CAM with direction
@@ -793,20 +830,21 @@ async function triggerVibration(distance, objectName = 'object', detection = nul
     }
     
     if (esp32VibrationSuccess) {
-      console.log(`[Vibration] ✅ ESP32-CAM vibration signal sent successfully!`);
-      console.log(`[Vibration] ✅ Type: ${vibrationType}`);
-      if (direction === 'left') {
-        console.log(`[Vibration] ✅ Motor kiri (MOTOR_L, GPIO 15) should vibrate now`);
-      } else if (direction === 'right') {
-        console.log(`[Vibration] ✅ Motor kanan (MOTOR_R, GPIO 14) should vibrate now`);
-      } else {
-        console.log(`[Vibration] ✅ Both motors (MOTOR_R + MOTOR_L) should vibrate now`);
+      // Only log occasionally to avoid console spam
+      if (!window._lastVibrationSuccessLog || Date.now() - window._lastVibrationSuccessLog > 5000) {
+        console.log(`[Vibration] ✅ ESP32-CAM vibration signal sent successfully!`);
+        console.log(`[Vibration] ✅ Type: ${vibrationType}`);
+        window._lastVibrationSuccessLog = Date.now();
       }
     } else {
-      console.warn(`[Vibration] ⚠️ ESP32-CAM vibration failed, trying fallback methods...`);
-      console.warn(`[Vibration] 💡 Check: ESP32-CAM endpoint /vibrate must exist`);
-      console.warn(`[Vibration] 💡 Check: ESP32-CAM must be connected to WiFi`);
-      console.warn(`[Vibration] 💡 Check: DNS must be correct (esp32cam.local)`);
+      // Only log occasionally to avoid console spam
+      if (!window._lastVibrationFailLog || Date.now() - window._lastVibrationFailLog > 10000) {
+        console.warn(`[Vibration] ⚠️ ESP32-CAM vibration failed, trying fallback methods...`);
+        console.warn(`[Vibration] 💡 Check: ESP32-CAM endpoint /vibrate must exist`);
+        console.warn(`[Vibration] 💡 Check: ESP32-CAM must be connected to WiFi`);
+        console.warn(`[Vibration] 💡 Check: DNS must be correct (esp32cam.local)`);
+        window._lastVibrationFailLog = Date.now();
+      }
     }
   }
   

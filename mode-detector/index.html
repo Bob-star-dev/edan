@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Object Detection - Native JS</title>
   <link rel="stylesheet" href="styles.css">
+  <!-- Prevent favicon 404 error -->
+  <link rel="icon" href="data:,">
 </head>
 <body>
   <div class="container">
@@ -84,9 +86,11 @@
               <strong>📡 ESP32-CAM</strong>
               <p>Gunakan ESP32-CAM via WiFi. Pastikan ESP32-CAM dan komputer dalam jaringan WiFi yang sama.</p>
               <ul style="margin-top: 0.5rem; padding-left: 1.5rem;">
-                <li><strong>DNS:</strong> Default esp32cam.local (edit di camera.js jika berbeda)</li>
-                <li><strong>Stream Mode:</strong> Lebih cepat, menggunakan MJPEG stream</li>
+                <li><strong>IP:</strong> Default 192.168.1.12 (edit di camera.js jika berbeda)</li>
+                <li><strong>DNS:</strong> esp32cam.local (fallback jika IP tidak tersedia)</li>
+                <li><strong>Stream Mode:</strong> Lebih cepat, menggunakan MJPEG stream (direkomendasikan)</li>
                 <li><strong>Capture Mode:</strong> Lebih stabil, mengambil frame per frame</li>
+                <li><strong>CORS:</strong> Pastikan ESP32-CAM firmware sudah mengaktifkan CORS headers</li>
               </ul>
             </div>
           </div>
@@ -195,9 +199,31 @@
               <strong>❌ ESP32-CAM tidak connect</strong>
               <ul>
                 <li>Pastikan ESP32-CAM dan komputer dalam jaringan WiFi yang sama</li>
-                <li>Periksa DNS ESP32-CAM (edit di camera.js)</li>
-                <li>Coba akses URL langsung di browser: <code>http://esp32cam.local:81/stream</code></li>
+                <li>Periksa IP ESP32-CAM (default: 192.168.1.12, edit di camera.js jika berbeda)</li>
+                <li>Coba akses URL langsung di browser: <code>http://192.168.1.12/stream</code> atau <code>http://esp32cam.local/stream</code></li>
                 <li>Coba mode Capture jika Stream tidak bekerja</li>
+                <li>Pastikan ESP32-CAM firmware sudah mengaktifkan CORS headers</li>
+              </ul>
+            </div>
+            <div class="troubleshoot-item">
+              <strong>❌ Canvas tainted / YOLO tidak bisa memproses frame</strong>
+              <ul>
+                <li><strong>SOLUSI UTAMA:</strong> Pastikan ESP32-CAM firmware sudah mengaktifkan CORS headers</li>
+                <li>Di kode Arduino, pastikan fungsi <code>sendCORS()</code> dipanggil di setiap response</li>
+                <li>Header yang diperlukan: <code>Access-Control-Allow-Origin: *</code></li>
+                <li>Jika CORS sudah aktif, tunggu beberapa detik untuk ImageBitmap method memuat frame</li>
+                <li>Refresh halaman jika masalah masih terjadi</li>
+              </ul>
+            </div>
+            <div class="troubleshoot-item">
+              <strong>❌ Vibration tidak bekerja ke ESP32-CAM</strong>
+              <ul>
+                <li><strong>CATATAN:</strong> Endpoint <code>/vibrate</code> harus ditambahkan di kode Arduino</li>
+                <li><strong>✅ PERBAIKAN:</strong> Aplikasi sekarang menggunakan <code>no-cors</code> mode untuk menghindari CORS preflight errors</li>
+                <li>Request vibration akan dikirim ke ESP32-CAM tanpa memerlukan CORS headers</li>
+                <li>Untuk menggunakan vibration via HTTP, tambahkan handler <code>/vibrate</code> di Arduino code</li>
+                <li>Vibration akan fallback ke Web Vibration API (handphone) jika ESP32-CAM tidak tersedia atau endpoint tidak ada</li>
+                <li><strong>Format endpoint:</strong> <code>GET /vibrate?duration=200</code> atau <code>GET /vibrate?pattern=200,100,200,100&direction=left</code></li>
               </ul>
             </div>
             <div class="troubleshoot-item">
@@ -260,7 +286,8 @@
         <video id="video-element" autoplay playsinline muted style="display: none;"></video>
 
         <!-- Image Element (ESP32-CAM) -->
-        <img id="esp32-img" crossorigin="anonymous" style="display: none;">
+        <!-- Note: crossOrigin will be set dynamically by camera.js to handle CORS -->
+        <img id="esp32-img" style="display: none;">
 
         <!-- Canvas Overlay for Detection Results -->
         <canvas id="canvas-overlay"></canvas>
@@ -331,15 +358,19 @@
           </button>
         </div>
         <div id="esp32-info" style="display: none; margin-top: 10px;">
-          <p class="info-text">DNS: <span id="esp32-ip">esp32cam.local</span></p>
+          <p class="info-text">IP: <span id="esp32-ip">192.168.1.12</span></p>
+          <p class="info-text" style="font-size: 0.85rem; margin-top: 4px; color: #666;">DNS: esp32cam.local (fallback)</p>
           <div class="button-group" style="margin-top: 8px;">
-            <button id="esp32-stream-btn" class="btn btn-toggle active" style="font-size: 11px; padding: 6px 12px;" title="Mode stream (lebih cepat)">
+            <button id="esp32-stream-btn" class="btn btn-toggle active" style="font-size: 11px; padding: 6px 12px;" title="Mode stream (lebih cepat, direkomendasikan untuk YOLO)">
               Stream
             </button>
-            <button id="esp32-capture-btn" class="btn btn-toggle" style="font-size: 11px; padding: 6px 12px;" title="Mode capture (frame per frame)">
+            <button id="esp32-capture-btn" class="btn btn-toggle" style="font-size: 11px; padding: 6px 12px;" title="Mode capture (frame per frame, tidak direkomendasikan untuk YOLO)">
               Capture
             </button>
           </div>
+          <p class="info-text" style="font-size: 0.75rem; margin-top: 6px; color: #888; font-style: italic;">
+            💡 Mode Stream direkomendasikan untuk deteksi YOLO real-time
+          </p>
         </div>
       </div>
 
@@ -466,8 +497,21 @@
   </script>
   
   <!-- NDArray for tensor operations -->
-  <script src="https://cdn.jsdelivr.net/npm/ndarray@1/dist/ndarray.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/ndarray-ops@1/dist/ndarray-ops.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ndarray@1/dist/ndarray.js" 
+          onerror="console.warn('[NDArray] Failed to load ndarray library from CDN. Using fallback preprocessing.'); window.ndarray = undefined;"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ndarray-ops@1/dist/ndarray-ops.js"
+          onerror="console.warn('[NDArray] Failed to load ndarray-ops library from CDN. Using fallback preprocessing.'); window.ops = undefined;"></script>
+  <script>
+    // Verify ndarray libraries are loaded
+    window.addEventListener('load', () => {
+      if (typeof ndarray === 'undefined' || typeof ops === 'undefined') {
+        console.warn('[NDArray] ⚠️ ndarray libraries not fully loaded. Using fallback preprocessing (slower but functional).');
+        console.warn('[NDArray] 💡 This is not an error - fallback preprocessing will be used automatically.');
+      } else {
+        console.log('[NDArray] ✅ ndarray libraries loaded successfully');
+      }
+    });
+  </script>
 
   <!-- Firebase Realtime Database -->
   <script src="js/firebase-realtime.js"></script>

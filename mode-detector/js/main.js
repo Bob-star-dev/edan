@@ -169,12 +169,31 @@ async function runDetection() {
   // Capture frame from camera
   const ctx = captureFrame();
   if (!ctx) {
-    console.warn('❌ Failed to capture frame');
-    const errorMsg = cameraState.source === 'webcam'
-      ? '❌ Gagal mengambil frame dari webcam. Pastikan video sedang berjalan.'
-      : '❌ Gagal mengambil frame dari ESP32-CAM. Periksa koneksi atau coba mode capture.';
-    showError(errorMsg);
+    // Throttle logging to avoid console spam (only log once every 10 seconds)
+    const now = Date.now();
+    if (!window._lastCaptureFrameErrorLog || now - window._lastCaptureFrameErrorLog > 10000) {
+      console.warn('❌ Failed to capture frame');
+      const errorMsg = cameraState.source === 'webcam'
+        ? '❌ Gagal mengambil frame dari webcam. Pastikan video sedang berjalan.'
+        : '❌ Gagal mengambil frame dari ESP32-CAM. Canvas tainted karena tidak ada CORS headers.\n\n💡 SOLUSI: Aktifkan CORS di ESP32-CAM firmware (Access-Control-Allow-Origin: *)';
+      if (cameraState.source === 'esp32') {
+        // Only show error once for ESP32 to avoid UI spam
+        if (!window._esp32CorsErrorShown) {
+          showError(errorMsg);
+          window._esp32CorsErrorShown = true;
+        }
+      } else {
+        showError(errorMsg);
+      }
+      window._lastCaptureFrameErrorLog = now;
+    }
     return;
+  }
+  
+  // Clear error flag if frame capture succeeds
+  if (window._esp32CorsErrorShown && cameraState.source === 'esp32') {
+    window._esp32CorsErrorShown = false;
+    hideError();
   }
 
   try {

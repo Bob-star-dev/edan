@@ -173,6 +173,23 @@ let espPollingTimer = null;
 let espStreamReader = null; // For MJPEG stream reading
 let espStreamAbortController = null; // For aborting stream requests
 
+// ESP32 fetch-based frame capture (avoids tainted canvas)
+let espFetchImageBitmap = null;
+let espFetchFrameActive = false;
+let espFetchFrameController = null;
+let espFetchUseStream = false; // Flag to switch between /capture and /stream
+
+// Make buffer canvas globally accessible for preprocessing
+if (typeof window !== 'undefined') {
+  // Expose getter function to access buffer canvas safely
+  window.getESP32BufferCanvas = function() {
+    if (cameraState.source === 'esp32' && espBufferCanvas && espBufferHasFrame) {
+      return espBufferCanvas;
+    }
+    return null;
+  };
+}
+
 /**
  * Disable ESP32-CAM flash LED
  * Tries multiple common endpoints for different ESP32-CAM firmware versions
@@ -187,16 +204,29 @@ async function disableESP32Flash() {
     `${baseURL}/?led=off`
   ];
   
-  console.log('[ESP32-CAM] 💡 Attempting to disable flash LED...');
+  // Only log first attempt to reduce console spam
+  if (!window._flashDisableLogged) {
+    console.log('[ESP32-CAM] 💡 Attempting to disable flash LED...');
+    window._flashDisableLogged = true;
+  }
   
   // Try all endpoints (some ESP32-CAM firmware may use different endpoints)
+  // Add timeout to prevent hanging requests
   const promises = endpoints.map(endpoint => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1000); // 1 second timeout
+    
     return fetch(endpoint, { 
       method: 'GET',
       mode: 'no-cors', // Avoid CORS issues
-      cache: 'no-cache'
+      cache: 'no-cache',
+      signal: controller.signal
+    }).then(() => {
+      clearTimeout(timeoutId);
+      return true;
     }).catch(err => {
-      // Ignore errors - endpoint might not exist
+      clearTimeout(timeoutId);
+      // Ignore errors - endpoint might not exist or connection failed
       return null;
     });
   });
@@ -204,10 +234,15 @@ async function disableESP32Flash() {
   // Try parallel requests (no-cors mode won't throw errors even if endpoint doesn't exist)
   try {
     await Promise.all(promises);
-    console.log('[ESP32-CAM] 💡 Flash LED disable command sent');
+    // Don't log every attempt - too verbose
+    // Only log on first success
+    if (!window._flashDisableSuccessLogged) {
+      console.log('[ESP32-CAM] 💡 Flash LED disable command sent');
+      window._flashDisableSuccessLogged = true;
+    }
   } catch (error) {
     // Ignore errors - some endpoints may not exist depending on firmware
-    console.log('[ESP32-CAM] 💡 Flash LED disable attempted (some endpoints may not exist)');
+    // Don't log - connection errors are expected if ESP32-CAM is not connected
   }
 }
 
@@ -409,6 +444,14 @@ function stopESP32Stream() {
     clearTimeout(espPollingTimer);
     espPollingTimer = null;
   }
+  
+  // Stop fetch-based frame capture
+  if (espFetchFrameController) {
+    espFetchFrameController.abort();
+    espFetchFrameController = null;
+  }
+  espFetchFrameActive = false;
+  espFetchImageBitmap = null;
 }
 
 /**
@@ -455,6 +498,340 @@ async function testESP32Connection(url) {
     // Try to load test image (small endpoint first)
     testImg.src = url + '?t=' + Date.now();
   });
+}
+
+/**
+ * Fetch ESP32-CAM frame using Fetch API with no-cors mode + ImageBitmap (avoids tainted canvas)
+ * This method uses Fetch API with no-cors mode to get frame as blob without requiring CORS headers
+ * Then converts to ImageBitmap which can be drawn to canvas without tainting it
+ * Note: Uses /capture endpoint (single frame) - more reliable than /stream for fetch
+ */
+async function fetchESP32Frame() {
+  if (cameraState.source !== 'esp32') {
+    return Promise.resolve(null);
+  }
+
+  // Abort previous request if exists
+  if (espFetchFrameController && espFetchFrameController.abort) {
+    espFetchFrameController.abort();
+  }
+  
+  // Use /capture endpoint (single JPEG frame - best for XHR)
+  // User confirmed /capture is accessible, so use it directly
+  const url = `${ESP32_STATIC_BASE_URL}/capture?t=${Date.now()}`;
+  
+  // Log fetch attempt occasionally for debugging
+  const now = Date.now();
+  if (!window._lastFetchAttemptLog || now - window._lastFetchAttemptLog > 5000) {
+    console.log(`[ESP32-CAM] 🔄 Fetching frame from: ${url}`);
+    window._lastFetchAttemptLog = now;
+  }
+  
+  // Use XMLHttpRequest instead of fetch for better reliability with /capture endpoint
+  // XHR with responseType='blob' works better for binary data like JPEG images
+  // XHR doesn't have CORS preflight issues like fetch
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.responseType = 'blob';
+    xhr.timeout = 8000; // 8 second timeout (reasonable for /capture endpoint)
+    
+    const xhrStartTime = Date.now();
+    
+    xhr.onload = async () => {
+      const xhrTime = Date.now() - xhrStartTime;
+      
+      // Log status code and response info
+      if (xhr.status !== 200) {
+        const now = Date.now();
+        if (!window._lastXHRStatusErrorLog || now - window._lastXHRStatusErrorLog > 10000) {
+          console.warn(`[ESP32-CAM] ⚠️ XHR status ${xhr.status} (expected 200)`);
+          console.warn('[ESP32-CAM] 💡 Endpoint /capture mungkin mengembalikan error');
+          console.warn('[ESP32-CAM] 💡 Coba akses langsung di browser: ' + url);
+          window._lastXHRStatusErrorLog = now;
+        }
+        resolve(null);
+        return;
+      }
+      
+      if (xhrTime > 2000) {
+        const now = Date.now();
+        if (!window._lastSlowXHRLog || now - window._lastSlowXHRLog > 10000) {
+          console.log(`[ESP32-CAM] ⏱️ XHR took ${xhrTime}ms (slow but working)`);
+          window._lastSlowXHRLog = now;
+        }
+      }
+      
+      // XHR with responseType='blob' gives us the blob directly
+      const blob = xhr.response;
+      
+      if (!blob || blob.size === 0) {
+        const now = Date.now();
+        if (!window._lastEmptyBlobLog || now - window._lastEmptyBlobLog > 10000) {
+          console.warn('[ESP32-CAM] ⚠️ Received empty blob from XHR');
+          console.warn('[ESP32-CAM] 💡 Endpoint /capture mungkin tidak tersedia atau mengembalikan data kosong');
+          console.warn('[ESP32-CAM] 💡 Coba akses langsung di browser: ' + url);
+          window._lastEmptyBlobLog = now;
+        }
+        resolve(null);
+        return;
+      }
+      
+      // Log blob size for debugging (always log first few times)
+      const now = Date.now();
+      if (!window._blobSizeLogCount) {
+        window._blobSizeLogCount = 0;
+      }
+      window._blobSizeLogCount++;
+      if (window._blobSizeLogCount <= 5 || !window._lastBlobSizeLog || now - window._lastBlobSizeLog > 10000) {
+        console.log(`[ESP32-CAM] 📦 Received blob: ${blob.size} bytes, type: ${blob.type || 'unknown'}, status: ${xhr.status}, time: ${xhrTime}ms`);
+        window._lastBlobSizeLog = now;
+      }
+      
+      // Convert blob to ImageBitmap (preferred - avoids tainted canvas)
+      // ImageBitmap created from blob can be drawn to canvas without tainting it
+      if (typeof createImageBitmap !== 'undefined') {
+        try {
+          const imageBitmap = await createImageBitmap(blob);
+          espFetchImageBitmap = imageBitmap;
+          // Log success on first frame and occasionally
+          if (!window._imageBitmapSuccessLogged) {
+            console.log('[ESP32-CAM] ✅ ImageBitmap created successfully from blob (XHR method)!');
+            console.log('[ESP32-CAM] ✅ Canvas tidak akan tainted - YOLO bisa memproses frame!');
+            console.log(`[ESP32-CAM] ✅ ImageBitmap dimensions: ${imageBitmap.width}x${imageBitmap.height}`);
+            console.log('[ESP32-CAM] 🎉 YOLO detection sekarang bisa bekerja dengan ESP32-CAM!');
+            window._imageBitmapSuccessLogged = true;
+          } else if (!window._lastImageBitmapSuccessLog || now - window._lastImageBitmapSuccessLog > 30000) {
+            console.log(`[ESP32-CAM] ✅ ImageBitmap method working: ${imageBitmap.width}x${imageBitmap.height}`);
+            window._lastImageBitmapSuccessLog = now;
+          }
+          resolve(imageBitmap);
+          return;
+        } catch (bitmapError) {
+          // ImageBitmap creation failed, try data URL method
+          const now = Date.now();
+          if (!window._lastImageBitmapErrorLog || now - window._lastImageBitmapErrorLog > 10000) {
+            console.warn('[ESP32-CAM] ⚠️ ImageBitmap creation failed:', bitmapError.message);
+            console.warn('[ESP32-CAM] 💡 Trying data URL method as fallback...');
+            window._lastImageBitmapErrorLog = now;
+          }
+        }
+      }
+      
+      // Fallback: convert blob to data URL -> Image
+      // Data URL is considered same-origin, so canvas won't be tainted
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          // Store as ImageBitmap-like object for consistency
+          espFetchImageBitmap = img;
+          if (!window._dataURLSuccessLogged) {
+            console.log('[ESP32-CAM] ✅ Data URL method working (fallback)');
+            console.log(`[ESP32-CAM] ✅ Image dimensions: ${img.width}x${img.height}`);
+            window._dataURLSuccessLogged = true;
+          }
+          resolve(img);
+        };
+        img.onerror = () => {
+          const now = Date.now();
+          if (!window._lastDataURLErrorLog || now - window._lastDataURLErrorLog > 10000) {
+            console.warn('[ESP32-CAM] ⚠️ Data URL image load failed');
+            window._lastDataURLErrorLog = now;
+          }
+          resolve(null);
+        };
+        img.src = reader.result; // data URL - same origin, no taint
+      };
+      reader.onerror = () => {
+        const now = Date.now();
+        if (!window._lastFileReaderErrorLog || now - window._lastFileReaderErrorLog > 10000) {
+          console.warn('[ESP32-CAM] ⚠️ FileReader error');
+          window._lastFileReaderErrorLog = now;
+        }
+        resolve(null);
+      };
+      reader.readAsDataURL(blob);
+    };
+    
+    xhr.onerror = () => {
+      const now = Date.now();
+      if (!window._lastXHRErrorLog || now - window._lastXHRErrorLog > 10000) {
+        console.warn('[ESP32-CAM] ⚠️ XHR error fetching frame');
+        console.warn('[ESP32-CAM] 💡 Pastikan ESP32-CAM terhubung ke WiFi yang sama');
+        console.warn('[ESP32-CAM] 💡 IP: ' + ESP32_STATIC_BASE_URL);
+        console.warn('[ESP32-CAM] 💡 URL: ' + url);
+        console.warn('[ESP32-CAM] 💡 XHR akan terus mencoba setiap 200ms...');
+        window._lastXHRErrorLog = now;
+      }
+      resolve(null);
+    };
+    
+    xhr.ontimeout = () => {
+      const now = Date.now();
+      if (!window._lastXHRTimeoutLog || now - window._lastXHRTimeoutLog > 30000) {
+        console.warn('[ESP32-CAM] ⚠️ XHR timeout (8s) - endpoint mungkin lambat');
+        console.warn('[ESP32-CAM] 💡 Endpoint: /capture');
+        console.warn('[ESP32-CAM] 💡 Pastikan ESP32-CAM merespons dengan cepat');
+        console.warn('[ESP32-CAM] 💡 Coba akses langsung di browser: ' + url);
+        console.warn('[ESP32-CAM] 💡 XHR akan terus mencoba setiap 200ms...');
+        window._lastXHRTimeoutLog = now;
+      }
+      resolve(null);
+    };
+    
+    // Store controller for abort
+    espFetchFrameController = { abort: () => xhr.abort() };
+    
+    try {
+      xhr.open('GET', url, true);
+      xhr.send();
+      
+      // Log XHR start (first time only)
+      const now = Date.now();
+      if (!window._xhrStartLogged) {
+        console.log('[ESP32-CAM] 🔄 XHR fetch started for /capture endpoint');
+        console.log('[ESP32-CAM] 💡 XHR akan terus mencoba setiap 200ms sampai berhasil');
+        window._xhrStartLogged = true;
+      }
+    } catch (error) {
+      const now = Date.now();
+      if (!window._lastXHROpenErrorLog || now - window._lastXHROpenErrorLog > 10000) {
+        console.error('[ESP32-CAM] ❌ XHR open/send failed:', error);
+        console.error('[ESP32-CAM] 💡 URL: ' + url);
+        window._lastXHROpenErrorLog = now;
+      }
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * Start continuous fetch-based frame capture for ESP32-CAM
+ * This runs in background and updates espFetchImageBitmap
+ * Uses /capture endpoint for single frame capture (better for fetch than /stream)
+ */
+function startFetchFrameCapture() {
+  if (cameraState.source !== 'esp32') {
+    return;
+  }
+  
+  // Check if createImageBitmap is available
+  if (typeof createImageBitmap === 'undefined') {
+    console.warn('[ESP32-CAM] ⚠️ createImageBitmap not available, skipping fetch method');
+    return;
+  }
+  
+  espFetchFrameActive = true;
+  console.log('[ESP32-CAM] 🎯 Starting fetch-based frame capture (ImageBitmap method - avoids tainted canvas)');
+  console.log('[ESP32-CAM] ✅ espFetchFrameActive = true');
+  console.log('[ESP32-CAM] 📡 Target URL: ' + ESP32_STATIC_BASE_URL + '/capture');
+  
+  let fetchAttempts = 0;
+  let fetchSuccessCount = 0;
+  let lastFetchErrorTime = 0;
+  let fetchMethodWorking = false;
+  let fetchLoopRunning = false;
+  
+  async function fetchLoop() {
+    // Prevent multiple fetch loops from running
+    if (fetchLoopRunning) {
+      console.warn('[ESP32-CAM] ⚠️ Fetch loop already running, skipping...');
+      return;
+    }
+    
+    fetchLoopRunning = true;
+    
+    // Check if still active and source is still ESP32
+    if (!espFetchFrameActive) {
+      console.warn('[ESP32-CAM] ⚠️ Fetch loop stopped: espFetchFrameActive = false');
+      fetchLoopRunning = false;
+      return;
+    }
+    
+    if (cameraState.source !== 'esp32') {
+      console.warn('[ESP32-CAM] ⚠️ Fetch loop stopped: camera source changed to ' + cameraState.source);
+      espFetchFrameActive = false; // Stop fetch loop
+      fetchLoopRunning = false;
+      return;
+    }
+    
+    fetchAttempts++;
+    const imageBitmap = await fetchESP32Frame();
+    
+    if (imageBitmap) {
+      fetchSuccessCount++;
+      fetchMethodWorking = true;
+      
+      // Update camera ready state if we got a frame
+      if (!cameraState.isStreamReady) {
+        cameraState.isStreamReady = true;
+        console.log('[ESP32-CAM] ✅ Camera ready (fetch method - ImageBitmap)');
+        console.log('[ESP32-CAM] ✅ YOLO sekarang bisa memproses frame dari ESP32-CAM!');
+        if (typeof updateStatusIndicators === 'function') {
+          updateStatusIndicators();
+        }
+        if (typeof startLiveDetection === 'function') {
+          startLiveDetection();
+        }
+      }
+      
+      // Clear any previous errors
+      if (window._esp32CorsErrorShown) {
+        window._esp32CorsErrorShown = false;
+        if (typeof hideError === 'function') {
+          hideError();
+        }
+      }
+      
+      // Log success on first frame and occasionally
+      if (fetchSuccessCount === 1) {
+        console.log(`[ESP32-CAM] ✅ Fetch method working! ImageBitmap method berhasil menghindari tainted canvas`);
+        console.log(`[ESP32-CAM] ✅ Frame pertama berhasil diambil - YOLO detection akan berjalan`);
+      } else if (fetchSuccessCount % 100 === 0) {
+        console.log(`[ESP32-CAM] ✅ Fetch method: ${fetchSuccessCount} frames captured (ImageBitmap)`);
+      }
+    } else {
+      // Fetch failed - might be network error or endpoint not available
+      const now = Date.now();
+      if (fetchAttempts === 1) {
+        // Log on first attempt
+        console.log('[ESP32-CAM] 🔄 Attempting to fetch frame from /capture endpoint...');
+        console.log('[ESP32-CAM] 💡 Fetch loop akan terus berjalan setiap 200ms sampai berhasil');
+      } else if (fetchAttempts >= 10 && fetchSuccessCount === 0 && (now - lastFetchErrorTime > 20000)) {
+        console.warn('[ESP32-CAM] ⚠️ Fetch method belum berhasil setelah 10 attempts');
+        console.warn('[ESP32-CAM] 💡 Kemungkinan: Network error atau endpoint /capture tidak tersedia');
+        console.warn('[ESP32-CAM] 💡 Pastikan ESP32-CAM terhubung ke WiFi yang sama');
+        console.warn('[ESP32-CAM] 💡 Pastikan endpoint /capture tersedia di ESP32-CAM');
+        console.warn('[ESP32-CAM] 💡 IP: ' + ESP32_STATIC_BASE_URL);
+        console.warn('[ESP32-CAM] 💡 Coba akses di browser: ' + ESP32_STATIC_BASE_URL + '/capture');
+        console.warn('[ESP32-CAM] 💡 Fetch loop akan terus mencoba setiap 200ms...');
+        lastFetchErrorTime = now;
+      }
+    }
+    
+    fetchLoopRunning = false;
+    
+    // Schedule next fetch (every 200ms for ~5 FPS - slower but more reliable)
+    // This is acceptable since it's a method that avoids tainted canvas
+    // IMPORTANT: Always schedule next fetch if still active, even if current fetch failed
+    if (espFetchFrameActive && cameraState.source === 'esp32') {
+      setTimeout(() => {
+        // Double-check before scheduling next fetch
+        if (espFetchFrameActive && cameraState.source === 'esp32') {
+          fetchLoop();
+        } else {
+          console.warn('[ESP32-CAM] ⚠️ Fetch loop stopped before next iteration: espFetchFrameActive = ' + espFetchFrameActive + ', source = ' + cameraState.source);
+        }
+      }, 200);
+    } else {
+      console.warn('[ESP32-CAM] ⚠️ Fetch loop stopped: espFetchFrameActive = ' + espFetchFrameActive + ', source = ' + cameraState.source);
+    }
+  }
+  
+  // Start fetch loop immediately
+  console.log('[ESP32-CAM] 🚀 Starting fetch loop for ImageBitmap method...');
+  console.log('[ESP32-CAM] 💡 Fetch akan mencoba setiap 200ms sampai berhasil');
+  fetchLoop();
 }
 
 /**
@@ -521,17 +898,65 @@ function readMJPEGStream() {
         }
       }
       
-      // Update buffer
+      // Update buffer canvas (critical for YOLO detection)
+      // Buffer is used to avoid tainted canvas issues when reading pixel data
+      // NOTE: If ESP32-CAM doesn't send CORS headers, the buffer canvas will still be tainted
+      // The only real solution is to enable CORS on ESP32-CAM firmware
       if (img.naturalWidth && img.naturalHeight) {
         if (!espBufferCanvas) {
           espBufferCanvas = document.createElement('canvas');
         }
-        espBufferCanvas.width = img.naturalWidth;
-        espBufferCanvas.height = img.naturalHeight;
-        const ctx = espBufferCanvas.getContext('2d');
+        // Only update buffer dimensions if they changed (performance optimization)
+        if (espBufferCanvas.width !== img.naturalWidth || 
+            espBufferCanvas.height !== img.naturalHeight) {
+          espBufferCanvas.width = img.naturalWidth;
+          espBufferCanvas.height = img.naturalHeight;
+        }
+        const ctx = espBufferCanvas.getContext('2d', { willReadFrequently: true });
         if (ctx) {
-          ctx.drawImage(img, 0, 0);
-          espBufferHasFrame = true;
+          try {
+            // Draw image to buffer canvas
+            // Note: Even with crossOrigin=null, drawing to canvas is allowed
+            // However, if the source image is from a different origin without CORS,
+            // the canvas will be tainted and we cannot read pixel data
+            ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight);
+            
+            // Test if buffer is not tainted by trying to read a single pixel
+            // This will throw SecurityError if canvas is tainted
+            try {
+              ctx.getImageData(0, 0, 1, 1);
+              espBufferHasFrame = true;
+              // Clear any previous tainted canvas error if successful
+              if (window._lastTaintedCanvasErrorLog) {
+                delete window._lastTaintedCanvasErrorLog;
+                if (typeof hideError === 'function') {
+                  hideError();
+                }
+              }
+            } catch (taintedTestError) {
+              // Buffer canvas is tainted - this means ESP32-CAM doesn't send CORS headers
+              espBufferHasFrame = false;
+              // Only log if ImageBitmap method is not active or has failed
+              const now = Date.now();
+              if ((!espFetchFrameActive || (espFetchFrameActive && !espFetchImageBitmap)) && 
+                  (!window._lastTaintedCanvasErrorLog || now - window._lastTaintedCanvasErrorLog > 30000)) {
+                console.error('[ESP32-CAM] ❌ Buffer canvas is tainted - YOLO tidak dapat memproses frame');
+                console.error('[ESP32-CAM] 💡 MASALAH: ESP32-CAM tidak mengirim CORS headers');
+                console.error('[ESP32-CAM] 💡 SOLUSI: Aktifkan CORS di ESP32-CAM firmware');
+                console.error('[ESP32-CAM] 💡 Untuk Arduino/ESP-IDF, tambahkan di setiap response:');
+                console.error('[ESP32-CAM] 💡   server.sendHeader("Access-Control-Allow-Origin", "*");');
+                console.error('[ESP32-CAM] 💡 Atau tunggu ImageBitmap method selesai memuat frame...');
+                if (typeof showError === 'function' && !window._esp32CorsErrorShown && !espFetchFrameActive) {
+                  showError('❌ ESP32-CAM: Canvas tainted - YOLO tidak dapat memproses frame\n\n💡 MASALAH:\nESP32-CAM tidak mengirim CORS headers\n\n💡 SOLUSI:\n1. Aktifkan CORS di ESP32-CAM firmware\n2. Tambahkan: Access-Control-Allow-Origin: *\n3. Atau tunggu ImageBitmap method...');
+                  window._esp32CorsErrorShown = true;
+                }
+                window._lastTaintedCanvasErrorLog = now;
+              }
+            }
+          } catch (bufferError) {
+            console.warn('[ESP32-CAM] ⚠️ Error updating buffer canvas:', bufferError);
+            espBufferHasFrame = false;
+          }
         }
         
         // Also ensure isStreamReady is set if we have valid frame data
@@ -546,6 +971,10 @@ function readMJPEGStream() {
             startLiveDetection();
           }
         }
+        
+        // Note: OffscreenCanvas method removed because it doesn't help
+        // If img element is tainted, ImageBitmap created from it will also be tainted
+        // We rely on fetch method to get clean ImageBitmap from /capture endpoint
       }
       
       setCanvasSize(img.naturalWidth || 640, img.naturalHeight || 480);
@@ -671,25 +1100,61 @@ function readMJPEGStream() {
     let pollingFlashDisableTime = 0;
     const STREAM_FLASH_DISABLE_INTERVAL = 10000; // Re-declare for polling function
     let lastPollFrameTime = Date.now();
+    let consecutiveErrors = 0;
+    let pollingInterval = 150; // Start with 150ms (6-7 FPS)
+    let lastSuccessfulFrame = Date.now();
     
     // Setup image load handler for polling method
     img.onload = () => {
+      // Clear any pending timeout
+      if (window._currentPollingTimeout) {
+        clearTimeout(window._currentPollingTimeout);
+        window._currentPollingTimeout = null;
+      }
+      
       const now = Date.now();
       const timeSinceLastFrame = now - lastPollFrameTime;
       lastPollFrameTime = now;
       frameCount++; // Increment frame count for polling method too
       
-      // Update buffer when frame loads
+      // Update buffer canvas (critical for YOLO detection)
+      // Buffer is used to avoid tainted canvas issues when reading pixel data
       if (img.naturalWidth && img.naturalHeight) {
         if (!espBufferCanvas) {
           espBufferCanvas = document.createElement('canvas');
         }
-        espBufferCanvas.width = img.naturalWidth;
-        espBufferCanvas.height = img.naturalHeight;
-        const ctx = espBufferCanvas.getContext('2d');
+        // Only update buffer dimensions if they changed (performance optimization)
+        if (espBufferCanvas.width !== img.naturalWidth || 
+            espBufferCanvas.height !== img.naturalHeight) {
+          espBufferCanvas.width = img.naturalWidth;
+          espBufferCanvas.height = img.naturalHeight;
+        }
+        const ctx = espBufferCanvas.getContext('2d', { willReadFrequently: true });
         if (ctx) {
-          ctx.drawImage(img, 0, 0);
-          espBufferHasFrame = true;
+          try {
+            // Draw image to buffer canvas
+            ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight);
+            
+            // Test if buffer is not tainted
+            try {
+              ctx.getImageData(0, 0, 1, 1);
+              espBufferHasFrame = true;
+              // Clear any previous tainted canvas error if successful
+              if (window._lastTaintedCanvasErrorLog) {
+                delete window._lastTaintedCanvasErrorLog;
+                if (typeof hideError === 'function') {
+                  hideError();
+                }
+              }
+            } catch (taintedTestError) {
+              // Buffer canvas is tainted
+              espBufferHasFrame = false;
+              // Logging is handled in main onload handler, no need to duplicate here
+            }
+          } catch (bufferError) {
+            console.warn('[ESP32-CAM] ⚠️ Error updating buffer canvas (polling):', bufferError);
+            espBufferHasFrame = false;
+          }
         }
         
         // Ensure isStreamReady is set
@@ -711,22 +1176,36 @@ function readMJPEGStream() {
         }
       }
       
+      // Reset error counters on successful frame
+      consecutiveErrors = 0;
+      pollingInterval = 150; // Reset to normal interval
+      lastSuccessfulFrame = Date.now();
+      
       setCanvasSize(img.naturalWidth || 640, img.naturalHeight || 480);
       img.style.display = 'block';
       document.getElementById('video-element').style.display = 'none';
     };
     
     img.onerror = () => {
-      console.warn(`[ESP32-CAM] ⚠️ Frame error in polling method`);
+      consecutiveErrors++;
       cameraState.espErrorCount += 1;
       
-      // Keep retrying stream - no fallback to capture
-      // Stream is required for ML
-      if (cameraState.espErrorCount >= 5) {
-        console.warn(`[ESP32-CAM] ⚠️ Stream polling failed (${cameraState.espErrorCount} attempts)`);
-        console.warn(`[ESP32-CAM] ⚠️ Will keep retrying - stream required for ML`);
-        // Continue retrying - don't switch to capture
+      // Throttle error logging
+      const now = Date.now();
+      if (!window._lastPollingErrorLog || now - window._lastPollingErrorLog > 5000) {
+        console.warn(`[ESP32-CAM] ⚠️ Frame error in polling method (${consecutiveErrors} consecutive errors)`);
+        console.warn(`[ESP32-CAM] 💡 Check: ESP32-CAM is connected and /capture endpoint is available`);
+        console.warn(`[ESP32-CAM] 💡 IP: ${ESP32_STATIC_IP}`);
+        window._lastPollingErrorLog = now;
       }
+      
+      // If too many consecutive errors, slow down polling
+      if (consecutiveErrors > 5) {
+        pollingInterval = Math.min(pollingInterval * 1.2, 2000); // Increase interval, max 2 seconds
+      }
+      
+      // Keep retrying - don't stop polling
+      // Polling will continue with adjusted interval
     };
     
     function pollFrame() {
@@ -734,25 +1213,87 @@ function readMJPEGStream() {
         return; // Stop if switched away
       }
       
-      // Periodically disable flash during polling
+      // Check if too many consecutive errors - increase interval
       const now = Date.now();
+      if (now - lastSuccessfulFrame > 5000 && consecutiveErrors > 10) {
+        // Too many errors, slow down polling
+        pollingInterval = Math.min(pollingInterval * 1.5, 2000); // Max 2 seconds
+        const now2 = Date.now();
+        if (!window._lastPollingSlowdownLog || now2 - window._lastPollingSlowdownLog > 10000) {
+          console.warn(`[ESP32-CAM] ⚠️ Too many errors, slowing down polling to ${pollingInterval}ms`);
+          window._lastPollingSlowdownLog = now2;
+        }
+      }
+      
+      // Periodically disable flash during polling
       if (now - pollingFlashDisableTime > STREAM_FLASH_DISABLE_INTERVAL) {
         disableESP32Flash();
         pollingFlashDisableTime = now;
       }
       
-      // Fast polling: request new frame every 50-100ms
-      // IMPORTANT: Still using /stream endpoint (not /capture) for ML compatibility
-      // CORS bypass: Ensure crossOrigin is null for polling too
-      if (img.crossOrigin !== null) {
-        img.crossOrigin = null; // Remove CORS requirement
-      }
-      const timestamp = Date.now();
-      const url = `${ESP32_STATIC_BASE_URL}/stream?t=${timestamp}&frame=${Date.now()}`;
-      img.src = url;
-      
-      // Schedule next poll
-      espPollingTimer = setTimeout(pollFrame, 70);
+      // Try to use fetch/XHR method first (ImageBitmap - avoids tainted canvas)
+      // This is the same method used by fetchESP32Frame()
+      fetchESP32Frame().then((imageBitmap) => {
+        if (imageBitmap) {
+          // Success! Store ImageBitmap for captureFrame() to use
+          espFetchImageBitmap = imageBitmap;
+          consecutiveErrors = 0;
+          pollingInterval = 150; // Reset to normal interval
+          lastSuccessfulFrame = Date.now();
+          
+          // Also update img element for display (even if tainted, it's just for display)
+          const timestamp = Date.now();
+          const url = `${ESP32_STATIC_BASE_URL}/capture?t=${timestamp}`;
+          if (img.crossOrigin !== null) {
+            img.crossOrigin = null;
+          }
+          img.src = url;
+          
+          // Schedule next poll
+          espPollingTimer = setTimeout(pollFrame, pollingInterval);
+        } else {
+          // Fetch failed, fallback to direct img.src (will be tainted but at least we try)
+          consecutiveErrors++;
+          const timestamp = Date.now();
+          const url = `${ESP32_STATIC_BASE_URL}/capture?t=${timestamp}`;
+          
+          if (img.crossOrigin !== null) {
+            img.crossOrigin = null;
+          }
+          
+          // Set timeout for image load
+          const loadTimeout = setTimeout(() => {
+            if (img.src === url) {
+              consecutiveErrors++;
+              cameraState.espErrorCount++;
+              const now = Date.now();
+              if (!window._lastPollingTimeoutLog || now - window._lastPollingTimeoutLog > 5000) {
+                console.warn(`[ESP32-CAM] ⚠️ Frame load timeout (${consecutiveErrors} consecutive errors)`);
+                window._lastPollingTimeoutLog = now;
+              }
+              espPollingTimer = setTimeout(pollFrame, pollingInterval);
+            }
+          }, 3000);
+          
+          window._currentPollingTimeout = loadTimeout;
+          img.src = url;
+          
+          // Schedule next poll
+          espPollingTimer = setTimeout(pollFrame, pollingInterval);
+        }
+      }).catch((error) => {
+        // Fetch error, fallback to direct img.src
+        consecutiveErrors++;
+        const timestamp = Date.now();
+        const url = `${ESP32_STATIC_BASE_URL}/capture?t=${timestamp}`;
+        
+        if (img.crossOrigin !== null) {
+          img.crossOrigin = null;
+        }
+        
+        img.src = url;
+        espPollingTimer = setTimeout(pollFrame, pollingInterval);
+      });
     }
     
     pollFrame();
@@ -814,6 +1355,14 @@ function initESP32() {
   // STREAM MODE ONLY - No capture mode
   // Always use MJPEG stream for Machine Learning
   console.log(`[ESP32-CAM] 🎥 Starting STREAM mode only (no capture mode)`);
+  
+  // Start fetch-based frame capture as alternative method (avoids tainted canvas)
+  // This runs in parallel with img.src method
+  if (typeof createImageBitmap !== 'undefined') {
+    console.log(`[ESP32-CAM] 🎯 Starting fetch-based frame capture (ImageBitmap method)`);
+    startFetchFrameCapture();
+  }
+  
   readMJPEGStream();
 }
 
@@ -906,12 +1455,21 @@ function isESP32FrameReady() {
 
   const img = document.getElementById('esp32-img');
   
-  // Check if img element has a valid frame (most reliable)
+  // Priority 1: Check ImageBitmap from fetch (BEST - avoids tainted canvas)
+  if (espFetchImageBitmap) {
+    const width = espFetchImageBitmap.width || (espFetchImageBitmap.naturalWidth || 0);
+    const height = espFetchImageBitmap.height || (espFetchImageBitmap.naturalHeight || 0);
+    if (width > 0 && height > 0) {
+      return true;
+    }
+  }
+  
+  // Priority 2: Check img element (may be tainted)
   if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
     return true;
   }
   
-  // Fallback: check buffer (if img element not ready yet, buffer might have frame)
+  // Priority 3: Check buffer (if img element not ready yet, buffer might have frame)
   if (espBufferHasFrame && espBufferCanvas &&
       espBufferCanvas.width > 0 && espBufferCanvas.height > 0) {
     return true;
@@ -948,38 +1506,162 @@ function captureFrame() {
   }
 
   if (cameraState.source !== 'webcam') {
-    // ESP32 mode: try to get frame from img element first (always latest)
-    // Fallback to buffer if img element is not ready
+    // ESP32 mode: Try multiple methods to get non-tainted frame
+    
+    // Method 1: Use ImageBitmap from fetch (BEST - avoids tainted canvas completely)
+    // This is the preferred method as it doesn't require CORS headers
+    // ImageBitmap created from blob (via fetch) should never taint canvas
+    if (espFetchImageBitmap) {
+      const width = espFetchImageBitmap.width || (espFetchImageBitmap.naturalWidth || 0);
+      const height = espFetchImageBitmap.height || (espFetchImageBitmap.naturalHeight || 0);
+      
+      if (width > 0 && height > 0) {
+        try {
+          // Draw ImageBitmap to canvas
+          ctx.drawImage(espFetchImageBitmap, 0, 0, canvas.width, canvas.height);
+          
+          // Test if canvas is not tainted
+          // ImageBitmap from blob should never taint canvas
+          try {
+            ctx.getImageData(0, 0, 1, 1);
+            // Success! ImageBitmap method works - no tainted canvas
+            // Log success on first use
+            if (!window._imageBitmapCaptureSuccessLogged) {
+              console.log('[ESP32-CAM] ✅ ImageBitmap method working in captureFrame()!');
+              console.log('[ESP32-CAM] ✅ Canvas tidak tainted - YOLO bisa memproses frame!');
+              console.log(`[ESP32-CAM] ✅ ImageBitmap size: ${width}x${height}`);
+              window._imageBitmapCaptureSuccessLogged = true;
+            }
+            // Clear any previous errors
+            if (window._esp32CorsErrorShown) {
+              window._esp32CorsErrorShown = false;
+              if (typeof hideError === 'function') {
+                hideError();
+              }
+            }
+            return ctx;
+          } catch (testError) {
+            // Still tainted somehow - this should NEVER happen with ImageBitmap from blob
+            // If this happens, it means ImageBitmap was created from tainted source
+            const now = Date.now();
+            if (!window._lastImageBitmapTaintedLog || now - window._lastImageBitmapTaintedLog > 10000) {
+              console.error('[ESP32-CAM] ❌ ImageBitmap still tainted (CRITICAL ERROR)!', testError);
+              console.error('[ESP32-CAM] 💡 This should NEVER happen - ImageBitmap from blob should not taint canvas');
+              console.error('[ESP32-CAM] 💡 Possible cause: ImageBitmap was created from tainted img element');
+              console.error('[ESP32-CAM] 💡 Solution: Ensure ImageBitmap is created from fetch blob, not from img element');
+              window._lastImageBitmapTaintedLog = now;
+            }
+            // Don't return ctx - try next method
+          }
+        } catch (error) {
+          // Error drawing ImageBitmap, try next method
+          const now = Date.now();
+          if (!window._lastImageBitmapDrawErrorLog || now - window._lastImageBitmapDrawErrorLog > 10000) {
+            console.error('[ESP32-CAM] ❌ Error drawing ImageBitmap:', error);
+            window._lastImageBitmapDrawErrorLog = now;
+          }
+        }
+      } else {
+        // ImageBitmap exists but has invalid dimensions
+        const now = Date.now();
+        if (!window._lastImageBitmapInvalidSizeLog || now - window._lastImageBitmapInvalidSizeLog > 10000) {
+          console.warn('[ESP32-CAM] ⚠️ ImageBitmap has invalid dimensions:', width, 'x', height);
+          window._lastImageBitmapInvalidSizeLog = now;
+        }
+      }
+     } else {
+       // ImageBitmap not available yet
+       // Check if fetch method is active
+       if (espFetchFrameActive) {
+         // Fetch is active but hasn't gotten a frame yet - this is normal, just wait
+         // Don't log error, just wait for fetch to succeed
+         const now = Date.now();
+         if (!window._lastImageBitmapWaitingLog || now - window._lastImageBitmapWaitingLog > 5000) {
+           console.log('[ESP32-CAM] ⏳ Waiting for ImageBitmap from fetch method...');
+           console.log('[ESP32-CAM] 💡 Fetch method sedang mengambil frame dari /capture endpoint');
+           console.log('[ESP32-CAM] 💡 Ini normal - tunggu beberapa detik untuk frame pertama');
+           console.log('[ESP32-CAM] 💡 espFetchFrameActive = ' + espFetchFrameActive);
+           window._lastImageBitmapWaitingLog = now;
+         }
+       } else {
+         // Fetch method not active - log warning
+         const now = Date.now();
+         if (!window._lastFetchNotActiveLog || now - window._lastFetchNotActiveLog > 10000) {
+           console.warn('[ESP32-CAM] ⚠️ ImageBitmap method tidak aktif - fetch method belum dimulai');
+           console.warn('[ESP32-CAM] 💡 espFetchFrameActive = ' + espFetchFrameActive);
+           console.warn('[ESP32-CAM] 💡 Pastikan startFetchFrameCapture() dipanggil');
+           window._lastFetchNotActiveLog = now;
+         }
+       }
+     }
+    
+    // Method 2: Use buffer canvas (may be tainted if ESP32 doesn't send CORS)
     const img = document.getElementById('esp32-img');
+    if (espBufferCanvas && espBufferHasFrame && 
+        espBufferCanvas.width > 0 && espBufferCanvas.height > 0) {
+      try {
+        // Draw from buffer to canvas
+        ctx.drawImage(espBufferCanvas, 0, 0, canvas.width, canvas.height);
+        // Test if canvas is not tainted
+        try {
+          ctx.getImageData(0, 0, 1, 1);
+          // Success! Buffer canvas works
+          return ctx;
+        } catch (taintedError) {
+          // Buffer canvas is tainted, try ImageBitmap method or direct img
+          // Don't log here - will be handled below
+        }
+      } catch (error) {
+        // Error drawing from buffer, try next method
+      }
+    }
     
-    // Method 1: Try to capture directly from img element (most up-to-date)
+    // Method 3: Try direct img element (usually tainted without CORS)
     if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
-      // Draw directly from img element to get latest frame
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      console.log('✅ Frame captured from ESP32-S3 CAM (direct from img)');
-      return ctx;
+      try {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        // Test if canvas is tainted
+        try {
+          ctx.getImageData(0, 0, 1, 1);
+          // Success! Direct img works (ESP32 must have CORS enabled)
+          return ctx;
+        } catch (taintedError) {
+          // Canvas is tainted - all methods failed
+          // Check if ImageBitmap method is still trying
+          if (espFetchFrameActive && !espFetchImageBitmap) {
+            // ImageBitmap method is active but hasn't gotten a frame yet
+            // Don't log error - just wait for ImageBitmap method
+            return null;
+          }
+          
+          // All methods failed including ImageBitmap
+          // Throttle logging to avoid console spam
+          const now = Date.now();
+          if (!window._lastTaintedCanvasWarningLog || now - window._lastTaintedCanvasWarningLog > 30000) {
+            console.warn('⚠️ Canvas is tainted (CORS issue). ESP32-CAM tidak mengirim CORS headers.');
+            console.warn('💡 SOLUSI: Aktifkan CORS di ESP32-CAM firmware (Access-Control-Allow-Origin: *)');
+            console.warn('💡 Atau tunggu ImageBitmap method selesai memuat frame...');
+            if (typeof showError === 'function') {
+              showError('❌ Canvas is tainted - YOLO tidak dapat memproses frame.\n\n💡 SOLUSI:\n1. Aktifkan CORS di ESP32-CAM firmware\n2. Tambahkan: Access-Control-Allow-Origin: *');
+            }
+            window._lastTaintedCanvasWarningLog = now;
+          }
+          return null;
+        }
+      } catch (drawError) {
+        // Throttle error logging
+        const now = Date.now();
+        if (!window._lastDrawErrorLog || now - window._lastDrawErrorLog > 10000) {
+          console.warn('⚠️ Error drawing from img element:', drawError);
+          window._lastDrawErrorLog = now;
+        }
+        return null;
+      }
     }
     
-    // Method 2: Fallback to buffer if img element not ready
-    if (!espBufferCanvas || !espBufferHasFrame) {
-      console.warn('❌ ESP32-S3 CAM buffer not ready:', {
-        bufferExists: !!espBufferCanvas,
-        hasFrame: espBufferHasFrame,
-        imgReady: img && img.complete,
-        imgDimensions: img ? `${img.naturalWidth}x${img.naturalHeight}` : 'N/A'
-      });
-      return null;
-    }
-    
-    // Validate buffer dimensions
-    if (espBufferCanvas.width === 0 || espBufferCanvas.height === 0) {
-      console.warn('❌ ESP32 buffer has zero dimensions');
-      return null;
-    }
-    
-    // Use buffer as fallback
-    ctx.drawImage(espBufferCanvas, 0, 0, canvas.width, canvas.height);
-    console.log('✅ Frame captured from ESP32-S3 CAM buffer');
+    // Method 4: No frame available yet
+    // Wait for ImageBitmap or buffer to be ready
+    return null;
   } else {
     // Webcam mode
     const video = document.getElementById('video-element');
