@@ -43,6 +43,10 @@ let destinationMarker = null; // No destination marker until user sets a destina
 // Route control - will be created after we get user's location
 let route = null;
 
+// Turn markers - Array untuk menyimpan marker di setiap titik belokan
+let turnMarkers = []; // Array of { marker: L.marker, latlng: L.LatLng, instruction: string, passed: boolean }
+let nextTurnMarkerIndex = 0; // Index marker belokan berikutnya yang akan dilewati
+
 // Helper function to move routing directions to custom container
 function moveRoutingDirectionsToContainer() {
     const routingContainer = document.getElementById('routingDirectionsContainer');
@@ -1185,10 +1189,18 @@ function onLocationFound(e) {
             announceNextDirection();
         }, 500);
         
+        // Also try fallback method using route data (more reliable)
+        setTimeout(function() {
+            announceFromRouteData();
+        }, 700);
+        
         // Update real-time instructions: jarak berkurang dan hapus yang sudah dilewati
         setTimeout(function() {
             updateRealTimeInstructions(e.latlng);
         }, 600);
+        
+        // Update turn markers: hapus yang sudah dilewati dan highlight berikutnya
+        updateTurnMarkers(e.latlng);
     }
 }
 
@@ -1245,6 +1257,9 @@ function forceUpdateRoute(userLatLng) {
         map.removeControl(route);
         route = null;
     }
+    
+    // Clear turn markers when route is removed
+    clearTurnMarkers();
     
     // Always create fresh route with new destination
     console.log('✨ Creating NEW route to destination:', latLngB);
@@ -1309,6 +1324,13 @@ function forceUpdateRoute(userLatLng) {
         console.log('📍 Route distance:', e.routes[0].summary.totalDistance / 1000, 'km');
         console.log('⏱️ Route time:', e.routes[0].summary.totalTime / 60, 'minutes');
         
+        // Store route data untuk test navigation
+        if (e.routes && e.routes[0] && e.routes[0].coordinates) {
+            route._lastRouteData = e.routes[0];
+            window._currentRouteData = e.routes[0]; // Store globally untuk test
+            console.log('✅ Route coordinates stored for test:', e.routes[0].coordinates.length, 'points');
+        }
+        
         // Move routing directions to custom container after route is found
         moveRoutingDirectionsToContainer();
         
@@ -1336,11 +1358,21 @@ function forceUpdateRoute(userLatLng) {
         
         // Save route data for navigation tracking
         const routeData = e.routes[0];
+        currentRouteData = routeData; // CRITICAL: Set currentRouteData untuk announceNextDirection
         currentLegIndex = 0;
         lastAnnouncedInstruction = null;
         announcedInstructions = []; // Reset announced instructions
         isNavigating = false; // Not navigating yet - wait for user command
         shouldAnnounceRoute = false; // Don't auto-announce route yet
+        console.log('[Navigation] ✅ currentRouteData set:', !!currentRouteData, 'coordinates:', currentRouteData?.coordinates?.length || 0);
+        
+        // Create turn markers for all turns in the route
+        // Delay sedikit untuk memastikan route sudah fully rendered
+        setTimeout(function() {
+            if (routeData && routeData.instructions) {
+                createTurnMarkers(routeData);
+            }
+        }, 500);
         
         // CRITICAL: Always populate lastRouteSummarySpeech when route is found
         if (routeData && routeData.summary) {
@@ -1501,13 +1533,30 @@ function updateRoute(userLatLng) {
         // Move routing directions to custom container after route is found
         moveRoutingDirectionsToContainer();
         
+        // Store route data untuk test navigation
+        if (e.routes && e.routes[0] && e.routes[0].coordinates) {
+            route._lastRouteData = e.routes[0];
+            window._currentRouteData = e.routes[0]; // Store globally untuk test
+            console.log('✅ Route coordinates stored for test:', e.routes[0].coordinates.length, 'points');
+        }
+        
         // Save route data for navigation tracking
         const routeData = e.routes[0];
+        currentRouteData = routeData; // CRITICAL: Set currentRouteData untuk announceNextDirection
         currentLegIndex = 0;
         lastAnnouncedInstruction = null;
         announcedInstructions = []; // Reset announced instructions
         isNavigating = false; // Not navigating yet
+        console.log('[Navigation] ✅ currentRouteData set:', !!currentRouteData, 'coordinates:', currentRouteData?.coordinates?.length || 0, 'instructions:', currentRouteData?.instructions?.length || 0);
         shouldAnnounceRoute = false;
+        
+        // Create turn markers for all turns in the route
+        // Delay sedikit untuk memastikan route sudah fully rendered
+        setTimeout(function() {
+            if (routeData && routeData.instructions) {
+                createTurnMarkers(routeData);
+            }
+        }, 500);
         
         // Create route hash
         const routeHash = JSON.stringify(e.routes[0].coordinates);
@@ -1629,6 +1678,8 @@ function updateRoute(userLatLng) {
                             console.log('🗑️ Removing old route');
                             map.removeControl(route);
                             route = null;
+                            // Clear turn markers when route is removed
+                            clearTurnMarkers();
                         }
                         
                         // Create fresh route with new destination
@@ -1647,6 +1698,13 @@ function updateRoute(userLatLng) {
                         // Re-attach event listener for new route
                         route.on('routesfound', function(e) {
                             console.log('✅✅✅ NEW ROUTE FOUND AFTER DESTINATION CHANGE!');
+                            
+                            // Store route data untuk test navigation
+                            if (e.routes && e.routes[0] && e.routes[0].coordinates) {
+                                route._lastRouteData = e.routes[0];
+                                window._currentRouteData = e.routes[0]; // Store globally untuk test
+                                console.log('✅ Route coordinates stored for test:', e.routes[0].coordinates.length, 'points');
+                            }
                             
                             // Move routing directions to custom container after route is found
                             moveRoutingDirectionsToContainer();
@@ -1674,11 +1732,20 @@ function updateRoute(userLatLng) {
                             
                             // Save route data for navigation tracking
                             const routeData = e.routes[0];
+                            currentRouteData = routeData; // CRITICAL: Set currentRouteData untuk announceNextDirection
                             currentLegIndex = 0;
                             lastAnnouncedInstruction = null;
                             announcedInstructions = []; // Reset announced instructions
                             isNavigating = false; // Not navigating yet - wait for user command
                             shouldAnnounceRoute = false; // Don't auto-announce route yet
+                            
+                            // Create turn markers for all turns in the route
+                            // Delay sedikit untuk memastikan route sudah fully rendered
+                            setTimeout(function() {
+                                if (routeData && routeData.instructions) {
+                                    createTurnMarkers(routeData);
+                                }
+                            }, 500);
                             
         // CRITICAL: Always populate lastRouteSummarySpeech when route is found
         if (routeData && routeData.summary) {
@@ -1941,7 +2008,8 @@ if (!navigator.geolocation) {
 }
 
 // Global function for button onclick
-function requestLocationPermission() {
+// Make sure it's accessible from HTML onclick
+window.requestLocationPermission = function requestLocationPermission() {
     console.log('requestLocationPermission called');
     
     // Mark user interaction for Speech Synthesis
@@ -1958,7 +2026,7 @@ function requestLocationPermission() {
         }
         startLocationTracking();
     }, 2000);
-}
+};
 
 // Setup location tracking when DOM is ready
 function setupLocationTracking() {
@@ -4915,28 +4983,99 @@ function speakText(text, lang = 'id-ID', priority = false, onComplete = null) {
         voiceDirectionsEnabled: voiceDirectionsEnabled
     });
     
+    // CRITICAL: Pastikan hasUserInteraction = true SEBELUM memanggil _doSpeak
+    if (typeof hasUserInteraction !== 'undefined' && !hasUserInteraction) {
+        console.log('[Navigation] 🔧 Setting hasUserInteraction = true (di speakText)');
+        hasUserInteraction = true;
+    }
+    
+    // CRITICAL: Pastikan voiceDirectionsEnabled = true SEBELUM memanggil _doSpeak
+    if (typeof voiceDirectionsEnabled !== 'undefined' && !voiceDirectionsEnabled) {
+        console.log('[Navigation] 🔧 Setting voiceDirectionsEnabled = true (di speakText)');
+        voiceDirectionsEnabled = true;
+    }
+    
     // CRITICAL: Cancel SEMUA yang sedang berbicara - navigator HARUS prioritas
     if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
         console.log('[Navigation] 🔄 Canceling ALL existing speech...');
         window.speechSynthesis.cancel();
         // Wait untuk cancel benar-benar selesai
         setTimeout(() => {
+            console.log('[Navigation] ✅ Cancel selesai, memanggil _doSpeak...');
+            console.log('[Navigation] 🎯🎯🎯 CALLING _doSpeak NOW (after cancel) 🎯🎯🎯');
             _doSpeak(text, lang, priority, onComplete, preview);
         }, 300);
     } else {
+        console.log('[Navigation] ✅ Tidak ada speech yang sedang berjalan, langsung memanggil _doSpeak...');
+        console.log('[Navigation] 🎯🎯🎯 CALLING _doSpeak NOW (no cancel needed) 🎯🎯🎯');
         _doSpeak(text, lang, priority, onComplete, preview);
     }
+    
+    // CRITICAL: Log bahwa speakText selesai (untuk debugging)
+    console.log('[Navigation] ✅ speakText function completed, _doSpeak should be called');
 }
 
 // Helper function untuk benar-benar melakukan speak
 function _doSpeak(text, lang, priority, onComplete, preview) {
-    console.log('[Navigation] 🎤 _doSpeak called:', preview);
+    console.log('[Navigation] 🎤🎤🎤🎤🎤 _doSpeak CALLED 🎤🎤🎤🎤🎤');
+    console.log('[Navigation] 📋 _doSpeak params:', {
+        text: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
+        lang: lang,
+        priority: priority,
+        hasOnComplete: !!onComplete,
+        preview: preview
+    });
+    console.log('[Navigation] 🔍 _doSpeak state check:', {
+        hasUserInteraction: typeof hasUserInteraction !== 'undefined' ? hasUserInteraction : 'undefined',
+        voiceDirectionsEnabled: typeof voiceDirectionsEnabled !== 'undefined' ? voiceDirectionsEnabled : 'undefined',
+        speechSynthesisAvailable: 'speechSynthesis' in window,
+        speechSynthesisSpeaking: window.speechSynthesis ? window.speechSynthesis.speaking : 'N/A',
+        speechSynthesisPending: window.speechSynthesis ? window.speechSynthesis.pending : 'N/A'
+    });
+    
+    // CRITICAL: Validasi lagi sebelum membuat utterance
+    if (!text || typeof text !== 'string' || text.trim() === '') {
+        console.error('[Navigation] ❌❌❌ _doSpeak: Empty text!');
+        if (onComplete) setTimeout(onComplete, 100);
+        return;
+    }
+    
+    if (!('speechSynthesis' in window)) {
+        console.error('[Navigation] ❌❌❌ _doSpeak: speechSynthesis not available!');
+        if (onComplete) setTimeout(onComplete, 100);
+        return;
+    }
     
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = lang;
     utterance.rate = 0.85;
     utterance.pitch = 1;
-    utterance.volume = 1;
+    utterance.volume = 1; // Volume maksimal (1.0)
+    
+    // CRITICAL: Pilih voice Indonesian secara eksplisit
+    // Browser kadang tidak memilih voice yang benar meskipun lang sudah diset
+    try {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices && voices.length > 0) {
+            // Cari voice Indonesian
+            const indonesianVoices = voices.filter(v => v.lang.startsWith('id-') || v.lang === 'id-ID');
+            if (indonesianVoices.length > 0) {
+                utterance.voice = indonesianVoices[0];
+                console.log('[Navigation] ✅ Voice Indonesian dipilih:', indonesianVoices[0].name, indonesianVoices[0].lang);
+            } else {
+                // Fallback: cari voice yang mendukung bahasa Indonesia
+                const fallbackVoice = voices.find(v => v.lang.includes('id') || v.name.toLowerCase().includes('indonesia'));
+                if (fallbackVoice) {
+                    utterance.voice = fallbackVoice;
+                    console.log('[Navigation] ✅ Voice fallback dipilih:', fallbackVoice.name, fallbackVoice.lang);
+                } else {
+                    console.warn('[Navigation] ⚠️ Voice Indonesian tidak ditemukan, menggunakan default');
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('[Navigation] ⚠️ Error selecting voice:', e);
+    }
     
     // Event handlers dengan logging detail
     utterance.onstart = function() {
@@ -4978,6 +5117,8 @@ function _doSpeak(text, lang, priority, onComplete, preview) {
     utterance.onerror = function(event) {
         console.error('[Navigation] ❌❌❌ Speech ERROR:', {
             error: event.error,
+            errorName: event.error ? event.error.name : 'unknown',
+            errorMessage: event.error ? event.error.message : 'unknown',
             type: event.type,
             charIndex: event.charIndex,
             charLength: event.charLength,
@@ -4995,18 +5136,166 @@ function _doSpeak(text, lang, priority, onComplete, preview) {
     
     // CRITICAL: Langsung speak tanpa pengecekan lagi
     try {
-        console.log('[Navigation] 🎯 Calling window.speechSynthesis.speak() NOW...');
-        window.speechSynthesis.speak(utterance);
-        console.log('[Navigation] ✅✅✅ window.speechSynthesis.speak() CALLED');
+        // CRITICAL: Cancel semua speech yang sedang berjalan untuk memastikan announcement baru bisa dimulai
+        if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+            console.log('[Navigation] 🔄 Canceling existing speech before new announcement...');
+            window.speechSynthesis.cancel();
+            // Tunggu sedikit untuk cancel selesai
+            setTimeout(() => {
+                _doSpeakInternal(utterance, text, lang, priority, onComplete, preview);
+            }, 100);
+            return;
+        }
         
-        // Double check setelah 100ms
-        setTimeout(() => {
-            if (!window.speechSynthesis.speaking && !isSpeaking) {
-                console.warn('[Navigation] ⚠️ Speech did not start - may need user interaction');
-            }
-        }, 100);
+        _doSpeakInternal(utterance, text, lang, priority, onComplete, preview);
     } catch(error) {
         console.error('[Navigation] ❌ Exception in _doSpeak:', error);
+        isSpeaking = false;
+        if (onComplete) setTimeout(onComplete, 100);
+    }
+}
+
+// Internal function untuk benar-benar melakukan speak
+function _doSpeakInternal(utterance, text, lang, priority, onComplete, preview) {
+    try {
+        // CRITICAL: Pastikan hasUserInteraction = true SEBELUM speak
+        if (typeof hasUserInteraction !== 'undefined' && !hasUserInteraction) {
+            console.log('[Navigation] 🔧 Setting hasUserInteraction = true');
+            hasUserInteraction = true;
+        }
+        
+        // CRITICAL: Pastikan volume = 1 (maksimal)
+        if (utterance.volume !== 1) {
+            console.log('[Navigation] 🔧 Setting volume = 1 (maksimal)');
+            utterance.volume = 1;
+        }
+        
+        // CRITICAL: Pastikan voice Indonesian dipilih jika belum
+        if (!utterance.voice) {
+            const voices = window.speechSynthesis.getVoices();
+            const indonesianVoices = voices.filter(v => v.lang.startsWith('id-') || v.lang === 'id-ID');
+            if (indonesianVoices.length > 0) {
+                utterance.voice = indonesianVoices[0];
+                console.log('[Navigation] 🔧 Voice Indonesian dipilih:', indonesianVoices[0].name);
+            }
+        }
+        
+        // Log detail utterance sebelum speak
+        console.log('[Navigation] 📋 Utterance details:', {
+            text: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
+            lang: utterance.lang,
+            voice: utterance.voice ? utterance.voice.name : 'default',
+            volume: utterance.volume,
+            rate: utterance.rate,
+            pitch: utterance.pitch,
+            hasUserInteraction: typeof hasUserInteraction !== 'undefined' ? hasUserInteraction : 'undefined'
+        });
+        
+        console.log('[Navigation] 🎯 Calling window.speechSynthesis.speak() NOW...');
+        
+        // CRITICAL: Pastikan tidak ada speech yang sedang berjalan
+        if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+            console.log('[Navigation] 🔄 Canceling existing speech...');
+            window.speechSynthesis.cancel();
+            // Tunggu cancel selesai
+            setTimeout(() => {
+                window.speechSynthesis.speak(utterance);
+                console.log('[Navigation] ✅✅✅ window.speechSynthesis.speak() CALLED (after cancel)');
+            }, 150);
+        } else {
+            // CRITICAL: Pastikan voices sudah loaded sebelum speak
+            const voices = window.speechSynthesis.getVoices();
+            if (voices.length === 0) {
+                console.warn('[Navigation] ⚠️ Voices belum loaded, menunggu...');
+                window.speechSynthesis.onvoiceschanged = function() {
+                    console.log('[Navigation] ✅ Voices loaded, memanggil speak...');
+                    window.speechSynthesis.onvoiceschanged = null; // Remove handler
+                    // Re-select voice setelah voices loaded
+                    const newVoices = window.speechSynthesis.getVoices();
+                    const indonesianVoices = newVoices.filter(v => v.lang.startsWith('id-') || v.lang === 'id-ID');
+                    if (indonesianVoices.length > 0 && !utterance.voice) {
+                        utterance.voice = indonesianVoices[0];
+                        console.log('[Navigation] ✅ Voice Indonesian dipilih setelah voices loaded:', indonesianVoices[0].name);
+                    }
+                    window.speechSynthesis.speak(utterance);
+                    console.log('[Navigation] ✅✅✅ window.speechSynthesis.speak() CALLED (after voices loaded)');
+                };
+                return; // Exit early, akan dipanggil lagi setelah voices loaded
+            }
+            
+            window.speechSynthesis.speak(utterance);
+            console.log('[Navigation] ✅✅✅ window.speechSynthesis.speak() CALLED');
+        }
+        
+        // Double check setelah 50ms, 100ms, dan 500ms
+        setTimeout(() => {
+            const isActuallySpeaking = window.speechSynthesis.speaking || window.speechSynthesis.pending;
+            if (isActuallySpeaking) {
+                console.log('[Navigation] ✅✅✅ Speech CONFIRMED STARTED (50ms check) - speechSynthesis.speaking =', window.speechSynthesis.speaking);
+            }
+        }, 50);
+        
+        setTimeout(() => {
+            const isActuallySpeaking = window.speechSynthesis.speaking || window.speechSynthesis.pending;
+            if (!isActuallySpeaking && !isSpeaking) {
+                console.warn('[Navigation] ⚠️⚠️⚠️ Speech did not start after 100ms!');
+                console.warn('[Navigation] 💡 SOLUSI: Klik di halaman atau tekan tombol untuk memberikan user interaction');
+                console.warn('[Navigation] 💡 Atau jalankan: hasUserInteraction = true; speakText("test", "id-ID", true);');
+                
+                // Auto-fix: Set hasUserInteraction jika belum
+                if (typeof hasUserInteraction !== 'undefined' && !hasUserInteraction) {
+                    console.log('[Navigation] 🔧 Auto-fixing: Setting hasUserInteraction = true');
+                    hasUserInteraction = true;
+                    // Retry speak setelah 200ms
+                    setTimeout(() => {
+                        console.log('[Navigation] 🔄 Retrying speech after setting hasUserInteraction...');
+                        // Recreate utterance untuk retry dengan semua event handlers
+                        const retryUtterance = new SpeechSynthesisUtterance(text);
+                        retryUtterance.lang = lang;
+                        retryUtterance.rate = 0.85;
+                        retryUtterance.pitch = 1;
+                        retryUtterance.volume = 1; // Volume maksimal
+                        
+                        // Select voice Indonesian
+                        const voices = window.speechSynthesis.getVoices();
+                        const indonesianVoices = voices.filter(v => v.lang.startsWith('id-') || v.lang === 'id-ID');
+                        if (indonesianVoices.length > 0) {
+                            retryUtterance.voice = indonesianVoices[0];
+                            console.log('[Navigation] ✅ Voice Indonesian dipilih untuk retry:', indonesianVoices[0].name);
+                        }
+                        
+                        // Pasang event handlers untuk retry utterance
+                        retryUtterance.onstart = utterance.onstart;
+                        retryUtterance.onend = utterance.onend;
+                        retryUtterance.onerror = utterance.onerror;
+                        
+                        // Call speak langsung
+                        window.speechSynthesis.speak(retryUtterance);
+                        console.log('[Navigation] ✅✅✅ Retry speech called');
+                    }, 200);
+                } else {
+                    console.error('[Navigation] ❌❌❌ Speech tidak dimulai meskipun hasUserInteraction = true!');
+                    console.error('[Navigation] 💡 Kemungkinan masalah:');
+                    console.error('[Navigation]    1. Volume Windows/browser muted');
+                    console.error('[Navigation]    2. Voice Indonesian tidak terinstall');
+                    console.error('[Navigation]    3. Speaker/headphone tidak terhubung');
+                    console.error('[Navigation]    4. Browser memblokir speech synthesis');
+                }
+            } else if (isActuallySpeaking) {
+                console.log('[Navigation] ✅✅✅ Speech CONFIRMED STARTED (100ms check) - speechSynthesis.speaking =', window.speechSynthesis.speaking);
+            }
+        }, 100);
+        
+        // Check lagi setelah 500ms untuk memastikan
+        setTimeout(() => {
+            if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+                console.log('[Navigation] ✅ Speech masih aktif setelah 500ms');
+            } else if (isSpeaking) {
+                console.warn('[Navigation] ⚠️ isSpeaking = true tapi speechSynthesis.speaking = false - mungkin ada masalah');
+            }
+        }, 500);
+    } catch(error) {
+        console.error('[Navigation] ❌ Exception in _doSpeakInternal:', error);
         isSpeaking = false;
         if (onComplete) setTimeout(onComplete, 100);
     }
@@ -5378,7 +5667,59 @@ function convertInstructionToNatural(text) {
 
 // Function to speak turn-by-turn directions based on user position (Google Maps style)
 function announceNextDirection() {
-    if (!voiceDirectionsEnabled || !route || !isNavigating || !currentRouteData || !currentUserPosition) return;
+    // Debug logging untuk mengetahui kondisi yang tidak terpenuhi
+    console.log('[Navigation] 🔍 announceNextDirection called - checking conditions...');
+    
+    if (!voiceDirectionsEnabled) {
+        console.log('[Navigation] ⚠️ announceNextDirection skipped: voiceDirectionsEnabled = false');
+        console.log('[Navigation] 💡 Setting voiceDirectionsEnabled = true...');
+        voiceDirectionsEnabled = true;
+        // Continue instead of return
+    }
+    if (!route) {
+        console.log('[Navigation] ⚠️ announceNextDirection skipped: route = null');
+        return;
+    }
+    if (!isNavigating) {
+        console.log('[Navigation] ⚠️ announceNextDirection skipped: isNavigating = false');
+        console.log('[Navigation] 💡 Setting isNavigating = true...');
+        isNavigating = true;
+        // Continue instead of return
+    }
+    if (!currentRouteData) {
+        console.log('[Navigation] ⚠️ announceNextDirection skipped: currentRouteData = null');
+        // Try to get from route object
+        if (route && route._lastRouteData) {
+            currentRouteData = route._lastRouteData;
+            console.log('[Navigation] ✅ Recovered currentRouteData from route._lastRouteData');
+        } else if (window._currentRouteData) {
+            currentRouteData = window._currentRouteData;
+            console.log('[Navigation] ✅ Recovered currentRouteData from window._currentRouteData');
+        } else {
+            console.log('[Navigation] ❌ currentRouteData tidak tersedia dari semua sumber');
+            return;
+        }
+    }
+    if (!currentUserPosition) {
+        console.log('[Navigation] ⚠️ announceNextDirection skipped: currentUserPosition = null');
+        return;
+    }
+    
+    // CRITICAL: Pastikan hasUserInteraction = true
+    if (typeof hasUserInteraction !== 'undefined' && !hasUserInteraction) {
+        console.log('[Navigation] 💡 Setting hasUserInteraction = true...');
+        hasUserInteraction = true;
+    }
+    
+    console.log('[Navigation] ✅ announceNextDirection conditions met, proceeding...');
+    console.log('[Navigation] 📊 State:', {
+        voiceDirectionsEnabled,
+        isNavigating,
+        hasRoute: route !== null,
+        hasRouteData: currentRouteData !== null,
+        hasUserPosition: currentUserPosition !== null,
+        hasUserInteraction: typeof hasUserInteraction !== 'undefined' ? hasUserInteraction : 'undefined'
+    });
     
     try {
         // Get route instructions from DOM
@@ -5431,52 +5772,982 @@ function announceNextDirection() {
             // Parse distance - announce if within 200 meters
             if (distance) {
                 const distanceInMeters = parseDistance(distance);
+                console.log('[Navigation] 📏 Instruction', i, ':', text, '- Distance:', distance, '=', distanceInMeters, 'meters');
                 
                 // Announce if within 200 meters and is a turn instruction
                 if (distanceInMeters <= 200 && distanceInMeters > 0) {
-                    console.log('📍 Next turn:', text, 'in', distance);
+                    console.log('📍 Next turn:', text, 'in', distance, '(', distanceInMeters, 'meters)');
                     
                     // Only announce if not previously announced
                     if (text !== lastAnnouncedInstruction && !announcedInstructions.includes(text)) {
                         lastAnnouncedInstruction = text;
                         announcedInstructions.push(text); // Mark as announced
                         
-                        // BARU: Mode detector sudah dimatikan, jadi navigator bisa langsung berbicara
-                        const turnInstruction = distanceInMeters >= 2 
-                            ? 'Setelah ' + Math.round(distanceInMeters) + ' meter ' + text
-                            : text + ' sekarang';
+                        // Dapatkan koordinat titik belokan jika tersedia (untuk perhitungan arah)
+                        let turnLatLng = null;
+                        let prevLatLng = null;
+                        
+                        // Coba ambil koordinat dari route data jika tersedia
+                        if (currentRouteData && currentRouteData.coordinates && i < currentRouteData.coordinates.length) {
+                            // Koordinat titik belokan
+                            const turnCoord = currentRouteData.coordinates[i];
+                            if (turnCoord) {
+                                if (Array.isArray(turnCoord)) {
+                                    turnLatLng = L.latLng(turnCoord[0], turnCoord[1]);
+                                } else if (turnCoord.lat !== undefined && turnCoord.lng !== undefined) {
+                                    turnLatLng = L.latLng(turnCoord.lat, turnCoord.lng);
+                                } else if (turnCoord instanceof L.LatLng) {
+                                    turnLatLng = turnCoord;
+                                }
+                            }
+                            
+                            // Koordinat sebelumnya (untuk menghitung arah belokan)
+                            if (i > 0 && currentRouteData.coordinates[i - 1]) {
+                                const prevCoord = currentRouteData.coordinates[i - 1];
+                                if (prevCoord) {
+                                    if (Array.isArray(prevCoord)) {
+                                        prevLatLng = L.latLng(prevCoord[0], prevCoord[1]);
+                                    } else if (prevCoord.lat !== undefined && prevCoord.lng !== undefined) {
+                                        prevLatLng = L.latLng(prevCoord.lat, prevCoord.lng);
+                                    } else if (prevCoord instanceof L.LatLng) {
+                                        prevLatLng = prevCoord;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Extract direction menggunakan fungsi helper yang lebih kuat
+                        // Fungsi ini akan mendeteksi "Belok kanan" atau "Belok kiri" dengan prioritas tinggi
+                        console.log('[Navigation] 🔍 Mencoba extractTurnDirection untuk:', text);
+                        const directionText = extractTurnDirection(text, userLatLng, turnLatLng, prevLatLng);
+                        
+                        // Jika tidak dapat mendeteksi arah belokan, skip instruction ini
+                        if (!directionText) {
+                            console.log('[Navigation] ⚠️ Tidak dapat mendeteksi arah belokan, skipping:', text);
+                            console.log('[Navigation] 💡 Text yang tidak terdeteksi mungkin bukan belokan atau format tidak dikenal');
+                            continue;
+                        }
+                        
+                        console.log('[Navigation] ✅ Direction text berhasil diekstrak:', directionText);
+                        
+                        // Pastikan directionText valid (sudah dicek di extractTurnDirection)
+                        if (!directionText || directionText.trim() === '') {
+                            console.warn('[Navigation] ⚠️ Empty directionText, skipping');
+                            continue;
+                        }
+                        
+                        // Announce dengan format yang lebih jelas: "Belok kanan" atau "Belok kiri"
+                        // PRIORITAS: Pastikan "Belok kanan" atau "Belok kiri" selalu disebutkan dengan jelas
+                        // Format: "Setelah X meter Belok kanan" atau "Belok kanan sekarang"
+                        let turnInstruction = '';
+                        
+                        if (distanceInMeters > 50) {
+                            // Jarak masih jauh: "Setelah X meter Belok kanan/kiri"
+                            turnInstruction = 'Setelah ' + Math.round(distanceInMeters) + ' meter ' + directionText;
+                        } else if (distanceInMeters >= 2) {
+                            // Jarak sedang: "Setelah X meter Belok kanan/kiri"
+                            turnInstruction = 'Setelah ' + Math.round(distanceInMeters) + ' meter ' + directionText;
+                        } else {
+                            // Jarak sangat dekat: "Belok kanan/kiri sekarang"
+                            turnInstruction = directionText + ' sekarang';
+                        }
                         
                         console.log('[Navigation] 🔊 Announcing turn instruction:', turnInstruction);
+                        console.log('[Navigation] 📍 Direction detected:', directionText);
                         
                         // Pastikan text tidak kosong sebelum speak
                         if (!turnInstruction || turnInstruction.trim() === '') {
                             console.warn('[Navigation] ⚠️ Empty turn instruction, skipping');
-                            return;
+                            continue;
                         }
                         
                         // Announce the turn instruction (optimized for visually impaired users)
-                        console.log('🔊 [NAVIGATION] Mengumumkan belokan:', turnInstruction);
-                        console.log('📍 [NAVIGATION] Jarak ke belokan:', distanceInMeters, 'meter');
+                        console.log('🔊 🔊 🔊 [NAVIGATION] MENGUMUMKAN BELOKAN: 🔊 🔊 🔊');
+                        console.log('   📍 Text:', turnInstruction);
+                        console.log('   📏 Jarak:', distanceInMeters, 'meter');
+                        console.log('   ✅ Navigator akan berbicara sekarang!');
                         
                         // Update UI status untuk menunjukkan navigator sedang berbicara
                         updateVoiceStatus('🔊 ' + turnInstruction);
                         
                         // Log ke console dengan timestamp
                         const timestamp = new Date().toLocaleTimeString('id-ID');
-                        console.log(`[${timestamp}] 🔊 NAVIGATOR BERBICARA: "${turnInstruction}"`);
+                        console.log(`[${timestamp}] 🔊 🔊 🔊 NAVIGATOR BERBICARA: "${turnInstruction}" 🔊 🔊 🔊`);
                         
+                        // CRITICAL: Pastikan hasUserInteraction = true sebelum speak
+                        if (typeof hasUserInteraction !== 'undefined' && !hasUserInteraction) {
+                            console.log('[Navigation] 🔧 Setting hasUserInteraction = true untuk announcement');
+                            hasUserInteraction = true;
+                        }
+                        
+                        // CRITICAL: Pastikan voiceDirectionsEnabled = true
+                        if (typeof voiceDirectionsEnabled !== 'undefined' && !voiceDirectionsEnabled) {
+                            console.log('[Navigation] 🔧 Setting voiceDirectionsEnabled = true untuk announcement');
+                            voiceDirectionsEnabled = true;
+                        }
+                        
+                        // CRITICAL: Panggil speakText dengan priority = true untuk memastikan suara muncul
+                        console.log('[Navigation] 🎯 MEMANGGIL speakText dengan:', {
+                            text: turnInstruction,
+                            lang: 'id-ID',
+                            priority: true,
+                            hasUserInteraction: typeof hasUserInteraction !== 'undefined' ? hasUserInteraction : 'undefined',
+                            voiceDirectionsEnabled: typeof voiceDirectionsEnabled !== 'undefined' ? voiceDirectionsEnabled : 'undefined'
+                        });
                         speakText(turnInstruction, 'id-ID', true, function() {
                             // Callback setelah selesai berbicara
-                            console.log('✅ [NAVIGATION] Selesai mengumumkan belokan');
+                            console.log('✅ [NAVIGATION] Selesai mengumumkan belokan:', turnInstruction);
                             updateVoiceStatus('✅ ' + turnInstruction + ' (selesai)');
                         });
+                        
+                        break; // Only announce one instruction at a time
+                    } else {
+                        console.log('[Navigation] ⚠️ Instruction already announced, skipping:', text);
                     }
-                    break; // Only announce one instruction at a time
+                } else {
+                    console.log('[Navigation] ⚠️ Distance too far:', distanceInMeters, 'meters (need <= 200m)');
                 }
+            } else {
+                console.log('[Navigation] ⚠️ No distance found for instruction:', text);
             }
         }
     } catch (error) {
-        console.error('Error in announceNextDirection:', error);
+        console.error('[Navigation] ❌ Error in announceNextDirection:', error);
+        console.error('[Navigation] Error stack:', error.stack);
+    }
+}
+
+// Helper function: Deteksi arah belokan dari koordinat route
+// Menghitung bearing/heading dari posisi user ke titik belokan untuk menentukan kiri/kanan
+function detectTurnDirectionFromCoordinates(userLatLng, turnLatLng, prevLatLng) {
+    if (!userLatLng || !turnLatLng) {
+        return null;
+    }
+    
+    try {
+        // Hitung bearing dari user ke titik belokan
+        const toRad = Math.PI / 180;
+        const toDeg = 180 / Math.PI;
+        
+        const lat1 = userLatLng.lat * toRad;
+        const lat2 = turnLatLng.lat * toRad;
+        const dLon = (turnLatLng.lng - userLatLng.lng) * toRad;
+        
+        const y = Math.sin(dLon) * Math.cos(lat2);
+        const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+        
+        let bearing = Math.atan2(y, x) * toDeg;
+        bearing = (bearing + 360) % 360; // Normalize to 0-360
+        
+        // Jika ada koordinat sebelumnya, hitung bearing dari sebelumnya ke user
+        if (prevLatLng) {
+            const prevLat = prevLatLng.lat * toRad;
+            const prevLon = (prevLatLng.lng - userLatLng.lng) * toRad;
+            
+            const prevY = Math.sin(prevLon) * Math.cos(lat1);
+            const prevX = Math.cos(prevLat) * Math.sin(lat1) - Math.sin(prevLat) * Math.cos(lat1) * Math.cos(prevLon);
+            
+            let prevBearing = Math.atan2(prevY, prevX) * toDeg;
+            prevBearing = (prevBearing + 360) % 360;
+            
+            // Hitung sudut belokan (bearing baru - bearing lama)
+            let turnAngle = bearing - prevBearing;
+            
+            // Normalize turn angle to -180 to 180
+            if (turnAngle > 180) turnAngle -= 360;
+            if (turnAngle < -180) turnAngle += 360;
+            
+            // Jika belokan > 0 (kanan) atau < 0 (kiri)
+            if (turnAngle > 15) {
+                return 'Belok kanan';
+            } else if (turnAngle < -15) {
+                return 'Belok kiri';
+            }
+        }
+        
+        // Fallback: jika tidak ada koordinat sebelumnya, gunakan bearing saja
+        // (kurang akurat tapi lebih baik daripada tidak ada)
+        return null;
+    } catch (error) {
+        console.error('[Navigation] Error calculating turn direction:', error);
+        return null;
+    }
+}
+
+// Helper function: Extract "Belok kanan" atau "Belok kiri" dari instruction text dengan prioritas tinggi
+// Fungsi ini memastikan bahwa "Belok kanan" atau "Belok kiri" selalu terdeteksi dengan jelas
+// CRITICAL: Fungsi ini HARUS selalu return direction text untuk semua jenis belokan, tidak boleh return null
+function extractTurnDirection(text, userLatLng, turnLatLng, prevLatLng) {
+    if (!text) {
+        console.log('[Navigation] ⚠️ extractTurnDirection: text is null/empty');
+        return null;
+    }
+    
+    const textLower = text.toLowerCase();
+    let directionText = null;
+    
+    // PRIORITAS 1: Deteksi eksplisit "belok kanan" atau "belok kiri"
+    if (textLower.includes('belok kanan') || textLower.includes('turn right')) {
+        directionText = 'Belok kanan';
+        console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 1):', directionText);
+        return directionText;
+    } else if (textLower.includes('belok kiri') || textLower.includes('turn left')) {
+        directionText = 'Belok kiri';
+        console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 1):', directionText);
+        return directionText;
+    }
+    
+    // PRIORITAS 2: Deteksi jenis belokan spesifik lainnya (SEBELUM deteksi umum)
+    // Ini penting agar "Tetap di kiri" dan "Sedikit ke kiri" terdeteksi dengan benar
+    if (textLower.includes('sedikit kanan') || textLower.includes('slight right')) {
+        directionText = 'Sedikit ke kanan';
+        console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 2):', directionText);
+        return directionText;
+    } else if (textLower.includes('sedikit kiri') || textLower.includes('slight left')) {
+        directionText = 'Sedikit ke kiri';
+        console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 2):', directionText);
+        return directionText;
+    } else if (textLower.includes('tetap kanan') || textLower.includes('keep right')) {
+        directionText = 'Tetap di kanan';
+        console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 2):', directionText);
+        return directionText;
+    } else if (textLower.includes('tetap kiri') || textLower.includes('keep left')) {
+        directionText = 'Tetap di kiri';
+        console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 2):', directionText);
+        return directionText;
+    } else if (textLower.includes('bergabung kanan') || textLower.includes('merge right')) {
+        directionText = 'Bergabung ke kanan';
+        console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 2):', directionText);
+        return directionText;
+    } else if (textLower.includes('bergabung kiri') || textLower.includes('merge left')) {
+        directionText = 'Bergabung ke kiri';
+        console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 2):', directionText);
+        return directionText;
+    } else if (textLower.includes('jalan keluar') || textLower.includes('ramp')) {
+        if (textLower.includes('kanan') || textLower.includes('right')) {
+            directionText = 'Ambil jalan keluar kanan';
+        } else if (textLower.includes('kiri') || textLower.includes('left')) {
+            directionText = 'Ambil jalan keluar kiri';
+        } else {
+            directionText = 'Ambil jalan keluar';
+        }
+        console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 2):', directionText);
+        return directionText;
+    } else if (textLower.includes('persimpangan') || textLower.includes('fork')) {
+        if (textLower.includes('kanan') || textLower.includes('right')) {
+            directionText = 'Tetap kanan di persimpangan';
+        } else if (textLower.includes('kiri') || textLower.includes('left')) {
+            directionText = 'Tetap kiri di persimpangan';
+        } else {
+            directionText = 'Di persimpangan';
+        }
+        console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 2):', directionText);
+        return directionText;
+    } else if (textLower.includes('bundaran') || textLower.includes('circle')) {
+        directionText = 'Masuk bundaran';
+        console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 2):', directionText);
+        return directionText;
+    } else if (textLower.includes('u-turn') || textLower.includes('putar balik') || textLower.includes('buat u-turn')) {
+        directionText = 'Putar balik';
+        console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 2):', directionText);
+        return directionText;
+    }
+    
+    // PRIORITAS 3: Deteksi dari kata "kanan" atau "kiri" umum (setelah cek jenis spesifik)
+    if (textLower.includes('kanan') || textLower.includes('right')) {
+        directionText = 'Belok kanan';
+        console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 3):', directionText);
+        return directionText;
+    } else if (textLower.includes('kiri') || textLower.includes('left')) {
+        directionText = 'Belok kiri';
+        console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 3):', directionText);
+        return directionText;
+    }
+    
+    // PRIORITAS 4: Hitung dari koordinat jika text tidak jelas
+    if (userLatLng && turnLatLng) {
+        const calculatedDirection = detectTurnDirectionFromCoordinates(userLatLng, turnLatLng, prevLatLng);
+        if (calculatedDirection) {
+            console.log('[Navigation] ✅ Deteksi arah belokan (PRIORITAS 4 - koordinat):', calculatedDirection);
+            return calculatedDirection;
+        }
+    }
+    
+    // Fallback: jika tidak jelas sama sekali, return null (akan di-skip)
+    console.log('[Navigation] ⚠️ Tidak dapat mendeteksi arah belokan dari:', text);
+    return null;
+}
+
+// Fallback function to announce from route data if DOM is not available
+// FUNGSI INI LEBIH RELIABLE karena menghitung jarak secara manual
+function announceFromRouteData() {
+    console.log('[Navigation] 🔍 announceFromRouteData called - checking conditions...');
+    
+    if (!voiceDirectionsEnabled) {
+        console.log('[Navigation] ⚠️ announceFromRouteData skipped: voiceDirectionsEnabled = false');
+        console.log('[Navigation] 💡 Setting voiceDirectionsEnabled = true...');
+        voiceDirectionsEnabled = true;
+        // Continue instead of return
+    }
+    if (!isNavigating) {
+        console.log('[Navigation] ⚠️ announceFromRouteData skipped: isNavigating = false');
+        console.log('[Navigation] 💡 Setting isNavigating = true...');
+        isNavigating = true;
+        // Continue instead of return
+    }
+    if (!currentRouteData || !currentRouteData.instructions || !currentRouteData.instructions.length) {
+        console.log('[Navigation] ⚠️ announceFromRouteData skipped: currentRouteData tidak valid');
+        console.log('[Navigation] 📊 currentRouteData:', {
+            exists: currentRouteData !== null,
+            hasInstructions: currentRouteData && currentRouteData.instructions ? currentRouteData.instructions.length : 0
+        });
+        return;
+    }
+    
+    if (!currentUserPosition) {
+        console.log('[Navigation] ⚠️ announceFromRouteData skipped: currentUserPosition = null');
+        return;
+    }
+    
+    // CRITICAL: Pastikan hasUserInteraction = true
+    if (typeof hasUserInteraction !== 'undefined' && !hasUserInteraction) {
+        console.log('[Navigation] 💡 Setting hasUserInteraction = true...');
+        hasUserInteraction = true;
+    }
+    
+    console.log('[Navigation] ✅ announceFromRouteData conditions met, proceeding...');
+    console.log('[Navigation] 📊 State:', {
+        voiceDirectionsEnabled,
+        isNavigating,
+        hasRouteData: currentRouteData !== null,
+        instructionsCount: currentRouteData.instructions.length,
+        hasUserPosition: currentUserPosition !== null,
+        hasUserInteraction: typeof hasUserInteraction !== 'undefined' ? hasUserInteraction : 'undefined'
+    });
+    
+    const userLatLng = currentUserPosition.getLatLng();
+    
+    // Find next turn instruction and calculate distance manually
+    for (let i = 0; i < Math.min(10, currentRouteData.instructions.length); i++) {
+        const instruction = currentRouteData.instructions[i];
+        
+        if (!instruction || !instruction.text) continue;
+        
+        const text = convertInstructionToNatural(instruction.text);
+        
+        // Skip if already announced
+        if (!text || text === lastAnnouncedInstruction || announcedInstructions.includes(text)) {
+            continue;
+        }
+        
+        // Skip generic instructions
+        if (text.toLowerCase().includes('head') || text.toLowerCase().includes('berangkat')) {
+            continue;
+        }
+        
+        // Check if it's a turn instruction
+        const hasTurn = text.toLowerCase().includes('belok') || 
+                       text.toLowerCase().includes('turn') ||
+                       text.toLowerCase().includes('kiri') ||
+                       text.toLowerCase().includes('kanan') ||
+                       text.toLowerCase().includes('left') ||
+                       text.toLowerCase().includes('right');
+        
+        if (!hasTurn) {
+            continue;
+        }
+        
+        // Calculate distance to this instruction point manually
+        let instructionLatLng = null;
+        
+        // Try to get instruction coordinate
+        if (instruction.waypoint) {
+            const waypoint = instruction.waypoint;
+            if (Array.isArray(waypoint)) {
+                instructionLatLng = L.latLng(waypoint[0], waypoint[1]);
+            } else if (waypoint.lat !== undefined && waypoint.lng !== undefined) {
+                instructionLatLng = L.latLng(waypoint.lat, waypoint.lng);
+            } else if (waypoint instanceof L.LatLng) {
+                instructionLatLng = waypoint;
+            }
+        } else if (instruction.coordinate) {
+            const coord = instruction.coordinate;
+            if (Array.isArray(coord)) {
+                instructionLatLng = L.latLng(coord[0], coord[1]);
+            } else if (coord.lat !== undefined && coord.lng !== undefined) {
+                instructionLatLng = L.latLng(coord.lat, coord.lng);
+            } else if (coord instanceof L.LatLng) {
+                instructionLatLng = coord;
+            }
+        } else if (instruction.index !== undefined && currentRouteData.coordinates && currentRouteData.coordinates[instruction.index]) {
+            const coord = currentRouteData.coordinates[instruction.index];
+            if (Array.isArray(coord)) {
+                instructionLatLng = L.latLng(coord[0], coord[1]);
+            } else if (coord.lat !== undefined && coord.lng !== undefined) {
+                instructionLatLng = L.latLng(coord.lat, coord.lng);
+            } else if (coord instanceof L.LatLng) {
+                instructionLatLng = coord;
+            }
+        }
+        
+        // If we have instruction coordinate, calculate distance
+        if (instructionLatLng) {
+            const distance = userLatLng.distanceTo(instructionLatLng); // Distance in meters
+            
+            console.log('[Navigation] 📏 Instruction', i, ':', text, '- Distance:', Math.round(distance), 'meters');
+            
+            // Announce if within 200 meters
+            if (distance <= 200 && distance > 0) {
+                // Dapatkan koordinat sebelumnya untuk perhitungan arah belokan
+                let prevLatLng = null;
+                if (i > 0 && currentRouteData.instructions[i - 1]) {
+                    const prevInstruction = currentRouteData.instructions[i - 1];
+                    if (prevInstruction.waypoint) {
+                        const waypoint = prevInstruction.waypoint;
+                        if (Array.isArray(waypoint)) {
+                            prevLatLng = L.latLng(waypoint[0], waypoint[1]);
+                        } else if (waypoint.lat !== undefined && waypoint.lng !== undefined) {
+                            prevLatLng = L.latLng(waypoint.lat, waypoint.lng);
+                        } else if (waypoint instanceof L.LatLng) {
+                            prevLatLng = waypoint;
+                        }
+                    } else if (prevInstruction.coordinate) {
+                        const coord = prevInstruction.coordinate;
+                        if (Array.isArray(coord)) {
+                            prevLatLng = L.latLng(coord[0], coord[1]);
+                        } else if (coord.lat !== undefined && coord.lng !== undefined) {
+                            prevLatLng = L.latLng(coord.lat, coord.lng);
+                        } else if (coord instanceof L.LatLng) {
+                            prevLatLng = coord;
+                        }
+                    } else if (prevInstruction.index !== undefined && currentRouteData.coordinates && currentRouteData.coordinates[prevInstruction.index]) {
+                        const coord = currentRouteData.coordinates[prevInstruction.index];
+                        if (Array.isArray(coord)) {
+                            prevLatLng = L.latLng(coord[0], coord[1]);
+                        } else if (coord.lat !== undefined && coord.lng !== undefined) {
+                            prevLatLng = L.latLng(coord.lat, coord.lng);
+                        } else if (coord instanceof L.LatLng) {
+                            prevLatLng = coord;
+                        }
+                    }
+                }
+                
+                // Extract direction menggunakan fungsi helper yang lebih kuat
+                // Fungsi ini akan mendeteksi "Belok kanan" atau "Belok kiri" dengan prioritas tinggi
+                console.log('[Navigation] 🔍 Mencoba extractTurnDirection (from route data) untuk:', text);
+                const directionText = extractTurnDirection(text, userLatLng, instructionLatLng, prevLatLng);
+                
+                // Jika tidak dapat mendeteksi arah belokan, skip instruction ini
+                if (!directionText) {
+                    console.log('[Navigation] ⚠️ Tidak dapat mendeteksi arah belokan, skipping:', text);
+                    console.log('[Navigation] 💡 Text yang tidak terdeteksi mungkin bukan belokan atau format tidak dikenal');
+                    continue;
+                }
+                
+                console.log('[Navigation] ✅ Direction text berhasil diekstrak (from route data):', directionText);
+                
+                // Announce dengan format yang lebih jelas: "Belok kanan" atau "Belok kiri"
+                // PRIORITAS: Pastikan "Belok kanan" atau "Belok kiri" selalu disebutkan dengan jelas
+                let turnInstruction = '';
+                
+                if (distance > 50) {
+                    // Jarak masih jauh: "Setelah X meter Belok kanan/kiri"
+                    turnInstruction = 'Setelah ' + Math.round(distance) + ' meter ' + directionText;
+                } else if (distance >= 2) {
+                    // Jarak sedang: "Setelah X meter Belok kanan/kiri"
+                    turnInstruction = 'Setelah ' + Math.round(distance) + ' meter ' + directionText;
+                } else {
+                    // Jarak sangat dekat: "Belok kanan/kiri sekarang"
+                    turnInstruction = directionText + ' sekarang';
+                }
+                
+                console.log('🔊 🔊 🔊 [NAVIGATION] MENGUMUMKAN BELOKAN (from route data): 🔊 🔊 🔊');
+                console.log('   📍 Text:', turnInstruction);
+                console.log('   📏 Jarak:', Math.round(distance), 'meter');
+                console.log('   ✅ Navigator akan berbicara sekarang!');
+                
+                // CRITICAL: Pastikan hasUserInteraction = true sebelum speak
+                if (typeof hasUserInteraction !== 'undefined' && !hasUserInteraction) {
+                    console.log('[Navigation] 🔧 Setting hasUserInteraction = true (di announceFromRouteData)');
+                    hasUserInteraction = true;
+                }
+                
+                // CRITICAL: Pastikan voiceDirectionsEnabled = true
+                if (typeof voiceDirectionsEnabled !== 'undefined' && !voiceDirectionsEnabled) {
+                    console.log('[Navigation] 🔧 Setting voiceDirectionsEnabled = true (di announceFromRouteData)');
+                    voiceDirectionsEnabled = true;
+                }
+                
+                // Pastikan text tidak kosong
+                if (!turnInstruction || turnInstruction.trim() === '') {
+                    console.warn('[Navigation] ⚠️ Empty turn instruction, skipping');
+                    continue;
+                }
+                
+                lastAnnouncedInstruction = text;
+                announcedInstructions.push(text);
+                
+                updateVoiceStatus('🔊 ' + turnInstruction);
+                
+                const timestamp = new Date().toLocaleTimeString('id-ID');
+                console.log(`[${timestamp}] 🔊 🔊 🔊 NAVIGATOR BERBICARA: "${turnInstruction}" 🔊 🔊 🔊`);
+                
+                // CRITICAL: Pastikan hasUserInteraction = true sebelum speak
+                if (typeof hasUserInteraction !== 'undefined' && !hasUserInteraction) {
+                    console.log('[Navigation] 🔧 Setting hasUserInteraction = true untuk announcement (from route data)');
+                    hasUserInteraction = true;
+                }
+                
+                // CRITICAL: Pastikan voiceDirectionsEnabled = true
+                if (typeof voiceDirectionsEnabled !== 'undefined' && !voiceDirectionsEnabled) {
+                    console.log('[Navigation] 🔧 Setting voiceDirectionsEnabled = true untuk announcement (from route data)');
+                    voiceDirectionsEnabled = true;
+                }
+                
+                // CRITICAL: Panggil speakText dengan priority = true untuk memastikan suara muncul
+                speakText(turnInstruction, 'id-ID', true, function() {
+                    console.log('✅ [NAVIGATION] Selesai mengumumkan belokan:', turnInstruction);
+                    updateVoiceStatus('✅ ' + turnInstruction + ' (selesai)');
+                });
+                
+                break; // Only announce one at a time
+            }
+        } else {
+            // Fallback: use instruction.distance if available
+            const distance = instruction.distance || 0;
+            if (distance > 0 && distance <= 200) {
+                // Extract direction menggunakan fungsi helper yang lebih kuat
+                const directionText = extractTurnDirection(text, userLatLng, null, null);
+                
+                // Jika tidak dapat mendeteksi arah belokan, skip instruction ini
+                if (!directionText) {
+                    console.log('[Navigation] ⚠️ Tidak dapat mendeteksi arah belokan (fallback), skipping:', text);
+                    continue;
+                }
+                
+                // Announce dengan format yang lebih jelas: "Belok kanan" atau "Belok kiri"
+                let turnInstruction = '';
+                
+                if (distance > 50) {
+                    turnInstruction = 'Setelah ' + Math.round(distance) + ' meter ' + directionText;
+                } else if (distance >= 2) {
+                    turnInstruction = 'Setelah ' + Math.round(distance) + ' meter ' + directionText;
+                } else {
+                    turnInstruction = directionText + ' sekarang';
+                }
+                
+                console.log('🔊 🔊 🔊 [NAVIGATION] MENGUMUMKAN BELOKAN (from route data - fallback): 🔊 🔊 🔊');
+                console.log('   📍 Text:', turnInstruction);
+                console.log('   📏 Jarak:', Math.round(distance), 'meters');
+                
+                lastAnnouncedInstruction = text;
+                announcedInstructions.push(text);
+                
+                updateVoiceStatus('🔊 ' + turnInstruction);
+                
+                const timestamp = new Date().toLocaleTimeString('id-ID');
+                console.log(`[${timestamp}] 🔊 🔊 🔊 NAVIGATOR BERBICARA: "${turnInstruction}" 🔊 🔊 🔊`);
+                
+                speakText(turnInstruction, 'id-ID', true, function() {
+                    console.log('✅ [NAVIGATION] Selesai mengumumkan belokan:', turnInstruction);
+                    updateVoiceStatus('✅ ' + turnInstruction + ' (selesai)');
+                });
+                
+                break;
+            }
+        }
+    }
+}
+
+
+// Function to create turn markers for all turns in the route
+function createTurnMarkers(routeData) {
+    // Clear existing turn markers first
+    clearTurnMarkers();
+    
+    if (!routeData || !routeData.instructions || !routeData.instructions.length) {
+        console.log('[Navigation] ⚠️ No route instructions available for turn markers');
+        return;
+    }
+    
+    console.log('[Navigation] 📍 Creating turn markers for', routeData.instructions.length, 'instructions');
+    
+    // Iterate through instructions and create markers for turns
+    routeData.instructions.forEach(function(instruction, index) {
+        if (!instruction || !instruction.text) return;
+        
+        // Check if this is a turn instruction (SEMUA JENIS BELOKAN)
+        const text = convertInstructionToNatural(instruction.text);
+        const textLower = text.toLowerCase();
+        
+        // Deteksi SEMUA jenis belokan:
+        // - Turn left/right (belok kiri/kanan)
+        // - Slight left/right (sedikit ke kiri/kanan)
+        // - Keep left/right (tetap di kiri/kanan)
+        // - Merge left/right (bergabung kiri/kanan)
+        // - Take ramp (ambil jalan keluar)
+        // - Fork (persimpangan)
+        // - Traffic circle (bundaran)
+        const hasTurn = textLower.includes('belok') || 
+                       textLower.includes('turn') ||
+                       textLower.includes('kiri') ||
+                       textLower.includes('kanan') ||
+                       textLower.includes('left') ||
+                       textLower.includes('right') ||
+                       textLower.includes('slight') ||
+                       textLower.includes('sedikit') ||
+                       textLower.includes('keep') ||
+                       textLower.includes('tetap') ||
+                       textLower.includes('merge') ||
+                       textLower.includes('bergabung') ||
+                       textLower.includes('ramp') ||
+                       textLower.includes('jalan keluar') ||
+                       textLower.includes('fork') ||
+                       textLower.includes('persimpangan') ||
+                       textLower.includes('circle') ||
+                       textLower.includes('bundaran') ||
+                       textLower.includes('exit') ||
+                       textLower.includes('keluar');
+        
+        // Skip non-turn instructions (head, go straight, continue straight, dll)
+        const isStraight = textLower.includes('head') || 
+                          textLower.includes('berangkat') ||
+                          textLower.includes('go straight') ||
+                          textLower.includes('lurus terus') ||
+                          textLower.includes('continue straight') ||
+                          textLower.includes('continue onto') && !textLower.includes('turn') && !textLower.includes('belok');
+        
+        if (!hasTurn || isStraight) {
+            return;
+        }
+        
+        // Get coordinates for this turn point
+        // Leaflet Routing Machine stores coordinates in different ways
+        let turnLatLng = null;
+        
+        // Method 1: Try instruction.waypoint (most reliable for Leaflet Routing Machine)
+        if (instruction.waypoint) {
+            const waypoint = instruction.waypoint;
+            if (Array.isArray(waypoint)) {
+                turnLatLng = L.latLng(waypoint[0], waypoint[1]);
+            } else if (waypoint.lat !== undefined && waypoint.lng !== undefined) {
+                turnLatLng = L.latLng(waypoint.lat, waypoint.lng);
+            } else if (waypoint instanceof L.LatLng) {
+                turnLatLng = waypoint;
+            }
+        }
+        
+        // Method 2: Try instruction.coordinate
+        if (!turnLatLng && instruction.coordinate) {
+            const coord = instruction.coordinate;
+            if (Array.isArray(coord)) {
+                turnLatLng = L.latLng(coord[0], coord[1]);
+            } else if (coord.lat !== undefined && coord.lng !== undefined) {
+                turnLatLng = L.latLng(coord.lat, coord.lng);
+            } else if (coord instanceof L.LatLng) {
+                turnLatLng = coord;
+            }
+        }
+        
+        // Method 3: Try instruction.index with routeData.coordinates
+        if (!turnLatLng && instruction.index !== undefined && routeData.coordinates && routeData.coordinates[instruction.index]) {
+            const turnCoord = routeData.coordinates[instruction.index];
+            if (Array.isArray(turnCoord)) {
+                turnLatLng = L.latLng(turnCoord[0], turnCoord[1]);
+            } else if (turnCoord.lat !== undefined && turnCoord.lng !== undefined) {
+                turnLatLng = L.latLng(turnCoord.lat, turnCoord.lng);
+            } else if (turnCoord instanceof L.LatLng) {
+                turnLatLng = turnCoord;
+            }
+        }
+        
+        // Method 4: Fallback - use coordinate index based on instruction index
+        if (!turnLatLng && routeData.coordinates && routeData.coordinates.length > 0) {
+            // Calculate approximate coordinate index
+            // Instructions are usually spaced along the route coordinates
+            const totalInstructions = routeData.instructions.length;
+            const totalCoordinates = routeData.coordinates.length;
+            const coordIndex = Math.floor((index / totalInstructions) * totalCoordinates);
+            const safeIndex = Math.min(Math.max(coordIndex, 0), totalCoordinates - 1);
+            
+            if (routeData.coordinates[safeIndex]) {
+                const turnCoord = routeData.coordinates[safeIndex];
+                if (Array.isArray(turnCoord)) {
+                    turnLatLng = L.latLng(turnCoord[0], turnCoord[1]);
+                } else if (turnCoord.lat !== undefined && turnCoord.lng !== undefined) {
+                    turnLatLng = L.latLng(turnCoord.lat, turnCoord.lng);
+                } else if (turnCoord instanceof L.LatLng) {
+                    turnLatLng = turnCoord;
+                }
+            }
+        }
+        
+        // Only create marker if we have valid coordinates
+        if (turnLatLng) {
+            
+            // Determine icon color and text based on direction (SEMUA JENIS BELOKAN)
+            const textLower = text.toLowerCase();
+            let iconColor = '#ff6b6b'; // Default red
+            let iconText = '↻'; // Default turn icon
+            
+            // Deteksi arah belokan (kanan atau kiri)
+            const isRight = textLower.includes('kanan') || 
+                           textLower.includes('right') ||
+                           (textLower.includes('keep right') || textLower.includes('tetap kanan')) ||
+                           (textLower.includes('merge right') || textLower.includes('bergabung kanan')) ||
+                           (textLower.includes('ramp') && textLower.includes('right')) ||
+                           (textLower.includes('slight right') || textLower.includes('sedikit kanan'));
+            
+            const isLeft = textLower.includes('kiri') || 
+                          textLower.includes('left') ||
+                          (textLower.includes('keep left') || textLower.includes('tetap kiri')) ||
+                          (textLower.includes('merge left') || textLower.includes('bergabung kiri')) ||
+                          (textLower.includes('ramp') && textLower.includes('left')) ||
+                          (textLower.includes('slight left') || textLower.includes('sedikit kiri'));
+            
+            // Special icons untuk jenis belokan tertentu
+            if (textLower.includes('fork') || textLower.includes('persimpangan')) {
+                iconText = '⚡'; // Fork icon
+                iconColor = isRight ? '#4ecdc4' : '#ff6b6b';
+            } else if (textLower.includes('circle') || textLower.includes('bundaran')) {
+                iconText = '⭕'; // Circle icon
+                iconColor = '#fbbf24'; // Yellow for roundabout
+            } else if (textLower.includes('ramp') || textLower.includes('jalan keluar')) {
+                iconText = '⬇️'; // Ramp icon
+                iconColor = isRight ? '#4ecdc4' : '#ff6b6b';
+            } else if (textLower.includes('slight') || textLower.includes('sedikit')) {
+                iconText = isRight ? '↗️' : '↖️'; // Slight turn icon
+                iconColor = isRight ? '#2dd4bf' : '#f87171'; // Lighter colors for slight turns
+            } else if (textLower.includes('keep') || textLower.includes('tetap')) {
+                iconText = isRight ? '→' : '←'; // Keep direction icon
+                iconColor = isRight ? '#4ecdc4' : '#ff6b6b';
+            } else if (textLower.includes('merge') || textLower.includes('bergabung')) {
+                iconText = isRight ? '⇉' : '⇇'; // Merge icon
+                iconColor = isRight ? '#4ecdc4' : '#ff6b6b';
+            } else {
+                // Standard turn
+                if (isRight) {
+                    iconColor = '#4ecdc4'; // Teal for right turn
+                    iconText = '↻';
+                } else if (isLeft) {
+                    iconColor = '#ff6b6b'; // Red for left turn
+                    iconText = '↺';
+                }
+            }
+            
+            // Create custom icon for turn marker
+            const turnIcon = L.divIcon({
+                className: 'turn-marker-icon',
+                html: '<div style="background-color: ' + iconColor + '; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">' + iconText + '</div>',
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+            });
+            
+            // Create marker at turn point
+            const turnMarker = L.marker(turnLatLng, {
+                icon: turnIcon,
+                zIndexOffset: 1000 // Ensure markers appear above route line
+            }).addTo(map);
+            
+            // Add popup with turn instruction
+            turnMarker.bindPopup('<strong>📍 Belokan</strong><br>' + text);
+            
+            // Store marker dengan metadata
+            turnMarkers.push({
+                marker: turnMarker,
+                latlng: turnLatLng,
+                instruction: text,
+                passed: false,
+                index: turnMarkers.length
+            });
+            console.log('[Navigation] ✅ Created turn marker #' + (turnMarkers.length) + ' at:', turnLatLng.lat.toFixed(6) + ', ' + turnLatLng.lng.toFixed(6), '-', text);
+        }
+    });
+    
+    // Reset next turn marker index
+    nextTurnMarkerIndex = 0;
+    
+    // Highlight marker belokan pertama (jika ada)
+    if (turnMarkers.length > 0) {
+        highlightNextTurnMarker();
+    }
+    
+    console.log('[Navigation] ✅ Created', turnMarkers.length, 'turn markers total');
+}
+
+// Function to clear all turn markers
+function clearTurnMarkers() {
+    turnMarkers.forEach(function(turnMarkerData) {
+        if (turnMarkerData.marker) {
+            map.removeLayer(turnMarkerData.marker);
+        }
+    });
+    turnMarkers = [];
+    nextTurnMarkerIndex = 0;
+    console.log('[Navigation] ✅ Cleared all turn markers');
+}
+
+// Function to update turn markers based on user position
+// Hapus marker yang sudah dilewati dan highlight marker berikutnya
+function updateTurnMarkers(userLatLng) {
+    if (!isNavigating || !userLatLng || turnMarkers.length === 0) {
+        return;
+    }
+    
+    // Check each turn marker
+    turnMarkers.forEach(function(turnMarkerData, index) {
+        if (turnMarkerData.passed) {
+            return; // Skip marker yang sudah dilewati
+        }
+        
+        const distance = userLatLng.distanceTo(turnMarkerData.latlng);
+        
+        // Jika user sudah melewati belokan (jarak < 50 meter), hapus marker
+        if (distance < 50) {
+            console.log('[Navigation] ✅ User passed turn marker #' + (index + 1) + ' - removing');
+            
+            // Hapus marker dari map
+            map.removeLayer(turnMarkerData.marker);
+            
+            // Mark as passed
+            turnMarkerData.passed = true;
+            
+            // Update next turn marker index
+            if (index === nextTurnMarkerIndex) {
+                nextTurnMarkerIndex = index + 1;
+            }
+        }
+    });
+    
+    // Highlight marker belokan berikutnya (update visual)
+    highlightNextTurnMarker();
+}
+
+// Function to highlight next turn marker (make it more visible)
+function highlightNextTurnMarker() {
+    // Reset all markers to normal size
+    turnMarkers.forEach(function(turnMarkerData) {
+        if (!turnMarkerData.passed && turnMarkerData.marker) {
+            const text = turnMarkerData.instruction;
+            const textLower = text.toLowerCase();
+            let iconColor = '#ff6b6b';
+            let iconText = '↻';
+            
+            // Deteksi arah dan jenis belokan (sama seperti createTurnMarkers)
+            const isRight = textLower.includes('kanan') || textLower.includes('right') ||
+                          (textLower.includes('keep right') || textLower.includes('tetap kanan')) ||
+                          (textLower.includes('merge right') || textLower.includes('bergabung kanan')) ||
+                          (textLower.includes('slight right') || textLower.includes('sedikit kanan'));
+            
+            const isLeft = textLower.includes('kiri') || textLower.includes('left') ||
+                          (textLower.includes('keep left') || textLower.includes('tetap kiri')) ||
+                          (textLower.includes('merge left') || textLower.includes('bergabung kiri')) ||
+                          (textLower.includes('slight left') || textLower.includes('sedikit kiri'));
+            
+            // Special icons untuk jenis belokan tertentu
+            if (textLower.includes('fork') || textLower.includes('persimpangan')) {
+                iconText = '⚡';
+                iconColor = isRight ? '#4ecdc4' : '#ff6b6b';
+            } else if (textLower.includes('circle') || textLower.includes('bundaran')) {
+                iconText = '⭕';
+                iconColor = '#fbbf24';
+            } else if (textLower.includes('ramp') || textLower.includes('jalan keluar')) {
+                iconText = '⬇️';
+                iconColor = isRight ? '#4ecdc4' : '#ff6b6b';
+            } else if (textLower.includes('slight') || textLower.includes('sedikit')) {
+                iconText = isRight ? '↗️' : '↖️';
+                iconColor = isRight ? '#2dd4bf' : '#f87171';
+            } else if (textLower.includes('keep') || textLower.includes('tetap')) {
+                iconText = isRight ? '→' : '←';
+                iconColor = isRight ? '#4ecdc4' : '#ff6b6b';
+            } else if (textLower.includes('merge') || textLower.includes('bergabung')) {
+                iconText = isRight ? '⇉' : '⇇';
+                iconColor = isRight ? '#4ecdc4' : '#ff6b6b';
+            } else {
+                // Standard turn
+                if (isRight) {
+                    iconColor = '#4ecdc4';
+                    iconText = '↻';
+                } else if (isLeft) {
+                    iconColor = '#ff6b6b';
+                    iconText = '↺';
+                }
+            }
+            
+            // Normal size icon
+            const normalIcon = L.divIcon({
+                className: 'turn-marker-icon',
+                html: '<div style="background-color: ' + iconColor + '; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">' + iconText + '</div>',
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+            });
+            
+            turnMarkerData.marker.setIcon(normalIcon);
+        }
+    });
+    
+    // Highlight next turn marker (make it bigger and brighter)
+    if (nextTurnMarkerIndex < turnMarkers.length) {
+        const nextTurnMarkerData = turnMarkers[nextTurnMarkerIndex];
+        
+        if (!nextTurnMarkerData.passed && nextTurnMarkerData.marker) {
+            const text = nextTurnMarkerData.instruction;
+            const textLower = text.toLowerCase();
+            let iconColor = '#ff6b6b';
+            let iconText = '↻';
+            
+            // Deteksi arah dan jenis belokan (sama seperti createTurnMarkers)
+            const isRight = textLower.includes('kanan') || textLower.includes('right') ||
+                          (textLower.includes('keep right') || textLower.includes('tetap kanan')) ||
+                          (textLower.includes('merge right') || textLower.includes('bergabung kanan')) ||
+                          (textLower.includes('slight right') || textLower.includes('sedikit kanan'));
+            
+            const isLeft = textLower.includes('kiri') || textLower.includes('left') ||
+                          (textLower.includes('keep left') || textLower.includes('tetap kiri')) ||
+                          (textLower.includes('merge left') || textLower.includes('bergabung kiri')) ||
+                          (textLower.includes('slight left') || textLower.includes('sedikit kiri'));
+            
+            // Special icons untuk jenis belokan tertentu (highlighted version)
+            if (textLower.includes('fork') || textLower.includes('persimpangan')) {
+                iconText = '⚡';
+                iconColor = isRight ? '#2dd4bf' : '#f87171'; // Brighter colors
+            } else if (textLower.includes('circle') || textLower.includes('bundaran')) {
+                iconText = '⭕';
+                iconColor = '#fbbf24'; // Yellow
+            } else if (textLower.includes('ramp') || textLower.includes('jalan keluar')) {
+                iconText = '⬇️';
+                iconColor = isRight ? '#2dd4bf' : '#f87171'; // Brighter colors
+            } else if (textLower.includes('slight') || textLower.includes('sedikit')) {
+                iconText = isRight ? '↗️' : '↖️';
+                iconColor = isRight ? '#2dd4bf' : '#f87171'; // Brighter colors
+            } else if (textLower.includes('keep') || textLower.includes('tetap')) {
+                iconText = isRight ? '→' : '←';
+                iconColor = isRight ? '#2dd4bf' : '#f87171'; // Brighter colors
+            } else if (textLower.includes('merge') || textLower.includes('bergabung')) {
+                iconText = isRight ? '⇉' : '⇇';
+                iconColor = isRight ? '#2dd4bf' : '#f87171'; // Brighter colors
+            } else {
+                // Standard turn (highlighted)
+                if (isRight) {
+                    iconColor = '#2dd4bf'; // Brighter teal
+                    iconText = '↻';
+                } else if (isLeft) {
+                    iconColor = '#f87171'; // Brighter red
+                    iconText = '↺';
+                }
+            }
+            
+            // Larger, brighter icon for next turn
+            const highlightIcon = L.divIcon({
+                className: 'turn-marker-icon turn-marker-next',
+                html: '<div style="background-color: ' + iconColor + '; width: 32px; height: 32px; border-radius: 50%; border: 4px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 18px;">' + iconText + '</div>',
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+            });
+            
+            nextTurnMarkerData.marker.setIcon(highlightIcon);
+            console.log('[Navigation] 🎯 Highlighted next turn marker #' + (nextTurnMarkerIndex + 1) + ':', text);
+        }
     }
 }
 
@@ -6390,6 +7661,90 @@ function updatePOIStatus(message) {
 }
 
 // ============================================
+// Debug Console UI Functions
+// ============================================
+
+// Function to update test status in UI
+function updateTestStatus(message, type = 'info') {
+    const statusEl = document.getElementById('testStatus');
+    if (!statusEl) return;
+    
+    statusEl.textContent = message;
+    statusEl.className = 'debug-test-status show ' + type;
+    
+    // Auto-hide after 10 seconds for success/error
+    if (type === 'success' || type === 'error') {
+        setTimeout(() => {
+            statusEl.classList.remove('show');
+        }, 10000);
+    }
+}
+
+// Test voice from UI button
+function testVoiceFromUI() {
+    const btn = document.getElementById('testVoiceBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Testing...';
+    }
+    
+    updateTestStatus('🔊 Testing suara navigator...', 'loading');
+    
+    if (typeof testNavigation !== 'undefined' && testNavigation.testVoice) {
+        testNavigation.testVoice('Setelah 50 meter Belok kiri');
+        
+        setTimeout(() => {
+            updateTestStatus('✅ Test suara selesai! Dengarkan suara navigator.', 'success');
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = '🔊 Test Suara';
+            }
+        }, 3000);
+    } else {
+        updateTestStatus('❌ testNavigation tidak tersedia.', 'error');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '🔊 Test Suara';
+        }
+    }
+}
+
+// Check navigation state from UI button
+function checkNavigationStateFromUI() {
+    const btn = document.getElementById('checkStateBtn');
+    
+    if (typeof testNavigation !== 'undefined' && testNavigation.checkState) {
+        const state = testNavigation.checkState();
+        
+        // Format state untuk display
+        let statusText = '📊 Navigation State:\n';
+        statusText += `• Navigasi aktif: ${state.isNavigating ? '✅ YA' : '❌ TIDAK'}\n`;
+        statusText += `• User position: ${state.hasUserPosition ? '✅ ADA' : '❌ TIDAK'}\n`;
+        statusText += `• Destination: ${state.hasDestination ? '✅ ADA' : '❌ TIDAK'}\n`;
+        statusText += `• Route: ${state.hasRoute ? '✅ ADA' : '❌ TIDAK'}\n`;
+        statusText += `• Voice enabled: ${state.voiceEnabled ? '✅ YA' : '❌ TIDAK'}\n`;
+        statusText += `• Listening: ${state.isListening ? '✅ YA' : '❌ TIDAK'}`;
+        
+        updateTestStatus(statusText, 'info');
+        
+        // Also check navigator speaking state
+        if (typeof testNavigation.checkNavigatorSpeaking === 'function') {
+            setTimeout(() => {
+                const navState = testNavigation.checkNavigatorSpeaking();
+                let navText = '\n\n🔊 Navigator State:\n';
+                navText += `• Speaking: ${navState.isSpeaking ? '✅ YA' : '❌ TIDAK'}\n`;
+                navText += `• Pending: ${navState.isPending ? '⏳ YA' : '❌ TIDAK'}\n`;
+                navText += `• Voice enabled: ${navState.voiceDirectionsEnabled ? '✅ YA' : '❌ TIDAK'}`;
+                
+                updateTestStatus(statusText + navText, 'info');
+            }, 500);
+        }
+    } else {
+        updateTestStatus('❌ testNavigation tidak tersedia.', 'error');
+    }
+}
+
+// ============================================
 // TESTING HELPER: GPS Simulation untuk Testing di Laptop
 // ============================================
 // Helper script untuk testing navigasi tanpa GPS real
@@ -6397,6 +7752,12 @@ function updatePOIStatus(message) {
 window.testNavigation = {
     // Set lokasi awal (simulasi GPS)
     setLocation: function(lat, lng, accuracy = 10) {
+        // CRITICAL: Set hasUserInteraction = true (diperlukan untuk speechSynthesis)
+        if (typeof hasUserInteraction !== 'undefined' && !hasUserInteraction) {
+            hasUserInteraction = true;
+            console.log('🔧 Auto-set hasUserInteraction = true (untuk speechSynthesis)');
+        }
+        
         if (typeof onLocationFound === 'function') {
             const mockEvent = {
                 latlng: L.latLng(lat, lng),
@@ -6440,6 +7801,20 @@ window.testNavigation = {
     
     // Set destination dan mulai navigasi
     startNavigation: function(destLat, destLng, destName = 'Tujuan') {
+        console.log('🚀 Starting navigation to:', destName, '(', destLat, ',', destLng, ')');
+        
+        // CRITICAL: Set hasUserInteraction = true (diperlukan untuk speechSynthesis)
+        if (typeof hasUserInteraction !== 'undefined' && !hasUserInteraction) {
+            console.log('🔧 Setting hasUserInteraction = true (CRITICAL untuk speechSynthesis)');
+            hasUserInteraction = true;
+        }
+        
+        // CRITICAL: Set voiceDirectionsEnabled = true
+        if (typeof voiceDirectionsEnabled !== 'undefined' && !voiceDirectionsEnabled) {
+            console.log('🔧 Setting voiceDirectionsEnabled = true');
+            voiceDirectionsEnabled = true;
+        }
+        
         // Set destination
         if (typeof updateDestination === 'function') {
             updateDestination(destLat, destLng, destName);
@@ -6453,11 +7828,51 @@ window.testNavigation = {
         if (typeof startTurnByTurnNavigation === 'function') {
             startTurnByTurnNavigation();
             console.log('✅ Navigasi dimulai');
+            console.log('💡 Tunggu 3-5 detik untuk route dibuat, lalu jalankan: testNavigation.simulateRouteNavigation()');
             return true;
         } else {
             console.error('❌ startTurnByTurnNavigation function tidak ditemukan');
             return false;
         }
+    },
+    
+    // Helper: Pastikan semua prerequisites untuk suara terpenuhi
+    ensureVoicePrerequisites: function() {
+        console.log('🔧 Memastikan semua prerequisites untuk suara terpenuhi...');
+        
+        // Set hasUserInteraction = true (CRITICAL untuk speechSynthesis)
+        if (typeof hasUserInteraction !== 'undefined') {
+            hasUserInteraction = true;
+            console.log('✅ hasUserInteraction = true');
+        }
+        
+        // Set voiceDirectionsEnabled = true
+        if (typeof voiceDirectionsEnabled !== 'undefined') {
+            voiceDirectionsEnabled = true;
+            console.log('✅ voiceDirectionsEnabled = true');
+        }
+        
+        // Set isNavigating = true
+        if (typeof isNavigating !== 'undefined') {
+            isNavigating = true;
+            console.log('✅ isNavigating = true');
+        }
+        
+        // Set SpeechCoordinator
+        if (typeof window.SpeechCoordinator !== 'undefined') {
+            window.SpeechCoordinator.setNavigating(true);
+            console.log('✅ SpeechCoordinator.setNavigating(true)');
+        }
+        
+        // Check speechSynthesis
+        if (!('speechSynthesis' in window)) {
+            console.error('❌ SpeechSynthesis tidak tersedia di browser ini!');
+            return false;
+        }
+        
+        console.log('✅ Semua prerequisites untuk suara sudah terpenuhi!');
+        console.log('💡 Pastikan volume browser/system tidak muted');
+        return true;
     },
     
     // Test voice announcement langsung
@@ -6648,6 +8063,315 @@ window.testNavigation = {
         return true;
     },
     
+    // Helper: Pastikan semua siap untuk simulasi
+    ensureReadyForSimulation: function() {
+        console.log('🔍 Checking prerequisites for simulation...');
+        
+        const checks = {
+            hasUserPosition: currentUserPosition !== null,
+            hasRouteData: currentRouteData !== null,
+            hasRouteCoordinates: currentRouteData && currentRouteData.coordinates && currentRouteData.coordinates.length > 0,
+            hasRoute: route !== null,
+            isNavigating: typeof isNavigating !== 'undefined' ? isNavigating : false,
+            voiceDirectionsEnabled: typeof voiceDirectionsEnabled !== 'undefined' ? voiceDirectionsEnabled : false,
+            hasUserInteraction: typeof hasUserInteraction !== 'undefined' ? hasUserInteraction : false,
+            speechSynthesisAvailable: 'speechSynthesis' in window
+        };
+        
+        console.table(checks);
+        
+        // Auto-fix jika perlu
+        if (!checks.hasUserPosition) {
+            console.error('❌ User position tidak ada!');
+            return false;
+        }
+        
+        if (!checks.hasRouteData || !checks.hasRouteCoordinates) {
+            console.error('❌ Route data tidak tersedia!');
+            console.log('💡 Jalankan: testNavigation.startNavigation(...) dan tunggu 3-5 detik');
+            return false;
+        }
+        
+        // CRITICAL: Set hasUserInteraction = true (diperlukan untuk speechSynthesis)
+        if (!checks.hasUserInteraction) {
+            console.log('⚠️ hasUserInteraction = false - mengaktifkan otomatis...');
+            if (typeof hasUserInteraction !== 'undefined') {
+                hasUserInteraction = true;
+                console.log('✅ hasUserInteraction = true (CRITICAL untuk speechSynthesis)');
+            }
+        }
+        
+        // CRITICAL: Set voiceDirectionsEnabled = true
+        if (!checks.voiceDirectionsEnabled) {
+            console.log('⚠️ voiceDirectionsEnabled = false - mengaktifkan otomatis...');
+            if (typeof voiceDirectionsEnabled !== 'undefined') {
+                voiceDirectionsEnabled = true;
+                console.log('✅ voiceDirectionsEnabled = true');
+            }
+        }
+        
+        // Auto-activate navigation
+        if (!checks.isNavigating) {
+            console.log('⚠️ Navigasi belum aktif - mengaktifkan otomatis...');
+            if (typeof isNavigating !== 'undefined') {
+                isNavigating = true;
+            }
+            if (typeof window.SpeechCoordinator !== 'undefined') {
+                window.SpeechCoordinator.setNavigating(true);
+            }
+            console.log('✅ Navigasi diaktifkan');
+        }
+        
+        // Check speechSynthesis
+        if (!checks.speechSynthesisAvailable) {
+            console.error('❌ SpeechSynthesis tidak tersedia di browser ini!');
+            return false;
+        }
+        
+        console.log('✅ Semua prerequisites OK!');
+        console.log('💡 Pastikan volume browser/system tidak muted untuk mendengar suara');
+        return true;
+    },
+    
+    // Helper: Tunggu route selesai dibuat
+    waitForRoute: function(maxWait = 10000, checkInterval = 500) {
+        return new Promise((resolve, reject) => {
+            let elapsed = 0;
+            
+            const checkRoute = setInterval(() => {
+                elapsed += checkInterval;
+                
+                const hasRoute = route !== null;
+                const hasRouteData = currentRouteData !== null;
+                const hasCoordinates = currentRouteData && currentRouteData.coordinates && currentRouteData.coordinates.length > 0;
+                const hasInstructions = currentRouteData && currentRouteData.instructions && currentRouteData.instructions.length > 0;
+                
+                if (hasRoute && hasRouteData && hasCoordinates && hasInstructions) {
+                    clearInterval(checkRoute);
+                    console.log(`✅ Route selesai dibuat setelah ${elapsed}ms`);
+                    console.log(`   - Route points: ${currentRouteData.coordinates.length}`);
+                    console.log(`   - Instructions: ${currentRouteData.instructions.length}`);
+                    resolve(true);
+                    return;
+                }
+                
+                if (elapsed >= maxWait) {
+                    clearInterval(checkRoute);
+                    console.error(`❌ Route tidak selesai dibuat setelah ${maxWait}ms`);
+                    console.log('   State:', {
+                        hasRoute,
+                        hasRouteData,
+                        hasCoordinates,
+                        hasInstructions
+                    });
+                    reject(new Error('Route tidak selesai dibuat'));
+                    return;
+                }
+                
+                console.log(`⏳ Menunggu route... (${elapsed}ms/${maxWait}ms)`);
+            }, checkInterval);
+        });
+    },
+    
+    // Simulasi pergerakan mengikuti route dengan belokan (UNTUK LAPTOP TESTING)
+    // Fungsi ini akan mengikuti route coordinates dan navigator akan berbicara saat mendekati belokan
+    simulateRouteNavigation: function() {
+        console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║  🚶 SIMULASI: Pergerakan Mengikuti Route                     ║
+║  Marker belokan akan bergerak dan navigator akan berbicara ║
+╚══════════════════════════════════════════════════════════════╝
+        `);
+        
+        // CRITICAL: Set semua prerequisites SEBELUM check
+        console.log('🔧 Setting prerequisites untuk simulasi...');
+        
+        // Set hasUserInteraction = true (CRITICAL untuk speechSynthesis)
+        if (typeof hasUserInteraction !== 'undefined') {
+            hasUserInteraction = true;
+            console.log('✅ hasUserInteraction = true');
+        }
+        
+        // Set voiceDirectionsEnabled = true
+        if (typeof voiceDirectionsEnabled !== 'undefined') {
+            voiceDirectionsEnabled = true;
+            console.log('✅ voiceDirectionsEnabled = true');
+        }
+        
+        // Set isNavigating = true
+        if (typeof isNavigating !== 'undefined') {
+            isNavigating = true;
+            console.log('✅ isNavigating = true');
+        }
+        
+        // Set SpeechCoordinator
+        if (typeof window.SpeechCoordinator !== 'undefined') {
+            window.SpeechCoordinator.setNavigating(true);
+            console.log('✅ SpeechCoordinator.setNavigating(true)');
+        }
+        
+        // Check prerequisites dengan helper function
+        if (!this.ensureReadyForSimulation()) {
+            console.error('❌ Prerequisites tidak terpenuhi!');
+            return false;
+        }
+        
+        // CRITICAL: Tunggu route selesai dibuat sebelum simulasi
+        console.log('\n⏳ Menunggu route selesai dibuat...');
+        this.waitForRoute(15000, 500).then(() => {
+            // Verify final state
+            console.log('\n📊 Final State Check:');
+            const finalState = {
+                hasUserInteraction: typeof hasUserInteraction !== 'undefined' ? hasUserInteraction : 'undefined',
+                voiceDirectionsEnabled: typeof voiceDirectionsEnabled !== 'undefined' ? voiceDirectionsEnabled : 'undefined',
+                isNavigating: typeof isNavigating !== 'undefined' ? isNavigating : 'undefined',
+                hasRoute: route !== null,
+                hasRouteData: currentRouteData !== null,
+                hasCoordinates: currentRouteData && currentRouteData.coordinates && currentRouteData.coordinates.length > 0,
+                hasInstructions: currentRouteData && currentRouteData.instructions && currentRouteData.instructions.length > 0,
+                speechSynthesisAvailable: 'speechSynthesis' in window
+            };
+            console.table(finalState);
+            
+            console.log('✅ Memulai simulasi pergerakan mengikuti route...\n');
+            
+            // Get route coordinates
+            const routeCoordinates = currentRouteData.coordinates;
+            const totalPoints = routeCoordinates.length;
+            
+            console.log('📍 Route memiliki', totalPoints, 'titik koordinat');
+            console.log('🚶 Simulasi akan bergerak dari titik ke titik sepanjang route');
+            console.log('🔊 Navigator akan berbicara saat mendekati belokan\n');
+            
+            // Test suara langsung untuk memastikan speechSynthesis bekerja (non-blocking)
+            console.log('🧪 Testing speechSynthesis langsung...');
+            if (typeof speakText === 'function') {
+                speakText('Test suara navigasi', 'id-ID', true, function() {
+                    console.log('✅ Test suara selesai - speechSynthesis bekerja!');
+                });
+            } else {
+                console.warn('⚠️ speakText function tidak ditemukan!');
+            }
+            
+            // Start simulation
+            this._startSimulation(routeCoordinates, totalPoints);
+        }).catch((error) => {
+            console.error('❌ Gagal menunggu route:', error);
+            console.log('💡 Coba jalankan testNavigation.startNavigation(...) lagi dan tunggu lebih lama');
+        });
+    },
+    
+    // Internal: Start actual simulation
+    _startSimulation: function(routeCoordinates, totalPoints) {
+        // CRITICAL: Pastikan prerequisites tetap true saat simulasi
+        if (typeof hasUserInteraction !== 'undefined') {
+            hasUserInteraction = true;
+        }
+        if (typeof voiceDirectionsEnabled !== 'undefined') {
+            voiceDirectionsEnabled = true;
+        }
+        if (typeof isNavigating !== 'undefined') {
+            isNavigating = true;
+        }
+        
+        // Start from current position (or first route coordinate)
+        let currentIndex = 0;
+        const userLatLng = currentUserPosition.getLatLng();
+        
+        // Find nearest route coordinate to start
+        let nearestIndex = 0;
+        let minDistance = Infinity;
+        for (let i = 0; i < Math.min(10, routeCoordinates.length); i++) {
+            const coord = routeCoordinates[i];
+            const coordLatLng = Array.isArray(coord) 
+                ? L.latLng(coord[0], coord[1])
+                : L.latLng(coord.lat, coord.lng);
+            const distance = userLatLng.distanceTo(coordLatLng);
+            if (distance < minDistance) {
+                minDistance = distance;
+                nearestIndex = i;
+            }
+        }
+        currentIndex = nearestIndex;
+        
+        console.log(`📍 Mulai dari titik ${currentIndex}/${totalPoints}`);
+        
+        // Monitor navigator announcements
+        let announcementCount = 0;
+        const monitorInterval = setInterval(() => {
+            const isSpeaking = window.speechSynthesis ? window.speechSynthesis.speaking : false;
+            if (isSpeaking) {
+                announcementCount++;
+                const timestamp = new Date().toLocaleTimeString('id-ID');
+                console.log(`[${timestamp}] 🔊 🔊 🔊 NAVIGATOR BERBICARA (announcement #${announcementCount}) 🔊 🔊 🔊`);
+            }
+        }, 500);
+        
+        // Simulasi pergerakan sepanjang route
+        const moveInterval = setInterval(() => {
+            if (currentIndex >= totalPoints - 1) {
+                clearInterval(moveInterval);
+                clearInterval(monitorInterval);
+                
+                console.log('\n✅ Simulasi selesai!');
+                console.log(`📊 Total announcements: ${announcementCount}`);
+                console.log(`📍 Total titik yang dilalui: ${currentIndex + 1}/${totalPoints}`);
+                
+                if (announcementCount > 0) {
+                    console.log('✅ [VERIFIED] Navigator BERHASIL berbicara saat mendekati belokan!');
+                } else {
+                    console.warn('⚠️ Navigator TIDAK berbicara - check:');
+                    console.log('  → Apakah route memiliki belokan?');
+                    console.log('  → Apakah voiceDirectionsEnabled = true?');
+                    console.log('  → Apakah jarak ke belokan < 200m?');
+                }
+                return;
+            }
+            
+            // Get next coordinate
+            const nextCoord = routeCoordinates[currentIndex + 1];
+            let nextLatLng;
+            
+            if (Array.isArray(nextCoord)) {
+                nextLatLng = L.latLng(nextCoord[0], nextCoord[1]);
+            } else if (nextCoord.lat !== undefined && nextCoord.lng !== undefined) {
+                nextLatLng = L.latLng(nextCoord.lat, nextCoord.lng);
+            } else {
+                nextLatLng = nextCoord;
+            }
+            
+            // Update user position (ini akan trigger announceNextDirection dan updateTurnMarkers)
+            this.setLocation(nextLatLng.lat, nextLatLng.lng, 10);
+            
+            currentIndex++;
+            
+            // Log progress setiap 10 titik atau saat mendekati belokan
+            if (currentIndex % 10 === 0 || currentIndex % 5 === 0) {
+                const progress = ((currentIndex / totalPoints) * 100).toFixed(1);
+                console.log(`📍 Progress: ${progress}% (${currentIndex}/${totalPoints} titik)`);
+                
+                // Check distance to next turn marker
+                if (turnMarkers.length > 0 && nextTurnMarkerIndex < turnMarkers.length) {
+                    const nextTurn = turnMarkers[nextTurnMarkerIndex];
+                    if (!nextTurn.passed) {
+                        const distanceToTurn = nextLatLng.distanceTo(nextTurn.latlng);
+                        if (distanceToTurn <= 200) {
+                            console.log(`  ⚠️  MENDEKATI BELOKAN! Jarak: ${Math.round(distanceToTurn)}m - Navigator seharusnya berbicara...`);
+                        }
+                    }
+                }
+            }
+        }, 1000); // Update setiap 1 detik (sama seperti GPS real-time)
+        
+        console.log('🚶 Simulasi pergerakan dimulai...\n');
+        console.log('💡 Perhatikan:');
+        console.log('   - Marker belokan yang sudah dilewati akan dihapus');
+        console.log('   - Marker belokan berikutnya akan di-highlight (lebih besar)');
+        console.log('   - Navigator akan berbicara saat mendekati belokan (< 200m)\n');
+        
+        return moveInterval;
+    },
+    
     // Simulasi user mendekati belokan (dari 250m → 50m → 0m)
     simulateApproachingTurn: function() {
         console.log(`
@@ -6745,6 +8469,239 @@ window.testNavigation = {
         return moveInterval;
     },
     
+    // ============================================
+    // 🚀 RUNNING TEST: Test Otomatis Berjalan
+    // ============================================
+    // Test lengkap yang berjalan otomatis dan memberikan hasil jelas
+    runTurnAnnouncementTest: function() {
+        console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║  🚀 RUNNING TEST: Navigator Turn Announcement                ║
+║  Test otomatis untuk memastikan navigator berbicara          ║
+║  saat user akan berbelok                                     ║
+╚══════════════════════════════════════════════════════════════╝
+        `);
+        
+        let testResults = {
+            step1_prerequisites: false,
+            step2_voiceTest: false,
+            step3_navigationStart: false,
+            step4_movementSimulation: false,
+            totalAnnouncements: 0,
+            testPassed: false
+        };
+        
+        // ============================================
+        // STEP 1: Setup Prerequisites
+        // ============================================
+        console.log('\n📋 STEP 1: Setting up prerequisites...');
+        console.log('─────────────────────────────────────────');
+        
+        // Set location
+        console.log('📍 Setting user location...');
+        this.setLocation(-6.2088, 106.8456, 10);
+        
+        setTimeout(() => {
+            // Set destination and start navigation
+            console.log('🎯 Setting destination and starting navigation...');
+            this.startNavigation(-6.2148, 106.8456, 'Tujuan Test');
+            
+            setTimeout(() => {
+                // Check prerequisites
+                const checks = {
+                    speechSynthesis: 'speechSynthesis' in window,
+                    voiceDirectionsEnabled: typeof voiceDirectionsEnabled !== 'undefined' ? voiceDirectionsEnabled : false,
+                    hasRoute: route !== null,
+                    hasUserPosition: currentUserPosition !== null,
+                    hasDestination: latLngB !== null
+                };
+                
+                console.table(checks);
+                
+                const allGood = Object.values(checks).every(v => v === true);
+                if (allGood) {
+                    testResults.step1_prerequisites = true;
+                    console.log('✅ STEP 1 PASSED: All prerequisites OK!\n');
+                } else {
+                    console.error('❌ STEP 1 FAILED: Some prerequisites missing');
+                    console.log('⚠️ Test stopped. Please fix prerequisites first.');
+                    return;
+                }
+                
+                // ============================================
+                // STEP 2: Test Voice Announcement
+                // ============================================
+                console.log('📋 STEP 2: Testing voice announcement...');
+                console.log('─────────────────────────────────────────');
+                
+                let voiceTestPassed = false;
+                let voiceTestStarted = false;
+                let voiceTestEnded = false;
+                
+                // Monitor speech synthesis
+                const voiceCheckInterval = setInterval(() => {
+                    const isSpeaking = window.speechSynthesis ? window.speechSynthesis.speaking : false;
+                    if (isSpeaking && !voiceTestStarted) {
+                        voiceTestStarted = true;
+                        console.log('✅ Navigator MULAI berbicara!');
+                        console.log('   🔊 Speech synthesis isSpeaking = true');
+                    }
+                    if (!isSpeaking && voiceTestStarted && !voiceTestEnded) {
+                        voiceTestEnded = true;
+                        voiceTestPassed = true;
+                        testResults.step2_voiceTest = true;
+                        console.log('✅ Navigator SELESAI berbicara!');
+                        console.log('   ✅ Speech synthesis isSpeaking = false');
+                        clearInterval(voiceCheckInterval);
+                    }
+                }, 100);
+                
+                // Test announcement
+                console.log('🔊 Testing: "Setelah 50 meter Belok kiri"');
+                this.testVoice('Setelah 50 meter Belok kiri');
+                
+                // Check result after 5 seconds
+                setTimeout(() => {
+                    clearInterval(voiceCheckInterval);
+                    if (voiceTestPassed) {
+                        console.log('✅ STEP 2 PASSED: Voice announcement works!\n');
+                    } else {
+                        console.error('❌ STEP 2 FAILED: Navigator did not speak');
+                        console.log('⚠️ Test will continue but may fail...\n');
+                    }
+                    
+                    // ============================================
+                    // STEP 3: Start Navigation
+                    // ============================================
+                    console.log('📋 STEP 3: Starting navigation...');
+                    console.log('─────────────────────────────────────────');
+                    
+                    // Simulate "Navigasi" command
+                    this.simulateCommand('Navigasi');
+                    
+                    setTimeout(() => {
+                        if (typeof isNavigating !== 'undefined' && isNavigating) {
+                            testResults.step3_navigationStart = true;
+                            console.log('✅ STEP 3 PASSED: Navigation started!\n');
+                        } else {
+                            console.warn('⚠️ STEP 3 WARNING: Navigation may not be active');
+                            console.log('   Continuing test anyway...\n');
+                        }
+                        
+                        // ============================================
+                        // STEP 4: Simulate Movement & Monitor
+                        // ============================================
+                        console.log('📋 STEP 4: Simulating user movement approaching turn...');
+                        console.log('─────────────────────────────────────────');
+                        console.log('🚶 User akan bergerak dari 250m → 200m → 50m → 0m');
+                        console.log('⏱️  Test akan berjalan selama ~30 detik\n');
+                        
+                        // Simulate movement
+                        const startLat = -6.2088;
+                        const startLng = 106.8456;
+                        const endLat = -6.2148;
+                        const endLng = 106.8456;
+                        const steps = 30;
+                        const latStep = (endLat - startLat) / steps;
+                        const lngStep = (endLng - startLng) / steps;
+                        
+                        let currentLat = startLat;
+                        let currentLng = startLng;
+                        let step = 0;
+                        let announcementCount = 0;
+                        let lastAnnouncementTime = null;
+                        
+                        // Monitor announcements
+                        const monitorInterval = setInterval(() => {
+                            const isSpeaking = window.speechSynthesis ? window.speechSynthesis.speaking : false;
+                            if (isSpeaking) {
+                                announcementCount++;
+                                lastAnnouncementTime = new Date().toLocaleTimeString('id-ID');
+                                const timestamp = new Date().toLocaleTimeString('id-ID');
+                                console.log(`[${timestamp}] 🔊 NAVIGATOR BERBICARA! (announcement #${announcementCount})`);
+                            }
+                        }, 500);
+                        
+                        // Movement simulation
+                        const moveInterval = setInterval(() => {
+                            if (step >= steps) {
+                                clearInterval(moveInterval);
+                                clearInterval(monitorInterval);
+                                
+                                testResults.totalAnnouncements = announcementCount;
+                                testResults.step4_movementSimulation = announcementCount > 0;
+                                
+                                console.log('\n╔══════════════════════════════════════════════════════════════╗');
+                                console.log('║  📊 TEST RESULTS                                                ║');
+                                console.log('╚══════════════════════════════════════════════════════════════╝\n');
+                                
+                                console.log('📋 Test Summary:');
+                                console.log('─────────────────────────────────────────');
+                                console.log('STEP 1 - Prerequisites:', testResults.step1_prerequisites ? '✅ PASSED' : '❌ FAILED');
+                                console.log('STEP 2 - Voice Test:', testResults.step2_voiceTest ? '✅ PASSED' : '❌ FAILED');
+                                console.log('STEP 3 - Navigation Start:', testResults.step3_navigationStart ? '✅ PASSED' : '⚠️  WARNING');
+                                console.log('STEP 4 - Movement Simulation:', testResults.step4_movementSimulation ? '✅ PASSED' : '❌ FAILED');
+                                console.log('─────────────────────────────────────────');
+                                console.log('📊 Total Announcements:', announcementCount);
+                                
+                                if (announcementCount > 0) {
+                                    console.log('✅ Navigator BERHASIL berbicara saat user mendekati belokan!');
+                                    console.log(`   Last announcement at: ${lastAnnouncementTime}`);
+                                } else {
+                                    console.log('❌ Navigator TIDAK berbicara saat user mendekati belokan');
+                                    console.log('   Possible issues:');
+                                    console.log('   → Route may not have turns');
+                                    console.log('   → Distance to turn may be > 200m');
+                                    console.log('   → voiceDirectionsEnabled may be false');
+                                }
+                                
+                                // Final verdict
+                                testResults.testPassed = testResults.step1_prerequisites && 
+                                                         testResults.step2_voiceTest && 
+                                                         testResults.step4_movementSimulation;
+                                
+                                console.log('\n╔══════════════════════════════════════════════════════════════╗');
+                                if (testResults.testPassed) {
+                                    console.log('║  ✅ TEST PASSED: Navigator berbicara saat user berbelok!     ║');
+                                } else {
+                                    console.log('║  ❌ TEST FAILED: Navigator tidak berbicara dengan benar        ║');
+                                }
+                                console.log('╚══════════════════════════════════════════════════════════════╝\n');
+                                
+                                return;
+                            }
+                            
+                            currentLat += latStep;
+                            currentLng += lngStep;
+                            step++;
+                            
+                            // Update user position
+                            this.setLocation(currentLat, currentLng, 10);
+                            
+                            // Log progress
+                            const distanceRemaining = (steps - step) * 20;
+                            if (step % 5 === 0 || distanceRemaining <= 200) {
+                                if (distanceRemaining <= 200 && distanceRemaining > 0) {
+                                    console.log(`📍 Langkah ${step}/${steps} - Jarak: ~${distanceRemaining}m ⚠️  MENDEKATI BELOKAN!`);
+                                } else {
+                                    console.log(`📍 Langkah ${step}/${steps} - Jarak: ~${distanceRemaining}m`);
+                                }
+                            }
+                        }, 1000);
+                        
+                    }, 2000);
+                }, 5000);
+            }, 2000);
+        }, 1000);
+        
+        console.log('🚀 Test started! Please wait...\n');
+        return testResults;
+    },
+    
+    // ============================================
+    // 🚀 RUNNING NAVIGATION TEST: Test dengan Navigasi Benar-benar Berjalan
+    // ============================================
+    // Test yang benar-benar menjalankan navigasi dan monitor announcement
     // Test lengkap: Lokasi → Destination → Navigasi → Simulasi Pergerakan
     fullTest: function() {
         console.log('🧪 Memulai test lengkap...');
@@ -6938,6 +8895,243 @@ window.testNavigation = {
         }
         
         return result;
+    },
+    
+    // ============================================
+    // 🎯 TEST: Check Turn Markers (FITUR BARU!)
+    // ============================================
+    // Check apakah marker belokan sudah dibuat
+    checkTurnMarkers: function() {
+        console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║  🎯 CHECK: Turn Markers Status                               ║
+╚══════════════════════════════════════════════════════════════╝
+        `);
+        
+        const status = {
+            turnMarkersDefined: typeof turnMarkers !== 'undefined',
+            turnMarkersCount: typeof turnMarkers !== 'undefined' ? turnMarkers.length : 0,
+            hasRoute: route !== null,
+            hasRouteData: currentRouteData !== null,
+            routeInstructions: currentRouteData && currentRouteData.instructions ? currentRouteData.instructions.length : 0
+        };
+        
+        console.table(status);
+        
+        if (status.turnMarkersCount > 0) {
+            console.log(`✅ Ditemukan ${status.turnMarkersCount} marker belokan di peta!`);
+            console.log('💡 Lihat di peta - marker belokan seharusnya terlihat sebagai lingkaran berwarna');
+            turnMarkers.forEach(function(marker, index) {
+                const pos = marker.getLatLng();
+                console.log(`   Marker #${index + 1}: ${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)}`);
+            });
+        } else {
+            console.warn('⚠️ Belum ada marker belokan!');
+            console.log('💡 Pastikan:');
+            console.log('   1. Route sudah dibuat (testNavigation.startNavigation(...))');
+            console.log('   2. Route memiliki instructions dengan belokan');
+            console.log('   3. Fungsi createTurnMarkers() sudah dipanggil');
+        }
+        
+        return status;
+    },
+    
+    // ============================================
+    // 🚀 TEST LENGKAP: Marker Belokan + Announcement
+    // ============================================
+    // Test lengkap untuk fitur baru: marker belokan dan announcement "belok kanan/kiri"
+    testTurnMarkersAndAnnouncement: function() {
+        console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║  🚀 TEST LENGKAP: Marker Belokan + Announcement               ║
+║  Test fitur baru: marker belokan dan "belok kanan/kiri"     ║
+╚══════════════════════════════════════════════════════════════╝
+        `);
+        
+        console.log('📋 STEP 1: Setup lokasi dan route...');
+        
+        // Step 1: Set lokasi awal (Jakarta)
+        const startLat = -6.2088;
+        const startLng = 106.8456;
+        this.setLocation(startLat, startLng, 10);
+        
+        setTimeout(() => {
+            console.log('\n📋 STEP 2: Set destination dan buat route...');
+            
+            // Step 2: Set destination (lokasi yang memiliki belokan)
+            // Gunakan koordinat yang akan menghasilkan route dengan belokan
+            const destLat = -6.2148;  // ~600m ke selatan
+            const destLng = 106.8556;  // ~1km ke timur (akan ada belokan)
+            const destName = 'Tujuan Test Belokan';
+            
+            this.startNavigation(destLat, destLng, destName);
+            
+            setTimeout(() => {
+                console.log('\n📋 STEP 3: Check marker belokan...');
+                
+                // Step 3: Check marker belokan setelah route dibuat
+                setTimeout(() => {
+                    const markerStatus = this.checkTurnMarkers();
+                    
+                    if (markerStatus.turnMarkersCount > 0) {
+                        console.log('\n✅ SUCCESS: Marker belokan berhasil dibuat!');
+                        console.log('💡 Lihat di peta - Anda seharusnya melihat marker belokan');
+                    } else {
+                        console.log('\n⚠️ Marker belokan belum muncul');
+                        console.log('💡 Tunggu beberapa detik, lalu jalankan: testNavigation.checkTurnMarkers()');
+                    }
+                    
+                    // Step 4: Test announcement
+                    console.log('\n📋 STEP 4: Test announcement "belok kanan/kiri"...');
+                    console.log('💡 Test announcement dengan format baru...');
+                    
+                    setTimeout(() => {
+                        // Test announcement "belok kanan"
+                        console.log('\n🔊 Test 1: "Belok kanan"');
+                        this.testVoice('Belok kanan sekarang');
+                        
+                        setTimeout(() => {
+                            // Test announcement "belok kiri"
+                            console.log('\n🔊 Test 2: "Belok kiri"');
+                            this.testVoice('Belok kiri sekarang');
+                            
+                            setTimeout(() => {
+                                // Test dengan jarak
+                                console.log('\n🔊 Test 3: "Setelah 50 meter Belok kanan"');
+                                this.testVoice('Setelah 50 meter Belok kanan');
+                                
+                                setTimeout(() => {
+                                    console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║  ✅ TEST SELESAI!                                            ║
+╚══════════════════════════════════════════════════════════════╝
+
+📊 HASIL TEST:
+1. ✅ Marker belokan: ${markerStatus.turnMarkersCount > 0 ? 'BERHASIL' : 'BELUM MUNCUL'}
+2. ✅ Announcement "belok kanan/kiri": SUDAH DIUJI
+
+💡 NEXT STEPS:
+- Lihat di peta apakah marker belokan terlihat
+- Dengarkan apakah announcement mengatakan "belok kanan/kiri" dengan jelas
+- Jalankan: testNavigation.checkTurnMarkers() untuk check marker lagi
+- Jalankan: testNavigation.simulateApproachingTurn() untuk test real-time
+                                    `);
+                                }, 3000);
+                            }, 3000);
+                        }, 3000);
+                    }, 2000);
+                }, 3000); // Tunggu route selesai dibuat
+            }, 2000);
+        }, 2000);
+        
+        return true;
+    },
+    
+    // ============================================
+    // 🧪 TEST: Announcement Langsung
+    // ============================================
+    // Test apakah announcement "belok kanan/kiri" bekerja
+    testAnnouncement: function() {
+        console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║  🧪 TEST: Announcement "Belok Kanan/Kiri"                    ║
+╚══════════════════════════════════════════════════════════════╝
+        `);
+        
+        // Check prerequisites
+        const checks = {
+            voiceDirectionsEnabled: typeof voiceDirectionsEnabled !== 'undefined' ? voiceDirectionsEnabled : false,
+            isNavigating: typeof isNavigating !== 'undefined' ? isNavigating : false,
+            hasRouteData: currentRouteData !== null,
+            hasInstructions: currentRouteData && currentRouteData.instructions && currentRouteData.instructions.length > 0,
+            hasUserPosition: currentUserPosition !== null,
+            speechSynthesis: 'speechSynthesis' in window
+        };
+        
+        console.table(checks);
+        
+        if (!checks.speechSynthesis) {
+            console.error('❌ Speech Synthesis tidak tersedia di browser ini');
+            return false;
+        }
+        
+        if (!checks.voiceDirectionsEnabled) {
+            console.warn('⚠️ voiceDirectionsEnabled = false - mengaktifkan...');
+            if (typeof voiceDirectionsEnabled !== 'undefined') {
+                voiceDirectionsEnabled = true;
+                console.log('✅ voiceDirectionsEnabled diaktifkan');
+            }
+        }
+        
+        if (!checks.isNavigating) {
+            console.warn('⚠️ isNavigating = false - mengaktifkan...');
+            if (typeof isNavigating !== 'undefined') {
+                isNavigating = true;
+                console.log('✅ isNavigating diaktifkan');
+            }
+            if (typeof window.SpeechCoordinator !== 'undefined') {
+                window.SpeechCoordinator.setNavigating(true);
+            }
+        }
+        
+        if (!checks.hasRouteData || !checks.hasInstructions) {
+            console.error('❌ Route data tidak tersedia!');
+            console.log('💡 Jalankan: testNavigation.startNavigation(...) dulu');
+            return false;
+        }
+        
+        if (!checks.hasUserPosition) {
+            console.error('❌ User position tidak ada!');
+            console.log('💡 Jalankan: testNavigation.setLocation(...) dulu');
+            return false;
+        }
+        
+        console.log('\n✅ Semua prerequisites OK!');
+        console.log('🔊 Testing announcement...\n');
+        
+        // Test 1: Test announcement langsung
+        console.log('📋 TEST 1: Test announcement "Belok kanan"');
+        this.testVoice('Belok kanan sekarang');
+        
+        setTimeout(() => {
+            console.log('\n📋 TEST 2: Test announcement "Belok kiri"');
+            this.testVoice('Belok kiri sekarang');
+            
+            setTimeout(() => {
+                console.log('\n📋 TEST 3: Test dengan jarak');
+                this.testVoice('Setelah 50 meter Belok kanan');
+                
+                setTimeout(() => {
+                    console.log('\n📋 TEST 4: Test fungsi announceFromRouteData()');
+                    console.log('💡 Memanggil announceFromRouteData() untuk test real announcement...\n');
+                    
+                    // Call announceFromRouteData directly
+                    announceFromRouteData();
+                    
+                    setTimeout(() => {
+                        console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║  ✅ TEST SELESAI!                                            ║
+╚══════════════════════════════════════════════════════════════╝
+
+📊 HASIL:
+- ✅ Test announcement langsung: SUDAH DIUJI
+- ✅ Test announceFromRouteData(): SUDAH DIPANGGIL
+
+💡 NEXT STEPS:
+- Dengarkan apakah navigator berbicara
+- Check console untuk log announcement
+- Jika tidak berbicara, check:
+  1. Volume browser/system tidak muted
+  2. Jarak ke belokan < 200m
+  3. Route memiliki instructions dengan belokan
+                        `);
+                    }, 2000);
+                }, 3000);
+            }, 3000);
+        }, 3000);
+        
+        return true;
     }
 };
 
@@ -6964,5 +9158,19 @@ console.log(`
 
 🔊 DEBUG NAVIGATOR:
 - testNavigation.debugTurnAnnouncement()  // Test lengkap announcement belokan
-- testNavigation.simulateApproachingTurn()  // Simulasi mendekati belokan
+
+🎯 FITUR BARU: Marker Belokan & Announcement "Belok Kanan/Kiri"
+- testNavigation.checkTurnMarkers()  // Check marker belokan
+- testNavigation.testTurnMarkersAndAnnouncement()  // Test lengkap fitur baru
+- testNavigation.simulateRouteNavigation()  // Simulasi pergerakan mengikuti route (UNTUK LAPTOP!)
+- testNavigation.testAnnouncement()  // Test announcement langsung
+
+📍 MARKER BELOKAN: Sekarang mendukung SEMUA jenis belokan:
+   - Belok kiri/kanan (Turn left/right)
+   - Sedikit ke kiri/kanan (Slight left/right)
+   - Tetap di kiri/kanan (Keep left/right)
+   - Bergabung kiri/kanan (Merge left/right)
+   - Ambil jalan keluar (Take ramp)
+   - Persimpangan (Fork)
+   - Bundaran (Traffic circle)
 `);

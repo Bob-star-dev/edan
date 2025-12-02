@@ -1,9 +1,19 @@
 import cv2
 import numpy as np
 import urllib.request
+import urllib.error
+import socket
+import sys
 
-# Camera URL (menggunakan mDNS - senavision.local)
-url = "http://senavision.local/cam.jpg"
+# Camera URL configuration
+# Option 1: mDNS hostname (senavision.local) - akan dicoba dulu dengan timeout pendek
+# Option 2: Direct IP address (backup) - akan digunakan jika mDNS gagal atau lambat
+# Option 3: Static IP (disarankan) - set IP statis di ESP32-CAM agar tidak berubah
+CAMERA_URL_MDNS = "http://senavision.local/cam.jpg"
+CAMERA_URL_IP = "http://192.168.1.97/cam.jpg"  # IP address ESP32-CAM Anda
+
+# Timeout untuk mDNS (dalam detik) - jika lebih dari ini, akan fallback ke IP
+MDNS_TIMEOUT = 2  # 2 detik cukup untuk mDNS yang cepat, tidak terlalu lama menunggu
 
 # YOLO model files
 weights_path = r"./YOLO/yolov3.weights"
@@ -204,25 +214,145 @@ def detect_objects(frame):
     return frame
 
 
-def main():
-    cv2.namedWindow("Object Detection", cv2.WINDOW_AUTOSIZE)
+def test_connection_fast(url_to_test, timeout=2):
+    """
+    Test koneksi dengan timeout pendek
+    Returns (success, ip_address) jika berhasil, (False, None) jika gagal
+    """
+    try:
+        # Extract hostname from URL
+        if url_to_test.startswith("http://"):
+            hostname = url_to_test.replace("http://", "").split("/")[0]
+        else:
+            hostname = url_to_test.split("/")[0]
+        
+        # Set socket timeout untuk mencegah loading terlalu lama
+        socket.setdefaulttimeout(timeout)
+        
+        # Try to resolve hostname
+        try:
+            ip = socket.gethostbyname(hostname)
+            print(f"✓ Resolved {hostname} to IP: {ip}")
+            return True, ip
+        except socket.gaierror:
+            print(f"✗ Could not resolve hostname: {hostname}")
+            return False, None
+        except socket.timeout:
+            print(f"✗ Timeout resolving {hostname} (lebih dari {timeout} detik)")
+            return False, None
+    except Exception as e:
+        print(f"✗ Error testing connection: {e}")
+        return False, None
+    finally:
+        # Reset timeout ke default
+        socket.setdefaulttimeout(None)
 
+
+def find_camera_url():
+    """
+    Mencari URL kamera yang bekerja:
+    1. Coba mDNS dulu dengan timeout pendek
+    2. Jika gagal/lambat, gunakan IP address (jika tersedia)
+    3. Return URL yang bisa digunakan
+    """
+    print("Mencari kamera ESP32-CAM...")
+    print(f"1. Mencoba mDNS ({CAMERA_URL_MDNS}) dengan timeout {MDNS_TIMEOUT}s...")
+    
+    # Coba mDNS dulu dengan timeout pendek
+    success, ip = test_connection_fast(CAMERA_URL_MDNS, timeout=MDNS_TIMEOUT)
+    
+    if success:
+        print("✓ mDNS berhasil! Menggunakan mDNS (lebih cepat).")
+        return CAMERA_URL_MDNS
+    
+    # Jika mDNS gagal, coba IP address
+    if CAMERA_URL_IP:
+        print(f"\n2. mDNS gagal/lambat, mencoba IP address ({CAMERA_URL_IP})...")
+        success, _ = test_connection_fast(CAMERA_URL_IP, timeout=2)
+        if success:
+            print("✓ IP address berhasil! Menggunakan IP address.")
+            return CAMERA_URL_IP
+        else:
+            print("✗ IP address juga gagal.")
+    else:
+        print("\n2. IP address tidak dikonfigurasi (CAMERA_URL_IP = None)")
+        print("   Edit detect.py dan set CAMERA_URL_IP dengan IP ESP32-CAM Anda")
+    
+    return None
+
+
+def main():
+    print("=" * 60)
+    print("ESP32-CAM Object Detection with YOLOv3")
+    print("=" * 60)
+    print()
+    
+    # Cari URL kamera yang bekerja (mDNS dengan timeout, atau IP)
+    url = find_camera_url()
+    
+    if not url:
+        print("\n" + "=" * 60)
+        print("ERROR - Tidak dapat terhubung ke ESP32-CAM")
+        print("=" * 60)
+        print("Solusi:")
+        print("1. Pastikan ESP32-CAM menyala dan terhubung ke WiFi")
+        print("2. Pastikan ESP32-CAM di jaringan yang sama dengan komputer ini")
+        print("3. Set IP address di detect.py:")
+        print("   CAMERA_URL_IP = 'http://192.168.1.XXX/cam.jpg'")
+        print("   (Ganti XXX dengan IP ESP32-CAM dari Serial Monitor)")
+        print()
+        print("4. SOLUSI TERBAIK: Set Static IP di ESP32-CAM")
+        print("   - IP tidak akan berubah")
+        print("   - Tidak perlu edit detect.py lagi")
+        print("   - Lihat ESP32CAM_Capture.ino untuk contoh")
+        print("=" * 60)
+        sys.exit(1)
+    
+    print(f"\n✓ Menggunakan: {url}")
+    print("=" * 60)
+    
+    print("Connection test passed! Starting detection...")
+    print("Press 'q' to quit")
+    print()
+    
+    cv2.namedWindow("Object Detection", cv2.WINDOW_AUTOSIZE)
+    
+    # Connection timeout (5 seconds)
+    timeout = 5
+    
     while True:
         try:
-            img_resp = urllib.request.urlopen(url)
+            # Create request with timeout
+            req = urllib.request.Request(url)
+            img_resp = urllib.request.urlopen(req, timeout=timeout)
             imgnp = np.array(bytearray(img_resp.read()), dtype=np.uint8)
             frame = cv2.imdecode(imgnp, -1)
+            
+            if frame is None:
+                print("Warning: Failed to decode image frame")
+                continue
+            
             frame = detect_objects(frame)
-
             cv2.imshow("Object Detection", frame)
 
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
+                
+        except urllib.error.URLError as e:
+            print(f"Connection error: {e}")
+            print("Make sure ESP32-CAM is connected and accessible")
+            print("Press 'q' to quit or wait to retry...")
+            # Wait a bit before retrying
+            if cv2.waitKey(2000) & 0xFF == ord("q"):
+                break
         except Exception as e:
             print(f"Error occurred: {e}")
-            break
+            print("Press 'q' to quit or wait to retry...")
+            if cv2.waitKey(2000) & 0xFF == ord("q"):
+                break
 
     cv2.destroyAllWindows()
+    print("Detection stopped.")
 
 
 if __name__ == "__main__":
