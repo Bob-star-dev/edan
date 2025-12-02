@@ -114,3 +114,4 @@ Dengan static IP:
 - Beberapa router memaksa DHCP. Coba set IP di router (DHCP reservation)
 - Atau gunakan IP range yang jarang dipakai (misalnya .200-.254)
 
+

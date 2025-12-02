@@ -72,8 +72,12 @@ void initWifi() {
   // Static IP Configuration (uncomment jika ingin menggunakan static IP)
   // Jika menggunakan static IP, IP tidak akan berubah meskipun router restart
   // UNCOMMENT BARIS DI BAWAH INI UNTUK MENGGUNAKAN STATIC IP:
+  Serial.println("Setting static IP configuration...");
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
-    Serial.println("STA Failed to configure static IP!");
+    Serial.println("WARNING: Failed to configure static IP!");
+    Serial.println("Will try with DHCP instead...");
+  } else {
+    Serial.println("Static IP configured successfully!");
   }
   
   Serial.print("Connecting to WiFi: ");
@@ -124,9 +128,18 @@ void initServer() {
 
 void setup() {
   Serial.begin(115200);
+  delay(1000);  // Tunggu Serial Monitor siap
+  
+  Serial.println("\n\n========================================");
+  Serial.println("ESP32-CAM Starting...");
+  Serial.println("========================================");
+  
   initWifi();
   initCamera();
   initServer();
+  
+  Serial.println("\nSetup complete! Server is running.");
+  Serial.println("========================================\n");
 }
 
 void loop() {

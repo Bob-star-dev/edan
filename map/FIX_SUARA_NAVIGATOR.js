@@ -64,3 +64,4 @@ console.log('\n✅ Script selesai!');
 console.log('💡 Jika suara masih tidak muncul, jalankan script debug lengkap:');
 console.log('   (lihat file DEBUG_SUARA_NAVIGATOR.md)');
 
+

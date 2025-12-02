@@ -139,3 +139,4 @@ console.log('   4. Test dengan aplikasi lain (YouTube, dll) apakah suara muncul'
 console.log('\n✅ Debug script selesai!');
 console.log('💡 Perhatikan output di atas untuk menemukan masalahnya.');
 
+
