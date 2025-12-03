@@ -4,6 +4,8 @@ import urllib.request
 import urllib.error
 import socket
 import sys
+import time
+import threading
 
 # Camera URL configuration
 # Option 1: mDNS hostname (senavision.local) - akan dicoba dulu dengan timeout pendek
@@ -14,6 +16,10 @@ CAMERA_URL_IP = "http://192.168.1.97/cam.jpg"  # IP address ESP32-CAM Anda
 
 # Timeout untuk mDNS (dalam detik) - jika lebih dari ini, akan fallback ke IP
 MDNS_TIMEOUT = 2  # 2 detik cukup untuk mDNS yang cepat, tidak terlalu lama menunggu
+
+# Konfigurasi vibrator
+VIBRATE_DISTANCE_THRESHOLD = 1.5  # Jarak dalam meter untuk trigger vibrate
+VIBRATE_DEBOUNCE_TIME = 0.5  # Waktu debounce dalam detik (mencegah spam request)
 
 # YOLO model files
 weights_path = r"./YOLO/yolov3.weights"
@@ -50,6 +56,11 @@ else:
 
 # Generate random colors for each class
 colors = np.random.uniform(0, 255, size=(len(classes), 3))
+
+# Variabel global untuk debouncing vibrate (terpisah untuk kiri dan kanan)
+last_vibrate_time_left = 0
+last_vibrate_time_right = 0
+vibrate_lock = threading.Lock()
 
 # Focal length (dalam pixel) - dikalibrasi untuk ESP32-CAM dengan resolusi 800x600
 # Nilai ini dapat disesuaikan untuk meningkatkan akurasi
@@ -91,6 +102,58 @@ OBJECT_SIZES = {
     "bowl": 8,  # Tinggi mangkuk (cm)
     # Tambahkan ukuran objek lain sesuai kebutuhan
 }
+
+
+def send_vibrate_signal(camera_base_url, side="left"):
+    """
+    Mengirim sinyal vibrate ke ESP32-CAM endpoint
+    ESP32-CAM akan meneruskan sinyal ke ESP32-C3 vibrator menggunakan /left atau /right
+    
+    Args:
+        camera_base_url: Base URL kamera (misalnya "http://senavision.local" atau "http://192.168.1.97")
+        side: "left" atau "right" untuk menentukan vibrator mana yang diaktifkan
+    """
+    global last_vibrate_time_left, last_vibrate_time_right
+    
+    current_time = time.time()
+    
+    # Debouncing: hanya kirim jika sudah melewati waktu debounce (terpisah untuk kiri dan kanan)
+    with vibrate_lock:
+        if side == "left":
+            if current_time - last_vibrate_time_left < VIBRATE_DEBOUNCE_TIME:
+                return
+            last_vibrate_time_left = current_time
+        else:  # right
+            if current_time - last_vibrate_time_right < VIBRATE_DEBOUNCE_TIME:
+                return
+            last_vibrate_time_right = current_time
+    
+    try:
+        # Extract base URL (tanpa /cam.jpg)
+        if "/cam.jpg" in camera_base_url:
+            base_url = camera_base_url.replace("/cam.jpg", "")
+        else:
+            base_url = camera_base_url
+        
+        # Gunakan endpoint /left atau /right sesuai posisi objek
+        endpoint = "/left" if side == "left" else "/right"
+        vibrate_url = f"{base_url}{endpoint}"
+        
+        # Kirim request dalam thread terpisah agar tidak blocking
+        def send_request():
+            try:
+                req = urllib.request.Request(vibrate_url)
+                urllib.request.urlopen(req, timeout=2)
+                print(f"✓ Vibrate signal sent to {vibrate_url} ({side.upper()} vibrator)")
+            except Exception as e:
+                print(f"✗ Failed to send vibrate signal to {side}: {e}")
+        
+        # Jalankan di thread terpisah
+        thread = threading.Thread(target=send_request, daemon=True)
+        thread.start()
+        
+    except Exception as e:
+        print(f"✗ Error preparing vibrate signal: {e}")
 
 
 def calculate_distance(pixel_height, class_id, pixel_width=None):
@@ -141,7 +204,7 @@ def calculate_distance(pixel_height, class_id, pixel_width=None):
     return round(distance_m, 1)
 
 
-def detect_objects(frame):
+def detect_objects(frame, camera_url=None):
     height, width, _ = frame.shape
     blob = cv2.dnn.blobFromImage(frame, 1 / 255.0, (416, 416), swapRB=True, crop=False)
     net.setInput(blob)
@@ -172,6 +235,12 @@ def detect_objects(frame):
 
     indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.3, 0.4)
 
+    # Flag untuk menandai apakah ada objek yang terlalu dekat
+    object_too_close = False
+    closest_distance = None
+    objects_left = []  # List objek yang terlalu dekat di sisi kiri
+    objects_right = []  # List objek yang terlalu dekat di sisi kanan
+
     # Draw detections on the frame
     if len(indexes) > 0 and isinstance(indexes, np.ndarray):
         indexes = indexes.flatten()
@@ -187,18 +256,39 @@ def detect_objects(frame):
             pixel_width = w
             distance = calculate_distance(pixel_height, class_id, pixel_width)
             
+            # Hitung posisi center objek untuk menentukan sisi
+            center_x = x + w / 2
+            
+            # Cek jika jarak di bawah threshold
+            if distance is not None and distance < VIBRATE_DISTANCE_THRESHOLD:
+                object_too_close = True
+                if closest_distance is None or distance < closest_distance:
+                    closest_distance = distance
+                
+                # Tentukan apakah objek di kiri atau kanan frame
+                if center_x < width / 2:
+                    objects_left.append(distance)
+                else:
+                    objects_right.append(distance)
+            
             # Format output sesuai permintaan
             if distance is not None:
                 output_text = f"{label}\n{distance} meters"
+                if distance < VIBRATE_DISTANCE_THRESHOLD:
+                    output_text += " [TOO CLOSE!]"
                 print(output_text)
             else:
                 output_text = label
                 print(output_text)
 
-            # Tampilkan di frame
+            # Tampilkan di frame dengan warna berbeda jika terlalu dekat
             display_text = f"{label}"
             if distance is not None:
                 display_text += f" {distance}m"
+                if distance < VIBRATE_DISTANCE_THRESHOLD:
+                    # Gunakan warna merah untuk objek yang terlalu dekat
+                    color = (0, 0, 255)  # BGR format untuk OpenCV
+                    display_text += " [CLOSE!]"
             
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
             cv2.putText(
@@ -210,6 +300,25 @@ def detect_objects(frame):
                 color,
                 2,
             )
+    
+    # Kirim sinyal vibrate jika ada objek yang terlalu dekat
+    if object_too_close and camera_url:
+        # Kirim sinyal ke vibrator kiri jika ada objek di sisi kiri
+        if objects_left:
+            send_vibrate_signal(camera_url, side="left")
+        
+        # Kirim sinyal ke vibrator kanan jika ada objek di sisi kanan
+        if objects_right:
+            send_vibrate_signal(camera_url, side="right")
+        
+        if closest_distance is not None:
+            side_info = []
+            if objects_left:
+                side_info.append(f"LEFT ({len(objects_left)} objek)")
+            if objects_right:
+                side_info.append(f"RIGHT ({len(objects_right)} objek)")
+            side_str = " & ".join(side_info) if side_info else ""
+            print(f"⚠ WARNING: Object detected at {closest_distance}m (threshold: {VIBRATE_DISTANCE_THRESHOLD}m) [{side_str}]")
 
     return frame
 
@@ -332,7 +441,7 @@ def main():
                 print("Warning: Failed to decode image frame")
                 continue
             
-            frame = detect_objects(frame)
+            frame = detect_objects(frame, camera_url=url)
             cv2.imshow("Object Detection", frame)
 
             if cv2.waitKey(1) & 0xFF == ord("q"):

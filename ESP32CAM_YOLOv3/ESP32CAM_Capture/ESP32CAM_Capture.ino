@@ -2,30 +2,66 @@
 #include "WiFi.h"
 #include "ESPmDNS.h"
 #include "esp32cam.h"
+#include <HTTPClient.h>
 
 const char* WIFI_SSID = "enumatechz";
 const char* WIFI_PASS = "3numaTechn0l0gy";
 const char* URL = "/cam.jpg";
-const char* HOSTNAME = "senavision";  // Nama DNS (akan menjadi senavision.local)
+const char* HOSTNAME = "senavision";
 
-// Static IP Configuration (SOLUSI TERBAIK - IP tidak akan berubah)
-// Uncomment dan sesuaikan dengan network Anda jika ingin menggunakan Static IP
-// Cara mengetahui IP, Gateway, Subnet:
-//   1. Upload code ini dulu (tanpa static IP)
-//   2. Lihat Serial Monitor - akan menampilkan IP, Gateway, Subnet
-//   3. Copy nilai-nilai tersebut ke bawah ini
-//   4. Uncomment baris-baris di bawah dan upload lagi
-
-IPAddress local_IP(192, 168, 1, 97);        // IP yang Anda inginkan
-IPAddress gateway(192, 168, 1, 1);           // Ganti dengan gateway router Anda
+// ======================
+// IP STATIC (tetap pakai)
+// ======================
+IPAddress local_IP(192, 168, 1, 97);
+IPAddress gateway(192, 168, 1, 1);
 IPAddress subnet(255, 255, 255, 0);
-IPAddress primaryDNS(8, 8, 8, 8);            // DNS server (Google DNS)
-IPAddress secondaryDNS(8, 8, 4, 4);          // DNS server backup
+IPAddress primaryDNS(8, 8, 8, 8);
+IPAddress secondaryDNS(8, 8, 4, 4);
+
+// ======================
+// IP ESP32-C3 VIBRATOR
+// ======================
+String ESP32C3_IP = "http://192.168.1.27";   // GANTI SESUAI IP C3
 
 static auto RES = esp32cam::Resolution::find(800, 600);
-
 WebServer server(80);
 
+// ===========================================================================
+//  KIRIM SIGNAL KE ESP32-C3
+// ===========================================================================
+void sendToVibrator(String path)
+{
+  HTTPClient http;
+  String url = ESP32C3_IP + path;
+
+  Serial.print("SEND TO: ");
+  Serial.println(url);
+
+  http.begin(url);
+  int code = http.GET();
+  Serial.print("RESPONSE CODE: ");
+  Serial.println(code);
+  http.end();
+}
+
+// ===========================================================================
+// Endpoint yang bisa dipanggil YOLO
+// ===========================================================================
+void handleLeft()
+{
+  sendToVibrator("/left");
+  server.send(200, "text/plain", "LEFT OK");
+}
+
+void handleRight()
+{
+  sendToVibrator("/right");
+  server.send(200, "text/plain", "RIGHT OK");
+}
+
+// ===========================================================================
+// KAMERA
+// ===========================================================================
 void serveJpg() {
   auto frame = esp32cam::capture();
   if (frame == nullptr) {
@@ -52,96 +88,77 @@ void handleJpg() {
 }
 
 void initCamera() {
-  {
-    using namespace esp32cam;
-    Config cfg;
-    cfg.setPins(pins::AiThinker);
-    cfg.setResolution(RES);
-    cfg.setBufferCount(2);
-    cfg.setJpeg(80);
+  using namespace esp32cam;
+  Config cfg;
+  cfg.setPins(pins::AiThinker);
+  cfg.setResolution(RES);
+  cfg.setBufferCount(2);
+  cfg.setJpeg(80);
 
-    bool ok = Camera.begin(cfg);
-    Serial.println(ok ? "CAMERA OK" : "CAMERA FAIL");
-  }
+  bool ok = Camera.begin(cfg);
+  Serial.println(ok ? "CAMERA OK" : "CAMERA FAIL");
 }
 
+// ===========================================================================
+// WIFI
+// ===========================================================================
 void initWifi() {
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
-  
-  // Static IP Configuration (uncomment jika ingin menggunakan static IP)
-  // Jika menggunakan static IP, IP tidak akan berubah meskipun router restart
-  // UNCOMMENT BARIS DI BAWAH INI UNTUK MENGGUNAKAN STATIC IP:
+
   Serial.println("Setting static IP configuration...");
-  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
-    Serial.println("WARNING: Failed to configure static IP!");
-    Serial.println("Will try with DHCP instead...");
-  } else {
-    Serial.println("Static IP configured successfully!");
-  }
-  
-  Serial.print("Connecting to WiFi: ");
-  Serial.println(WIFI_SSID);
+  WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS);
+
   WiFi.begin(WIFI_SSID, WIFI_PASS);
-  
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-    delay(500);
+
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
-    attempts++;
+    delay(500);
   }
+
   Serial.println();
-  
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi connection FAILED!");
-    return;
-  }
-  
-  // Setup mDNS
+  Serial.println("WiFi connected!");
+  Serial.println(WiFi.localIP());
+
   if (!MDNS.begin(HOSTNAME)) {
-    Serial.println("Error setting up MDNS responder!");
-  } else {
-    Serial.println("mDNS responder started");
+    Serial.println("mDNS start FAILED");
+  }
+  else {
     MDNS.addService("http", "tcp", 80);
   }
-  
-  Serial.println("WiFi connected!");
-  Serial.println("========================================");
-  Serial.println("ESP32-CAM READY - Use this IP address:");
-  Serial.printf(">>> http://%s%s <<<\n",
-                WiFi.localIP().toString().c_str(), URL);
-  Serial.println("========================================");
-  Serial.printf("(mDNS: http://%s.local%s - may not work on Windows)\n", HOSTNAME, URL);
-  Serial.println();
-  Serial.println("INFO: Untuk Static IP (agar IP tidak berubah):");
-  Serial.println("  1. Lihat IP, Gateway, Subnet di atas");
-  Serial.println("  2. Uncomment bagian Static IP di code");
-  Serial.println("  3. Sesuaikan nilai IP, Gateway, Subnet");
-  Serial.println("  4. Upload ulang code");
-  Serial.println("========================================");
 }
 
+// ===========================================================================
+// SERVER
+// ===========================================================================
 void initServer() {
   server.on(URL, handleJpg);
+
+  // Endpoint untuk YOLO
+  server.on("/left", handleLeft);
+  server.on("/right", handleRight);
+
   server.begin();
 }
 
+// ===========================================================================
+// SETUP
+// ===========================================================================
 void setup() {
   Serial.begin(115200);
-  delay(1000);  // Tunggu Serial Monitor siap
-  
-  Serial.println("\n\n========================================");
-  Serial.println("ESP32-CAM Starting...");
-  Serial.println("========================================");
-  
+  delay(1000);
+
   initWifi();
   initCamera();
   initServer();
-  
-  Serial.println("\nSetup complete! Server is running.");
-  Serial.println("========================================\n");
+
+  Serial.println("SETUP DONE!");
 }
 
+// ===========================================================================
+// LOOP
+// ===========================================================================
 void loop() {
   server.handleClient();
 }
