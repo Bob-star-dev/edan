@@ -1,2295 +1,2862 @@
-/* Full screen map */
-#map { 
-    height: 100vh; 
-    width: 100%;
+/* Full screen map - RESPONSIVE */
+html,
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+#map {
+  height: 100vh !important;
+  height: 100dvh !important;
+  /* Dynamic viewport height for mobile */
+  width: 100vw !important;
+  width: 100dvw !important;
+  /* Dynamic viewport width */
+  margin: 0 !important;
+  padding: 0 !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  z-index: 1 !important;
+}
+
+/* Responsive adjustments for different screen sizes */
+@media (max-width: 768px) {
+  #map {
+    height: 100vh;
+    width: 100vw;
+  }
+}
+
+@media (max-height: 600px) {
+  #map {
+    height: 100vh;
+    width: 100vw;
+  }
+}
+
+/* Remove any body/html margins during navigation - FORCE FULLSCREEN */
+body.navigating,
+html.navigating {
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  width: 100vw !important;
+  width: 100dvw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  /* Dynamic viewport height */
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  min-width: 100vw !important;
+  min-height: 100vh !important;
+}
+
+/* Force fullscreen for entire viewport - remove all gaps */
+html.navigating,
+body.navigating {
+  inset: 0 !important;
+  position: fixed !important;
+  overflow: hidden !important;
+}
+
+body.navigating * {
+  box-sizing: border-box;
+}
+
+/* 3D/Isometric perspective DISABLED - keep flat view when navigating */
+body.navigating .leaflet-container {
+  /* transform: perspective(1500px) rotateX(60deg) scale(1.1); DISABLED */
+  /* transform-origin: center center; */
+  /* transform-style: preserve-3d; */
+  /* transition: transform 0.5s ease; */
+  transform: none !important;
+  perspective: none !important;
+  transform-style: flat !important;
+}
+
+/* Ensure map tiles maintain quality - no 3D transform */
+body.navigating .leaflet-tile-container {
+  transform: none !important;
+  transform-style: flat !important;
+  perspective: none !important;
+  will-change: auto;
+}
+
+/* Force flat view for all leaflet elements */
+body.navigating .leaflet-pane,
+body.navigating .leaflet-map-pane,
+body.navigating .leaflet-tile-pane,
+body.navigating .leaflet-overlay-pane,
+body.navigating .leaflet-shadow-pane,
+body.navigating .leaflet-marker-pane,
+body.navigating .leaflet-tooltip-pane,
+body.navigating .leaflet-popup-pane {
+  transform: none !important;
+  transform-style: flat !important;
+  perspective: none !important;
+}
+
+/* Hide ALL UI elements during navigation for fullscreen */
+body.navigating .side-navbar,
+body.navigating .navbar-toggle-btn,
+body.navigating #backToHomeBtn,
+body.navigating .leaflet-control,
+body.navigating .leaflet-top,
+body.navigating .leaflet-bottom,
+body.navigating .leaflet-left,
+body.navigating .leaflet-right {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+}
+
+/* Hide browser address bar and UI elements */
+body.navigating::before,
+body.navigating::after {
+  display: none !important;
+}
+
+/* Ensure no browser chrome is visible */
+html.navigating {
+  /* Remove any browser default styling */
+  -webkit-app-region: none;
+  appearance: none;
+}
+
+/* Force remove any browser UI overlays */
+body.navigating header,
+body.navigating nav:not(.leaflet-control-container),
+body.navigating .browser-bar,
+body.navigating .address-bar {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  width: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Keep only zoom controls visible but make them less intrusive */
+body.navigating .leaflet-control-zoom {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 0.8 !important;
+  pointer-events: auto !important;
+  z-index: 1000 !important;
+}
+
+/* Hide browser UI elements during navigation */
+body.navigating {
+  /* Hide browser address bar by scrolling */
+  scroll-behavior: auto !important;
+}
+
+/* Force hide browser chrome on mobile */
+@supports (-webkit-touch-callout: none) {
+  /* iOS Safari */
+  body.navigating {
+    /* Use safe-area-inset for iPhone notch */
+    padding-top: env(safe-area-inset-top) !important;
+    padding-bottom: env(safe-area-inset-bottom) !important;
+    padding-left: env(safe-area-inset-left) !important;
+    padding-right: env(safe-area-inset-right) !important;
+  }
+
+  body.navigating #map {
+    /* Account for safe areas on iOS */
+    top: env(safe-area-inset-top) !important;
+    bottom: env(safe-area-inset-bottom) !important;
+    left: env(safe-area-inset-left) !important;
+    right: env(safe-area-inset-right) !important;
+  }
+}
+
+/* Ensure map takes full screen during navigation - ABSOLUTE FULLSCREEN */
+body.navigating #map {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  width: 100dvw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  /* Dynamic viewport height */
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  outline: none !important;
+  transform: none !important;
+  transform-style: flat !important;
+  perspective: none !important;
+  z-index: 1 !important;
+  overflow: hidden !important;
+  inset: 0 !important;
+  min-width: 100vw !important;
+  min-width: 100dvw !important;
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+}
+
+body.navigating .leaflet-container {
+  width: 100vw !important;
+  width: 100dvw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  /* Dynamic viewport height */
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  clip: none !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  min-width: 100vw !important;
+  min-height: 100vh !important;
+  inset: 0 !important;
+}
+
+body.navigating .leaflet-pane {
+  width: 100vw !important;
+  width: 100dvw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  overflow: visible !important;
+  inset: 0 !important;
+}
+
+body.navigating .leaflet-map-pane {
+  width: 100vw !important;
+  width: 100dvw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  overflow: visible !important;
+  inset: 0 !important;
+}
+
+body.navigating .leaflet-tile-pane,
+body.navigating .leaflet-overlay-pane,
+body.navigating .leaflet-shadow-pane,
+body.navigating .leaflet-marker-pane,
+body.navigating .leaflet-tooltip-pane,
+body.navigating .leaflet-popup-pane {
+  width: 100vw !important;
+  width: 100dvw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  overflow: visible !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  inset: 0 !important;
+}
+
+/* Additional fullscreen enforcement for all map elements */
+body.navigating .leaflet-tile-container,
+body.navigating .leaflet-image-layer,
+body.navigating .leaflet-layer {
+  width: 100vw !important;
+  width: 100dvw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+}
+
+/* Remove any padding/margin from body during navigation */
+body.navigating {
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  width: 100vw !important;
+  height: 100vh !important;
+}
+
+html.navigating {
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  width: 100vw !important;
+  height: 100vh !important;
+}
+
+/* Add floating navigation controls during navigation */
+body.navigating .navigation-controls {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+body.navigating .nav-control-btn {
+  background: rgba(255, 255, 255, 0.95);
+  border: none;
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 20px;
+}
+
+body.navigating .nav-control-btn:hover {
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transform: scale(1.1);
+}
+
+/* Turn Markers - Markers untuk setiap belokan di rute */
+.turn-marker {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.turn-marker div {
+  animation: pulse-turn 2s infinite;
+}
+
+@keyframes pulse-turn {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.2);
+    opacity: 0.8;
+  }
+}
+
+/* Navigation Marker - Green line with arrow (like Google Maps) */
+.custom-user-marker.navigation-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.custom-user-marker.navigation-marker div {
+  animation: pulse-navigation 1.5s infinite;
+}
+
+@keyframes pulse-navigation {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.85;
+  }
 }
 
 /* ========== SIDE NAVBAR (Draggable from bottom) ========== */
 .side-navbar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    width: 100%;
-    max-height: 85vh; /* Tidak memenuhi layar penuh */
-    min-height: 200px; /* Minimum height saat collapsed */
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    background: rgba(255, 255, 255, 0.95);
-    border-top: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 20px 20px 0 0;
-    z-index: 1000;
-    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.12), 
-                0 -4px 16px rgba(0, 0, 0, 0.08);
-    display: flex;
-    flex-direction: column;
-    transform: translateY(calc(100% - 60px)); /* Default: hanya drag handle terlihat */
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    touch-action: pan-y;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-height: 85vh;
+  /* Tidak memenuhi layar penuh */
+  min-height: 200px;
+  /* Minimum height saat collapsed */
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.95);
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 20px 20px 0 0;
+  z-index: 1000;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.12), 0 -4px 16px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  transform: translateY(calc(100% - 60px));
+  /* Default: hanya drag handle terlihat */
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  touch-action: pan-y;
 }
 
 .side-navbar.active {
-    transform: translateY(0); /* Fully visible */
+  transform: translateY(0);
+  /* Fully visible */
 }
 
 .side-navbar.collapsed {
-    transform: translateY(calc(100% - 60px)); /* Only drag handle visible */
+  transform: translateY(calc(100% - 60px));
+  /* Only drag handle visible */
 }
 
 /* Drag Handle */
 .navbar-drag-handle {
-    width: 100%;
-    padding: 12px 0;
-    cursor: grab;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    user-select: none;
-    -webkit-user-select: none;
-    touch-action: none;
+  width: 100%;
+  padding: 12px 0;
+  cursor: grab;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 
 .navbar-drag-handle:active {
-    cursor: grabbing;
+  cursor: grabbing;
 }
 
 .drag-handle-bar {
-    width: 40px;
-    height: 4px;
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 2px;
-    transition: background 0.2s;
+  width: 40px;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 2px;
+  transition: background 0.2s;
 }
 
 .navbar-drag-handle:hover .drag-handle-bar {
-    background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.5);
 }
 
 /* Tab Navigation */
 .navbar-tabs {
-    display: flex;
-    border-bottom: 2px solid rgba(0, 0, 0, 0.08);
-    background: rgba(255, 255, 255, 0.5);
-    padding: 0 8px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE/Edge */
+  display: flex;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.5);
+  padding: 0 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE/Edge */
 }
 
 .navbar-tabs::-webkit-scrollbar {
-    display: none; /* Chrome/Safari */
+  display: none;
+  /* Chrome/Safari */
 }
 
 .navbar-tab {
-    flex: 1;
-    min-width: 80px;
-    padding: 12px 8px;
-    background: transparent;
-    border: none;
-    border-bottom: 3px solid transparent;
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    transition: all 0.2s;
-    color: #666;
-    font-size: 12px;
-    font-weight: 500;
+  flex: 1;
+  min-width: 80px;
+  padding: 12px 8px;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+  color: #666;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .navbar-tab:hover {
-    background: rgba(0, 0, 0, 0.05);
-    color: #333;
+  background: rgba(0, 0, 0, 0.05);
+  color: #333;
 }
 
 .navbar-tab.active {
-    color: #3b49df;
-    border-bottom-color: #3b49df;
-    background: rgba(59, 73, 223, 0.05);
+  color: #3b49df;
+  border-bottom-color: #3b49df;
+  background: rgba(59, 73, 223, 0.05);
 }
 
 .tab-icon {
-    font-size: 20px;
-    line-height: 1;
+  font-size: 20px;
+  line-height: 1;
 }
 
 .tab-label {
-    font-size: 11px;
-    white-space: nowrap;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 /* Tab Content Container */
 .navbar-content {
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 16px;
-    -webkit-overflow-scrolling: touch;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .navbar-tab-content {
-    display: none;
-    animation: fadeIn 0.2s ease-in;
+  display: none;
+  animation: fadeIn 0.2s ease-in;
 }
 
 .navbar-tab-content.active {
-    display: block;
+  display: block;
 }
 
 @keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(5px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Back to Home Button */
 .back-to-home-btn {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    border: none;
-    color: white;
-    font-size: 20px;
-    cursor: pointer;
-    z-index: 1001;
-    box-shadow: 0 4px 16px rgba(40, 167, 69, 0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    touch-action: manipulation;
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  border: none;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  z-index: 1001;
+  box-shadow: 0 4px 16px rgba(40, 167, 69, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  touch-action: manipulation;
 }
 
 .back-to-home-btn:hover {
-    transform: scale(1.1);
-    box-shadow: 0 6px 20px rgba(40, 167, 69, 0.5);
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(40, 167, 69, 0.5);
 }
 
 .back-to-home-btn:active {
-    transform: scale(0.95);
+  transform: scale(0.95);
 }
 
 .back-icon {
-    display: block;
-    line-height: 1;
+  display: block;
+  line-height: 1;
 }
 
 /* Toggle Button */
 .navbar-toggle-btn {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #3b49df 0%, #667eea 100%);
-    border: none;
-    color: white;
-    font-size: 24px;
-    cursor: pointer;
-    z-index: 999;
-    box-shadow: 0 4px 16px rgba(59, 73, 223, 0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    touch-action: manipulation;
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b49df 0%, #667eea 100%);
+  border: none;
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+  z-index: 999;
+  box-shadow: 0 4px 16px rgba(59, 73, 223, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  touch-action: manipulation;
 }
 
 .navbar-toggle-btn:hover {
-    transform: scale(1.1);
-    box-shadow: 0 6px 20px rgba(59, 73, 223, 0.5);
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(59, 73, 223, 0.5);
 }
 
 .navbar-toggle-btn:active {
-    transform: scale(0.95);
+  transform: scale(0.95);
 }
 
 .navbar-toggle-btn.hidden {
-    opacity: 0;
-    pointer-events: none;
-    transform: scale(0);
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0);
 }
 
 .toggle-icon {
-    display: block;
-    line-height: 1;
+  display: block;
+  line-height: 1;
 }
 
 /* Content Styles inside Navbar */
 .navbar-tab-content h3,
 .navbar-tab-content h4 {
-    margin-top: 0;
-    margin-bottom: 16px;
-    font-size: 18px;
-    font-weight: 700;
-    color: #1a1a1a;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  margin-top: 0;
+  margin-bottom: 16px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a1a1a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .navbar-tab-content .icon {
-    font-size: 20px;
+  font-size: 20px;
 }
 
 .navbar-tab-content p {
-    font-size: 14px;
-    margin: 8px 0;
-    line-height: 1.5;
-    color: #4a4a4a;
+  font-size: 14px;
+  margin: 8px 0;
+  line-height: 1.5;
+  color: #4a4a4a;
 }
 
 /* Ensure all content elements are properly styled in navbar */
 .navbar-tab-content #status {
-    font-size: 14px;
-    margin: 8px 0;
-    font-weight: 500;
-    color: #2d5016;
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  font-size: 14px;
+  margin: 8px 0;
+  font-weight: 500;
+  color: #2d5016;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .navbar-tab-content #coordinates {
-    font-size: 13px;
-    margin: 8px 0;
-    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
-    color: #1a73e8;
-    background-color: rgba(26, 115, 232, 0.08);
-    padding: 8px 12px;
-    border-radius: 8px;
-    transition: all 0.3s ease;
-    border: 1px solid rgba(26, 115, 232, 0.15);
+  font-size: 13px;
+  margin: 8px 0;
+  font-family: "Monaco", "Menlo", "Courier New", monospace;
+  color: #1a73e8;
+  background-color: rgba(26, 115, 232, 0.08);
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(26, 115, 232, 0.15);
 }
 
 .navbar-tab-content #accuracy {
-    font-size: 13px;
-    margin: 8px 0;
-    color: #5f6368;
-    font-weight: 500;
-    padding: 6px 12px;
-    background-color: rgba(95, 99, 104, 0.08);
-    border-radius: 8px;
-    display: inline-block;
+  font-size: 13px;
+  margin: 8px 0;
+  color: #5f6368;
+  font-weight: 500;
+  padding: 6px 12px;
+  background-color: rgba(95, 99, 104, 0.08);
+  border-radius: 8px;
+  display: inline-block;
 }
 
 .navbar-tab-content .route-info {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 2px solid rgba(0, 0, 0, 0.08);
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 2px solid rgba(0, 0, 0, 0.08);
 }
 
 .navbar-tab-content .route-info h4 {
-    margin-top: 0;
-    margin-bottom: 12px;
-    font-size: 16px;
-    font-weight: 600;
-    color: #1a1a1a;
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1a1a;
 }
 
 .navbar-tab-content .retry-button {
-    margin-top: 16px;
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    color: white;
-    border: none;
-    padding: 12px 20px;
-    border-radius: 10px;
-    cursor: pointer;
-    font-size: 15px;
-    font-weight: 600;
-    width: 100%;
-    box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-top: 16px;
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  width: 100%;
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .navbar-tab-content .voice-status-text {
-    font-size: 13px;
-    color: #5f6368;
-    margin: 12px 0 0 0;
-    min-height: 32px;
-    font-style: italic;
-    padding: 10px 12px;
-    background-color: rgba(95, 99, 104, 0.08);
-    border-radius: 8px;
-    border-left: 3px solid #667eea;
-    transition: all 0.3s ease;
+  font-size: 13px;
+  color: #5f6368;
+  margin: 12px 0 0 0;
+  min-height: 32px;
+  font-style: italic;
+  padding: 10px 12px;
+  background-color: rgba(95, 99, 104, 0.08);
+  border-radius: 8px;
+  border-left: 3px solid #667eea;
+  transition: all 0.3s ease;
 }
 
 .navbar-tab-content .voice-examples {
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 2px solid rgba(0, 0, 0, 0.08);
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 2px solid rgba(0, 0, 0, 0.08);
 }
 
 .navbar-tab-content .voice-examples-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: #5f6368;
-    margin: 0 0 8px 0;
-    line-height: 1.5;
+  font-size: 12px;
+  font-weight: 600;
+  color: #5f6368;
+  margin: 0 0 8px 0;
+  line-height: 1.5;
 }
 
 .navbar-tab-content .voice-examples-list {
-    font-size: 12px;
-    color: #80868b;
-    margin: 0;
-    line-height: 1.7;
+  font-size: 12px;
+  color: #80868b;
+  margin: 0;
+  line-height: 1.7;
 }
 
 /* Responsive adjustments for navbar */
 @media screen and (min-width: 769px) {
-    .side-navbar {
-        max-width: 400px;
-        left: auto;
-        right: 20px;
-        max-height: 80vh;
-        transform: translateY(0) !important; /* Always visible on desktop */
-        border-radius: 16px;
-        bottom: 20px;
-        top: auto;
-    }
-    
-    .navbar-toggle-btn {
-        display: none !important; /* Hide toggle on desktop, navbar always visible */
-    }
-    
-    .side-navbar.collapsed {
-        transform: translateY(0) !important; /* Override collapsed state on desktop */
-    }
+  .side-navbar {
+    max-width: 400px;
+    left: auto;
+    right: 20px;
+    max-height: 80vh;
+    transform: translateY(0) !important;
+    /* Always visible on desktop */
+    border-radius: 16px;
+    bottom: 20px;
+    top: auto;
+  }
+
+  .navbar-toggle-btn {
+    display: none !important;
+    /* Hide toggle on desktop, navbar always visible */
+  }
+
+  .side-navbar.collapsed {
+    transform: translateY(0) !important;
+    /* Override collapsed state on desktop */
+  }
 }
 
 @media screen and (max-width: 768px) {
-    .side-navbar {
-        max-height: 90vh;
-    }
-    
-    .navbar-tab {
-        min-width: 70px;
-        padding: 10px 6px;
-    }
-    
-    .tab-icon {
-        font-size: 18px;
-    }
-    
-    .tab-label {
-        font-size: 10px;
-    }
-    
-    .poi-filter-btn {
-        min-width: 80px;
-        font-size: 11px;
-        padding: 8px 6px;
-    }
+  .side-navbar {
+    max-height: 90vh;
+  }
+
+  .navbar-tab {
+    min-width: 70px;
+    padding: 10px 6px;
+  }
+
+  .tab-icon {
+    font-size: 18px;
+  }
+
+  .tab-label {
+    font-size: 10px;
+  }
+
+  .poi-filter-btn {
+    min-width: 80px;
+    font-size: 11px;
+    padding: 8px 6px;
+  }
 }
 
 /* Modern Glassmorphism Effect - Base styles for panels */
 .status-panel,
 .voice-panel {
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 /* Status Panel Styles - Modern Design */
 .status-panel {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    padding: 20px;
-    border-radius: 16px;
-    z-index: 1000;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 
-                0 4px 16px rgba(0, 0, 0, 0.08);
-    max-width: 320px;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    animation: slideIn 0.3s ease-out;
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 20px;
+  border-radius: 16px;
+  z-index: 1000;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.08);
+  max-width: 320px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: slideIn 0.3s ease-out;
 }
 
 @keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .status-panel h3 {
-    margin-top: 0;
-    margin-bottom: 18px;
-    font-size: 20px;
-    font-weight: 700;
-    color: #1a1a1a;
-    letter-spacing: -0.02em;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  margin-top: 0;
+  margin-bottom: 18px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #1a1a1a;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .status-panel h3 .icon {
-    font-size: 24px;
+  font-size: 24px;
 }
 
 .status-panel p {
-    font-size: 14px;
-    margin: 8px 0;
-    line-height: 1.5;
-    color: #4a4a4a;
+  font-size: 14px;
+  margin: 8px 0;
+  line-height: 1.5;
+  color: #4a4a4a;
 }
 
 .status-panel #status {
-    font-size: 14px;
-    margin: 8px 0;
-    font-weight: 500;
-    color: #2d5016;
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  font-size: 14px;
+  margin: 8px 0;
+  font-weight: 500;
+  color: #2d5016;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .status-panel #coordinates {
-    font-size: 13px;
-    margin: 8px 0;
-    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
-    color: #1a73e8;
-    background-color: rgba(26, 115, 232, 0.08);
-    padding: 8px 12px;
-    border-radius: 8px;
-    transition: all 0.3s ease;
-    border: 1px solid rgba(26, 115, 232, 0.15);
+  font-size: 13px;
+  margin: 8px 0;
+  font-family: "Monaco", "Menlo", "Courier New", monospace;
+  color: #1a73e8;
+  background-color: rgba(26, 115, 232, 0.08);
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(26, 115, 232, 0.15);
 }
 
 .status-panel #coordinates:hover {
-    background-color: rgba(26, 115, 232, 0.12);
-    transform: translateY(-1px);
+  background-color: rgba(26, 115, 232, 0.12);
+  transform: translateY(-1px);
 }
 
 .status-panel #accuracy {
-    font-size: 13px;
-    margin: 8px 0;
-    color: #5f6368;
-    font-weight: 500;
-    padding: 6px 12px;
-    background-color: rgba(95, 99, 104, 0.08);
-    border-radius: 8px;
-    display: inline-block;
-    transition: all 0.3s ease;
+  font-size: 13px;
+  margin: 8px 0;
+  color: #5f6368;
+  font-weight: 500;
+  padding: 6px 12px;
+  background-color: rgba(95, 99, 104, 0.08);
+  border-radius: 8px;
+  display: inline-block;
+  transition: all 0.3s ease;
 }
 
 .status-panel .route-info {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 2px solid rgba(0, 0, 0, 0.08);
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 2px solid rgba(0, 0, 0, 0.08);
 }
 
 .status-panel .route-info h4 {
-    margin-top: 0;
-    margin-bottom: 12px;
-    font-size: 16px;
-    font-weight: 600;
-    color: #1a1a1a;
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1a1a;
 }
 
 .status-panel .route-info p {
-    font-size: 13px;
-    color: #5f6368;
-    line-height: 1.6;
-    margin: 6px 0;
+  font-size: 13px;
+  color: #5f6368;
+  line-height: 1.6;
+  margin: 6px 0;
 }
 
 .status-panel .route-info p.route-update-info {
-    font-size: 12px;
-    color: #80868b;
-    font-style: italic;
-    margin-top: 8px;
+  font-size: 12px;
+  color: #80868b;
+  font-style: italic;
+  margin-top: 8px;
 }
 
 .status-panel #retryBtn {
-    margin-top: 16px;
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    color: white;
-    border: none;
-    padding: 12px 20px;
-    border-radius: 10px;
-    cursor: pointer;
-    font-size: 15px;
-    font-weight: 600;
-    width: 100%;
-    display: none;
-    box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    position: relative;
-    overflow: hidden;
+  margin-top: 16px;
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  width: 100%;
+  display: none;
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
 }
 
 .status-panel #retryBtn::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 0;
-    height: 0;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.3);
-    transform: translate(-50%, -50%);
-    transition: width 0.6s, height 0.6s;
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
 }
 
 .status-panel #retryBtn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
 }
 
 .status-panel #retryBtn:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
 }
 
 .status-panel #retryBtn:active::before {
-    width: 300px;
-    height: 300px;
+  width: 300px;
+  height: 300px;
 }
 
 /* Close button inside panel (mobile only) - Modern Design */
 .close-panel-btn {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-    color: white;
-    border: none;
-    padding: 0;
-    border-radius: 50%;
-    cursor: pointer;
-    font-size: 18px;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-    z-index: 1002;
-    box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+  color: white;
+  border: none;
+  padding: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  z-index: 1002;
+  box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .close-panel-btn:hover {
-    background: linear-gradient(135deg, #c82333 0%, #bd2130 100%);
-    transform: scale(1.1) rotate(90deg);
-    box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+  background: linear-gradient(135deg, #c82333 0%, #bd2130 100%);
+  transform: scale(1.1) rotate(90deg);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
 }
 
 .close-panel-btn:active {
-    transform: scale(0.95) rotate(90deg);
+  transform: scale(0.95) rotate(90deg);
 }
 
 /* Mobile Toggle Button - Modern Floating Design */
 .mobile-toggle-btn {
-    display: none;
-    position: fixed;
-    top: 124px; /* Positioned below route management button with spacing */
-    right: 16px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: none;
-    padding: 12px 18px;
-    border-radius: 50px;
-    z-index: 1001;
-    box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4),
-                0 4px 12px rgba(118, 75, 162, 0.3);
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    letter-spacing: 0.3px;
-    white-space: nowrap;
+  display: none;
+  position: fixed;
+  top: 124px;
+  /* Positioned below route management button with spacing */
+  right: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 12px 18px;
+  border-radius: 50px;
+  z-index: 1001;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4),
+    0 4px 12px rgba(118, 75, 162, 0.3);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 
 .mobile-toggle-btn:hover {
-    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
-    transform: translateY(-2px);
-    box-shadow: 0 12px 32px rgba(102, 126, 234, 0.5),
-                0 6px 16px rgba(118, 75, 162, 0.4);
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(102, 126, 234, 0.5),
+    0 6px 16px rgba(118, 75, 162, 0.4);
 }
 
 .mobile-toggle-btn:active {
-    transform: translateY(0);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  transform: translateY(0);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 /* Voice Control Panel Styles - Modern Design */
 .voice-panel {
-    position: absolute;
-    bottom: 10px;
-    left: 10px;
-    padding: 20px;
-    border-radius: 16px;
-    z-index: 1000;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12),
-                0 4px 16px rgba(0, 0, 0, 0.08);
-    max-width: 320px;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    animation: slideUp 0.3s ease-out;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.3);
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  padding: 20px;
+  border-radius: 16px;
+  z-index: 1000;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.08);
+  max-width: 320px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: slideUp 0.3s ease-out;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 @keyframes slideUp {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .voice-panel h4 {
-    margin-top: 0;
-    margin-bottom: 12px;
-    font-size: 18px;
-    font-weight: 700;
-    color: #1a1a1a;
-    letter-spacing: -0.02em;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a1a1a;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .voice-panel p {
-    font-size: 13px;
-    color: #5f6368;
-    margin: 8px 0;
-    line-height: 1.6;
+  font-size: 13px;
+  color: #5f6368;
+  margin: 8px 0;
+  line-height: 1.6;
 }
 
 .voice-status-text {
-    font-size: 13px;
-    color: #5f6368;
-    margin: 12px 0 0 0;
-    min-height: 32px;
-    font-style: italic;
-    padding: 10px 12px;
-    background-color: rgba(95, 99, 104, 0.08);
-    border-radius: 8px;
-    border-left: 3px solid #667eea;
-    transition: all 0.3s ease;
+  font-size: 13px;
+  color: #5f6368;
+  margin: 12px 0 0 0;
+  min-height: 32px;
+  font-style: italic;
+  padding: 10px 12px;
+  background-color: rgba(95, 99, 104, 0.08);
+  border-radius: 8px;
+  border-left: 3px solid #667eea;
+  transition: all 0.3s ease;
 }
 
 .voice-examples {
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 2px solid rgba(0, 0, 0, 0.08);
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 2px solid rgba(0, 0, 0, 0.08);
 }
 
 .voice-examples-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: #5f6368;
-    margin: 0 0 8px 0;
-    line-height: 1.5;
+  font-size: 12px;
+  font-weight: 600;
+  color: #5f6368;
+  margin: 0 0 8px 0;
+  line-height: 1.5;
 }
 
 .voice-examples-list {
-    font-size: 12px;
-    color: #80868b;
-    margin: 0;
-    line-height: 1.7;
+  font-size: 12px;
+  color: #80868b;
+  margin: 0;
+  line-height: 1.7;
 }
 
 /* Mobile Responsive Styles */
 @media screen and (max-width: 768px) {
-    /* Hide status panel by default on mobile */
-    .status-panel {
-        display: none;
-        max-width: calc(100% - 32px);
-        left: 16px;
-        right: 16px;
-        top: 75px;
-        position: fixed;
-        animation: slideInMobile 0.3s ease-out;
-        max-height: calc(100vh - 160px); /* Avoid overlapping bottom content */
-        overflow: auto; /* Scroll within panel on small screens */
-    }
-    
-    @keyframes slideInMobile {
-        from {
-            opacity: 0;
-            transform: translateX(-20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateX(0);
-        }
-    }
-    
-    /* Show status panel when active */
-    .status-panel.active {
-        display: block;
-        animation: slideInMobile 0.3s ease-out;
-    }
-    
-    /* Show mobile toggle button on mobile - positioned below debug button */
-    .mobile-toggle-btn {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        top: 70px; /* Position below debug button with spacing */
-        right: 16px;
-        font-size: 13px;
-        padding: 10px 16px;
-    }
-    
-    /* Show close button inside panel on mobile */
-    .close-panel-btn {
-        display: flex !important;
-    }
-    
-    /* Voice panel: compact and tidy on phones */
-    .voice-panel {
-        max-width: calc(100% - 32px);
-        left: 16px;
-        right: 16px;
-        bottom: 16px;
-        position: fixed;
-        padding: 12px 14px;
-        border-radius: 12px;
-        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.10), 0 3px 10px rgba(0,0,0,0.06);
-        max-height: 28vh; /* keep small footprint */
-        overflow: auto; /* scroll inside if content grows */
+  /* Hide status panel by default on mobile */
+  .status-panel {
+    display: none;
+    max-width: calc(100% - 32px);
+    left: 16px;
+    right: 16px;
+    top: 75px;
+    position: fixed;
+    animation: slideInMobile 0.3s ease-out;
+    max-height: calc(100vh - 160px);
+    /* Avoid overlapping bottom content */
+    overflow: auto;
+    /* Scroll within panel on small screens */
+  }
+
+  @keyframes slideInMobile {
+    from {
+      opacity: 0;
+      transform: translateX(-20px);
     }
 
-    .voice-panel h4 {
-        font-size: 16px;
-        margin-bottom: 6px;
+    to {
+      opacity: 1;
+      transform: translateX(0);
     }
+  }
 
-    .voice-panel p {
-        font-size: 12px;
-        margin: 6px 0;
-        line-height: 1.5;
-    }
+  /* Show status panel when active */
+  .status-panel.active {
+    display: block;
+    animation: slideInMobile 0.3s ease-out;
+  }
 
-    .voice-status-text {
-        font-size: 12px;
-        min-height: 0;
-        padding: 8px 10px;
-        margin-top: 6px;
-    }
+  /* Show mobile toggle button on mobile - positioned below debug button */
+  .mobile-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    top: 70px;
+    /* Position below debug button with spacing */
+    right: 16px;
+    font-size: 13px;
+    padding: 10px 16px;
+  }
 
-    /* Hide examples on small screens to reduce clutter */
-    .voice-examples { display: none; }
-    
-    /* Debug toggle button styling on mobile */
-    .debug-toggle-btn {
-        top: 16px;
-        right: 16px;
-        padding: 10px 16px;
-        font-size: 13px;
-    }
-    
-    /* Make panels more touch-friendly on mobile */
-    .status-panel,
-    .voice-panel {
-        font-size: 14px;
-    }
-    
-    .status-panel h3 {
-        font-size: 19px;
-        padding-right: 40px; /* Make room for close button */
-    }
-    
-    .status-panel #retryBtn {
-        padding: 14px 20px;
-        font-size: 16px;
-        min-height: 52px; /* Larger touch target for better mobile UX */
-        font-weight: 600;
-    }
-    
-    /* Increase touch targets for mobile */
-    button {
-        min-height: 48px;
-    }
-    
-    /* Better spacing on mobile */
-    .status-panel {
-        padding: 18px;
-    }
+  /* Show close button inside panel on mobile */
+  .close-panel-btn {
+    display: flex !important;
+  }
+
+  /* Voice panel: compact and tidy on phones */
+  .voice-panel {
+    max-width: calc(100% - 32px);
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    position: fixed;
+    padding: 12px 14px;
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1), 0 3px 10px rgba(0, 0, 0, 0.06);
+    max-height: 28vh;
+    /* keep small footprint */
+    overflow: auto;
+    /* scroll inside if content grows */
+  }
+
+  .voice-panel h4 {
+    font-size: 16px;
+    margin-bottom: 6px;
+  }
+
+  .voice-panel p {
+    font-size: 12px;
+    margin: 6px 0;
+    line-height: 1.5;
+  }
+
+  .voice-status-text {
+    font-size: 12px;
+    min-height: 0;
+    padding: 8px 10px;
+    margin-top: 6px;
+  }
+
+  /* Hide examples on small screens to reduce clutter */
+  .voice-examples {
+    display: none;
+  }
+
+  /* Debug toggle button styling on mobile */
+  .debug-toggle-btn {
+    top: 16px;
+    right: 16px;
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  /* Make panels more touch-friendly on mobile */
+  .status-panel,
+  .voice-panel {
+    font-size: 14px;
+  }
+
+  .status-panel h3 {
+    font-size: 19px;
+    padding-right: 40px;
+    /* Make room for close button */
+  }
+
+  .status-panel #retryBtn {
+    padding: 14px 20px;
+    font-size: 16px;
+    min-height: 52px;
+    /* Larger touch target for better mobile UX */
+    font-weight: 600;
+  }
+
+  /* Increase touch targets for mobile */
+  button {
+    min-height: 48px;
+  }
+
+  /* Better spacing on mobile */
+  .status-panel {
+    padding: 18px;
+  }
 }
 
 /* Tablet Styles */
 @media screen and (min-width: 769px) and (max-width: 1024px) {
-    .status-panel {
-        max-width: 360px;
-        padding: 22px;
-    }
-    
-    .voice-panel {
-        max-width: 360px;
-        padding: 22px;
-    }
+  .status-panel {
+    max-width: 360px;
+    padding: 22px;
+  }
+
+  .voice-panel {
+    max-width: 360px;
+    padding: 22px;
+  }
 }
 
 /* Smooth transitions for all interactive elements */
 * {
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Improve readability */
 .status-panel,
 .voice-panel {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
 }
 
 /* Permission Popup - Modern Design */
 .permission-popup {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 10000;
-    max-width: 420px;
-    width: calc(100% - 32px);
-    display: block;
-    animation: fadeInScale 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10000;
+  max-width: 420px;
+  width: calc(100% - 32px);
+  display: block;
+  animation: fadeInScale 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes fadeInScale {
-    from {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(0.9);
-    }
-    to {
-        opacity: 1;
-        transform: translate(-50%, -50%) scale(1);
-    }
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
 }
 
 .permission-content {
-    background: rgba(255, 255, 255, 0.98);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    padding: 32px;
-    border-radius: 20px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2),
-                0 8px 24px rgba(0, 0, 0, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    text-align: center;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 32px;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2), 0 8px 24px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  text-align: center;
 }
 
 .permission-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-    animation: pulse 2s ease-in-out infinite;
+  font-size: 48px;
+  margin-bottom: 16px;
+  animation: pulse 2s ease-in-out infinite;
 }
 
 @keyframes pulse {
-    0%, 100% {
-        transform: scale(1);
-    }
-    50% {
-        transform: scale(1.1);
-    }
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.1);
+  }
 }
 
 .permission-content h2 {
-    margin: 0 0 16px 0;
-    color: #1a1a1a;
-    font-size: 24px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
+  margin: 0 0 16px 0;
+  color: #1a1a1a;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .permission-content > p {
-    font-size: 15px;
-    color: #5f6368;
-    margin: 0 0 24px 0;
-    line-height: 1.6;
+  font-size: 15px;
+  color: #5f6368;
+  margin: 0 0 24px 0;
+  line-height: 1.6;
 }
 
 .permission-content ul {
-    text-align: left;
-    margin: 0 0 28px 0;
-    padding: 0;
-    list-style: none;
+  text-align: left;
+  margin: 0 0 28px 0;
+  padding: 0;
+  list-style: none;
 }
 
 .permission-content ul li {
-    font-size: 14px;
-    color: #4a4a4a;
-    margin: 12px 0;
-    padding-left: 8px;
-    line-height: 1.6;
+  font-size: 14px;
+  color: #4a4a4a;
+  margin: 12px 0;
+  padding-left: 8px;
+  line-height: 1.6;
 }
 
 .permission-btn {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: none;
-    padding: 14px 32px;
-    font-size: 16px;
-    font-weight: 600;
-    border-radius: 12px;
-    cursor: pointer;
-    margin: 0;
-    width: 100%;
-    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    letter-spacing: 0.3px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 14px 32px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 12px;
+  cursor: pointer;
+  margin: 0;
+  width: 100%;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  letter-spacing: 0.3px;
 }
 
 .permission-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(102, 126, 234, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.5);
 }
 
 .permission-btn:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 
 .permission-hint {
-    font-size: 12px;
-    color: #80868b;
-    margin-top: 20px;
-    line-height: 1.5;
+  font-size: 12px;
+  color: #80868b;
+  margin-top: 20px;
+  line-height: 1.5;
 }
 
 /* Button icon styling */
 .status-panel .icon {
-    font-size: 22px;
-    margin-right: 4px;
+  font-size: 22px;
+  margin-right: 4px;
 }
 
 .status-panel #retryBtn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .status-panel #retryBtn .btn-icon {
-    font-size: 18px;
+  font-size: 18px;
 }
 
 .status-panel #retryBtn span:not(.btn-icon) {
-    font-weight: 600;
+  font-weight: 600;
 }
 
 /* Mobile permission popup adjustments */
 @media screen and (max-width: 768px) {
-    .permission-popup {
-        max-width: calc(100% - 32px);
-        width: calc(100% - 32px);
-    }
-    
-    .permission-content {
-        padding: 24px 20px;
-        border-radius: 16px;
-    }
-    
-    .permission-content h2 {
-        font-size: 20px;
-    }
-    
-    .permission-content > p {
-        font-size: 14px;
-    }
-    
-    .permission-btn {
-        padding: 16px 24px;
-        font-size: 15px;
-        min-height: 52px;
-    }
+  .permission-popup {
+    max-width: calc(100% - 32px);
+    width: calc(100% - 32px);
+  }
+
+  .permission-content {
+    padding: 24px 20px;
+    border-radius: 16px;
+  }
+
+  .permission-content h2 {
+    font-size: 20px;
+  }
+
+  .permission-content > p {
+    font-size: 14px;
+  }
+
+  .permission-btn {
+    padding: 16px 24px;
+    font-size: 15px;
+    min-height: 52px;
+  }
 }
 
 /* Debug Console Toggle Button - Similar to mobile toggle button */
 .debug-toggle-btn {
-    display: block;
-    position: fixed;
-    top: 16px;
-    right: 16px; /* Position at top-right */
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-    color: white;
-    border: none;
-    padding: 12px 18px;
-    border-radius: 50px;
-    z-index: 1001;
-    box-shadow: 0 8px 24px rgba(245, 87, 108, 0.4),
-                0 4px 12px rgba(240, 147, 251, 0.3);
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    letter-spacing: 0.3px;
-    white-space: nowrap;
+  display: block;
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  /* Position at top-right */
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+  border: none;
+  padding: 12px 18px;
+  border-radius: 50px;
+  z-index: 1001;
+  box-shadow: 0 8px 24px rgba(245, 87, 108, 0.4),
+    0 4px 12px rgba(240, 147, 251, 0.3);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 
 .debug-toggle-btn:hover {
-    background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%);
-    transform: translateY(-2px);
-    box-shadow: 0 12px 32px rgba(245, 87, 108, 0.5),
-                0 6px 16px rgba(240, 147, 251, 0.4);
+  background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(245, 87, 108, 0.5),
+    0 6px 16px rgba(240, 147, 251, 0.4);
 }
 
 .debug-toggle-btn:active {
-    transform: translateY(0);
-    box-shadow: 0 4px 12px rgba(245, 87, 108, 0.3);
+  transform: translateY(0);
+  box-shadow: 0 4px 12px rgba(245, 87, 108, 0.3);
 }
 
 /* Debug Console Panel - Modern Design */
 .debug-panel {
-    position: absolute;
-    top: 10px;
-    left: 340px; /* Position to the right of status panel on desktop */
-    padding: 20px;
-    border-radius: 16px;
-    z-index: 1000;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12),
-                0 4px 16px rgba(0, 0, 0, 0.08);
-    max-width: 500px;
-    max-height: 600px;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    display: none; /* Hidden by default */
-    flex-direction: column;
-    animation: slideIn 0.3s ease-out;
+  position: absolute;
+  top: 10px;
+  left: 340px;
+  /* Position to the right of status panel on desktop */
+  padding: 20px;
+  border-radius: 16px;
+  z-index: 1000;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.08);
+  max-width: 500px;
+  max-height: 600px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: none;
+  /* Hidden by default */
+  flex-direction: column;
+  animation: slideIn 0.3s ease-out;
 }
 
 .debug-panel.active {
-    display: flex;
+  display: flex;
 }
 
 /* Hide default Leaflet Routing Machine control (appears on map) */
 .leaflet-top.leaflet-right .leaflet-routing-container {
-    display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 /* Directions Tab Styling */
 /* ========== POI (Points of Interest) Styles ========== */
 .poi-header {
-    margin-bottom: 16px;
+  margin-bottom: 16px;
 }
 
 .poi-header h3 {
-    margin-top: 0;
-    margin-bottom: 8px;
-    font-size: 18px;
-    font-weight: 700;
-    color: #1a1a1a;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a1a1a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .poi-header h3 .icon {
-    font-size: 20px;
+  font-size: 20px;
 }
 
 .poi-description {
-    font-size: 13px;
-    color: #666;
-    margin: 0;
-    line-height: 1.5;
+  font-size: 13px;
+  color: #666;
+  margin: 0;
+  line-height: 1.5;
 }
 
 .poi-controls {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
-    flex-wrap: wrap;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 
 .poi-filter-btn {
-    flex: 1;
-    min-width: 90px;
-    padding: 10px 8px;
-    border: 2px solid rgba(0, 0, 0, 0.1);
-    border-radius: 8px;
-    background: white;
-    color: #666;
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    white-space: nowrap;
+  flex: 1;
+  min-width: 90px;
+  padding: 10px 8px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  background: white;
+  color: #666;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .poi-filter-btn:hover {
-    border-color: #3b49df;
-    background: rgba(59, 73, 223, 0.05);
-    color: #3b49df;
-    transform: translateY(-1px);
+  border-color: #3b49df;
+  background: rgba(59, 73, 223, 0.05);
+  color: #3b49df;
+  transform: translateY(-1px);
 }
 
 .poi-filter-btn.active {
-    background: #3b49df;
-    color: white;
-    border-color: #3b49df;
-    box-shadow: 0 2px 8px rgba(59, 73, 223, 0.3);
+  background: #3b49df;
+  color: white;
+  border-color: #3b49df;
+  box-shadow: 0 2px 8px rgba(59, 73, 223, 0.3);
 }
 
 .poi-list-container {
-    max-height: 400px;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+  max-height: 400px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .poi-placeholder {
-    text-align: center;
-    padding: 40px 20px;
-    color: #999;
-    font-size: 14px;
+  text-align: center;
+  padding: 40px 20px;
+  color: #999;
+  font-size: 14px;
 }
 
 .poi-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px;
-    background: white;
-    border: 2px solid rgba(0, 0, 0, 0.08);
-    border-radius: 10px;
-    margin-bottom: 10px;
-    cursor: pointer;
-    transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: white;
+  border: 2px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
 .poi-item:hover {
-    border-color: #3b49df;
-    background: rgba(59, 73, 223, 0.05);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(59, 73, 223, 0.15);
+  border-color: #3b49df;
+  background: rgba(59, 73, 223, 0.05);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 73, 223, 0.15);
 }
 
 .poi-item-icon {
-    font-size: 24px;
-    line-height: 1;
-    flex-shrink: 0;
+  font-size: 24px;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .poi-item-content {
-    flex: 1;
-    min-width: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .poi-item-name {
-    font-size: 14px;
-    font-weight: 600;
-    color: #1a1a1a;
-    margin-bottom: 4px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .poi-item-distance {
-    font-size: 12px;
-    color: #666;
-    display: flex;
-    align-items: center;
-    gap: 4px;
+  font-size: 12px;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .poi-item-action {
-    font-size: 20px;
-    color: #3b49df;
-    flex-shrink: 0;
-    transition: transform 0.2s;
+  font-size: 20px;
+  color: #3b49df;
+  flex-shrink: 0;
+  transition: transform 0.2s;
 }
 
 .poi-item:hover .poi-item-action {
-    transform: scale(1.2);
+  transform: scale(1.2);
 }
 
 /* POI Marker Styles */
 .poi-marker {
-    background: transparent !important;
-    border: none !important;
+  background: transparent !important;
+  border: none !important;
 }
 
 .directions-header {
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 2px solid rgba(0, 0, 0, 0.08);
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.08);
 }
 
 .directions-header h3 {
-    margin: 0 0 8px 0;
-    font-size: 18px;
-    font-weight: 700;
-    color: #1a1a1a;
-    letter-spacing: -0.02em;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a1a1a;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .directions-header h3 .icon {
-    font-size: 20px;
+  font-size: 20px;
 }
 
 .directions-description {
-    margin: 0;
-    font-size: 13px;
-    color: #5f6368;
-    font-style: italic;
+  margin: 0;
+  font-size: 13px;
+  color: #5f6368;
+  font-style: italic;
 }
 
 .routing-directions-container {
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    max-height: 480px;
-    min-height: 200px;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 480px;
+  min-height: 200px;
 }
 
 .routing-directions-container::-webkit-scrollbar {
-    width: 6px;
+  width: 6px;
 }
 
 .routing-directions-container::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.05);
-    border-radius: 3px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
 }
 
 .routing-directions-container::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 3px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
 }
 
 .routing-directions-container::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .directions-placeholder {
-    text-align: center;
-    padding: 40px 20px;
-    color: #80868b;
-    font-style: italic;
+  text-align: center;
+  padding: 40px 20px;
+  color: #80868b;
+  font-style: italic;
 }
 
 .directions-placeholder p {
-    margin: 0;
-    font-size: 14px;
+  margin: 0;
+  font-size: 14px;
 }
 
 /* Leaflet Routing Machine styling inside navbar */
 .routing-directions-container .leaflet-routing-container {
-    position: relative !important;
-    width: 100% !important;
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    margin: 0 !important;
+  position: relative !important;
+  width: 100% !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  margin: 0 !important;
 }
 
 .routing-directions-container .leaflet-routing-alternatives-container {
-    width: 100% !important;
-    max-width: 100% !important;
+  width: 100% !important;
+  max-width: 100% !important;
 }
 
 .routing-directions-container .leaflet-routing-alt {
-    margin: 0 0 16px 0 !important;
-    border: 1px solid rgba(0, 0, 0, 0.1) !important;
-    border-radius: 8px !important;
-    background: rgba(255, 255, 255, 0.5) !important;
-    padding: 12px !important;
+  margin: 0 0 16px 0 !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  border-radius: 8px !important;
+  background: rgba(255, 255, 255, 0.5) !important;
+  padding: 12px !important;
 }
 
 .routing-directions-container .leaflet-routing-alt h2 {
-    font-size: 16px !important;
-    font-weight: 600 !important;
-    margin: 0 0 8px 0 !important;
-    color: #1a1a1a !important;
-    line-height: 1.4 !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  margin: 0 0 8px 0 !important;
+  color: #1a1a1a !important;
+  line-height: 1.4 !important;
 }
 
 .routing-directions-container .leaflet-routing-alt h3 {
-    font-size: 14px !important;
-    font-weight: 600 !important;
-    margin: 0 0 12px 0 !important;
-    color: #3b49df !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  margin: 0 0 12px 0 !important;
+  color: #3b49df !important;
 }
 
 .routing-directions-container .leaflet-routing-alt table {
-    width: 100% !important;
-    border-collapse: collapse !important;
-    margin: 0 !important;
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin: 0 !important;
 }
 
 .routing-directions-container .leaflet-routing-alt tbody tr {
-    border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
-    transition: background-color 0.2s ease !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
+  transition: background-color 0.2s ease !important;
 }
 
 .routing-directions-container .leaflet-routing-alt tbody tr:hover {
-    background-color: rgba(59, 73, 223, 0.05) !important;
+  background-color: rgba(59, 73, 223, 0.05) !important;
 }
 
 .routing-directions-container .leaflet-routing-alt tbody tr:last-child {
-    border-bottom: none !important;
+  border-bottom: none !important;
 }
 
 .routing-directions-container .leaflet-routing-instruction-icon {
-    width: 40px !important;
-    padding: 8px 4px !important;
-    text-align: center !important;
-    vertical-align: middle !important;
+  width: 40px !important;
+  padding: 8px 4px !important;
+  text-align: center !important;
+  vertical-align: middle !important;
 }
 
-.routing-directions-container .leaflet-routing-instruction-icon .leaflet-routing-icon {
-    width: 24px !important;
-    height: 24px !important;
-    display: inline-block !important;
+.routing-directions-container
+  .leaflet-routing-instruction-icon
+  .leaflet-routing-icon {
+  width: 24px !important;
+  height: 24px !important;
+  display: inline-block !important;
 }
 
 .routing-directions-container .leaflet-routing-instruction-text {
-    padding: 8px 12px !important;
-    vertical-align: middle !important;
-    font-size: 13px !important;
-    color: #1a1a1a !important;
-    line-height: 1.5 !important;
+  padding: 8px 12px !important;
+  vertical-align: middle !important;
+  font-size: 13px !important;
+  color: #1a1a1a !important;
+  line-height: 1.5 !important;
 }
 
 .routing-directions-container .leaflet-routing-instruction-distance {
-    padding: 8px 12px !important;
-    text-align: right !important;
-    vertical-align: middle !important;
-    font-size: 12px !important;
-    color: #5f6368 !important;
-    font-weight: 500 !important;
-    white-space: nowrap !important;
+  padding: 8px 12px !important;
+  text-align: right !important;
+  vertical-align: middle !important;
+  font-size: 12px !important;
+  color: #5f6368 !important;
+  font-weight: 500 !important;
+  white-space: nowrap !important;
 }
 
 .debug-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 2px solid rgba(0, 0, 0, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.08);
 }
 
 .debug-header h3 {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 700;
-    color: #1a1a1a;
-    letter-spacing: -0.02em;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a1a1a;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .debug-header h3 .icon {
-    font-size: 20px;
+  font-size: 20px;
 }
 
 .debug-controls {
-    display: flex;
-    gap: 8px;
+  display: flex;
+  gap: 8px;
 }
 
 /* Debug Test Section */
 .debug-test-section {
-    padding: 16px;
-    margin: 16px 0;
-    background: rgba(59, 73, 223, 0.05);
-    border-radius: 12px;
-    border: 2px solid rgba(59, 73, 223, 0.2);
+  padding: 16px;
+  margin: 16px 0;
+  background: rgba(59, 73, 223, 0.05);
+  border-radius: 12px;
+  border: 2px solid rgba(59, 73, 223, 0.2);
 }
 
 .debug-test-title {
-    margin: 0 0 8px 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: #1a1a1a;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1a1a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .debug-test-description {
-    margin: 0 0 16px 0;
-    font-size: 13px;
-    color: #5f6368;
-    line-height: 1.5;
+  margin: 0 0 16px 0;
+  font-size: 13px;
+  color: #5f6368;
+  line-height: 1.5;
 }
 
 .debug-test-buttons {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .debug-test-btn {
-    padding: 12px 16px;
-    border: none;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    min-height: 44px;
+  padding: 12px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
 }
 
 .debug-test-btn.primary {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 .debug-test-btn.primary:hover {
-    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
 }
 
 .debug-test-btn.primary:active {
-    transform: translateY(0);
+  transform: translateY(0);
 }
 
 .debug-test-btn:not(.primary) {
-    background: white;
-    color: #3b49df;
-    border: 2px solid #3b49df;
+  background: white;
+  color: #3b49df;
+  border: 2px solid #3b49df;
 }
 
 .debug-test-btn:not(.primary):hover {
-    background: rgba(59, 73, 223, 0.1);
-    transform: translateY(-1px);
+  background: rgba(59, 73, 223, 0.1);
+  transform: translateY(-1px);
 }
 
 .debug-test-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none !important;
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
 }
 
 .debug-test-status {
-    margin-top: 12px;
-    padding: 12px;
-    border-radius: 8px;
-    font-size: 13px;
-    line-height: 1.6;
-    min-height: 40px;
-    display: none;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  min-height: 40px;
+  display: none;
 }
 
 .debug-test-status.show {
-    display: block;
+  display: block;
 }
 
 .debug-test-status.success {
-    background: rgba(40, 167, 69, 0.1);
-    color: #28a745;
-    border: 1px solid rgba(40, 167, 69, 0.2);
+  background: rgba(40, 167, 69, 0.1);
+  color: #28a745;
+  border: 1px solid rgba(40, 167, 69, 0.2);
 }
 
 .debug-test-status.error {
-    background: rgba(220, 53, 69, 0.1);
-    color: #dc3545;
-    border: 1px solid rgba(220, 53, 69, 0.2);
+  background: rgba(220, 53, 69, 0.1);
+  color: #dc3545;
+  border: 1px solid rgba(220, 53, 69, 0.2);
 }
 
 .debug-test-status.info {
-    background: rgba(59, 73, 223, 0.1);
-    color: #3b49df;
-    border: 1px solid rgba(59, 73, 223, 0.2);
+  background: rgba(59, 73, 223, 0.1);
+  color: #3b49df;
+  border: 1px solid rgba(59, 73, 223, 0.2);
 }
 
 .debug-test-status.loading {
-    background: rgba(255, 193, 7, 0.1);
-    color: #ffc107;
-    border: 1px solid rgba(255, 193, 7, 0.2);
+  background: rgba(255, 193, 7, 0.1);
+  color: #ffc107;
+  border: 1px solid rgba(255, 193, 7, 0.2);
 }
 
 .clear-debug-btn,
 .auto-scroll-btn {
-    background: rgba(95, 99, 104, 0.1);
-    color: #5f6368;
-    border: 1px solid rgba(95, 99, 104, 0.2);
-    padding: 6px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    white-space: nowrap;
+  background: rgba(95, 99, 104, 0.1);
+  color: #5f6368;
+  border: 1px solid rgba(95, 99, 104, 0.2);
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .clear-debug-btn:hover,
 .auto-scroll-btn:hover {
-    background: rgba(95, 99, 104, 0.2);
-    transform: translateY(-1px);
+  background: rgba(95, 99, 104, 0.2);
+  transform: translateY(-1px);
 }
 
 .clear-debug-btn:active,
 .auto-scroll-btn:active {
-    transform: translateY(0);
+  transform: translateY(0);
 }
 
 .auto-scroll-btn.active {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border-color: transparent;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-color: transparent;
 }
 
 .debug-logs {
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    background: rgba(0, 0, 0, 0.02);
-    border-radius: 8px;
-    padding: 12px;
-    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
-    font-size: 12px;
-    line-height: 1.6;
-    max-height: 480px;
-    min-height: 200px;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+  padding: 12px;
+  font-family: "Monaco", "Menlo", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  max-height: 480px;
+  min-height: 200px;
 }
 
 .debug-logs::-webkit-scrollbar {
-    width: 6px;
+  width: 6px;
 }
 
 .debug-logs::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.05);
-    border-radius: 3px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
 }
 
 .debug-logs::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 3px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
 }
 
 .debug-logs::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .debug-log-entry {
-    margin: 4px 0;
-    padding: 6px 10px;
-    border-radius: 4px;
-    border-left: 3px solid transparent;
-    word-wrap: break-word;
-    transition: background-color 0.2s;
+  margin: 4px 0;
+  padding: 6px 10px;
+  border-radius: 4px;
+  border-left: 3px solid transparent;
+  word-wrap: break-word;
+  transition: background-color 0.2s;
 }
 
 .debug-log-entry:hover {
-    background: rgba(0, 0, 0, 0.03);
+  background: rgba(0, 0, 0, 0.03);
 }
 
 .debug-log-entry.log {
-    color: #1a1a1a;
-    border-left-color: #4a90e2;
-    background: rgba(74, 144, 226, 0.05);
+  color: #1a1a1a;
+  border-left-color: #4a90e2;
+  background: rgba(74, 144, 226, 0.05);
 }
 
 .debug-log-entry.info {
-    color: #1976d2;
-    border-left-color: #1976d2;
-    background: rgba(25, 118, 210, 0.05);
+  color: #1976d2;
+  border-left-color: #1976d2;
+  background: rgba(25, 118, 210, 0.05);
 }
 
 .debug-log-entry.warn {
-    color: #f57c00;
-    border-left-color: #f57c00;
-    background: rgba(245, 124, 0, 0.05);
+  color: #f57c00;
+  border-left-color: #f57c00;
+  background: rgba(245, 124, 0, 0.05);
 }
 
 .debug-log-entry.error {
-    color: #d32f2f;
-    border-left-color: #d32f2f;
-    background: rgba(211, 47, 47, 0.05);
+  color: #d32f2f;
+  border-left-color: #d32f2f;
+  background: rgba(211, 47, 47, 0.05);
 }
 
 .debug-log-time {
-    color: #80868b;
-    font-size: 11px;
-    margin-right: 8px;
-    font-weight: 500;
+  color: #80868b;
+  font-size: 11px;
+  margin-right: 8px;
+  font-weight: 500;
 }
 
 .debug-placeholder {
-    color: #80868b;
-    font-style: italic;
-    text-align: center;
-    padding: 20px;
-    margin: 0;
+  color: #80868b;
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+  margin: 0;
 }
 
 /* Mobile Responsive for Debug Panel */
 @media screen and (max-width: 768px) {
-    /* Hide debug panel by default on mobile */
-    .debug-panel {
-        display: none;
-        max-width: calc(100% - 32px);
-        left: 16px;
-        right: 16px;
-        top: 75px;
-        position: fixed;
-        max-height: calc(100vh - 200px);
-        animation: slideInMobile 0.3s ease-out;
-    }
-    
-    /* Show debug panel when active */
-    .debug-panel.active {
-        display: flex;
-        animation: slideInMobile 0.3s ease-out;
-    }
-    
-    /* Button arrangement already set above - no duplicate rules needed */
-    
-    /* Show close button inside panel on mobile */
-    .debug-panel .close-panel-btn {
-        display: flex !important;
-    }
-    
-    .debug-header {
-        padding-right: 40px; /* Make room for close button */
-    }
-    
-    .debug-logs {
-        max-height: calc(100vh - 320px);
-        font-size: 11px;
-    }
+  /* Hide debug panel by default on mobile */
+  .debug-panel {
+    display: none;
+    max-width: calc(100% - 32px);
+    left: 16px;
+    right: 16px;
+    top: 75px;
+    position: fixed;
+    max-height: calc(100vh - 200px);
+    animation: slideInMobile 0.3s ease-out;
+  }
+
+  /* Show debug panel when active */
+  .debug-panel.active {
+    display: flex;
+    animation: slideInMobile 0.3s ease-out;
+  }
+
+  /* Button arrangement already set above - no duplicate rules needed */
+
+  /* Show close button inside panel on mobile */
+  .debug-panel .close-panel-btn {
+    display: flex !important;
+  }
+
+  .debug-header {
+    padding-right: 40px;
+    /* Make room for close button */
+  }
+
+  .debug-logs {
+    max-height: calc(100vh - 320px);
+    font-size: 11px;
+  }
 }
 
 /* Desktop: Position debug panel and button when status panel is visible */
 @media screen and (min-width: 769px) {
-    /* Tidy button arrangement on desktop - stack vertically with spacing */
-    .debug-toggle-btn {
-        right: 16px;
-        top: 16px;
-        padding: 12px 18px;
-        font-size: 14px;
-    }
-    
-    .route-management-toggle-btn {
-        top: 70px; /* 54px spacing from debug button */
-        right: 16px;
-        padding: 12px 18px;
-        font-size: 14px;
-    }
-    
-    .mobile-toggle-btn {
-        display: none; /* Hide on desktop as status panel is always visible */
-    }
-    
-    /* Adjust route management panel position on desktop */
-    .route-management-panel {
-        top: 180px; /* Below all buttons */
-        right: 16px;
-        max-height: calc(100vh - 200px);
-    }
-    
-    /* When status panel exists, position debug panel to the right */
-    .status-panel ~ .debug-panel {
-        left: 360px;
-    }
-    
-    /* Show debug panel when active on desktop */
-    .debug-panel.active {
-        display: flex;
-    }
-    
-    /* Better spacing for voice panel on desktop */
-    .voice-panel {
-        max-width: 340px;
-    }
+  /* Tidy button arrangement on desktop - stack vertically with spacing */
+  .debug-toggle-btn {
+    right: 16px;
+    top: 16px;
+    padding: 12px 18px;
+    font-size: 14px;
+  }
+
+  .route-management-toggle-btn {
+    top: 70px;
+    /* 54px spacing from debug button */
+    right: 16px;
+    padding: 12px 18px;
+    font-size: 14px;
+  }
+
+  .mobile-toggle-btn {
+    display: none;
+    /* Hide on desktop as status panel is always visible */
+  }
+
+  /* Adjust route management panel position on desktop */
+  .route-management-panel {
+    top: 180px;
+    /* Below all buttons */
+    right: 16px;
+    max-height: calc(100vh - 200px);
+  }
+
+  /* When status panel exists, position debug panel to the right */
+  .status-panel ~ .debug-panel {
+    left: 360px;
+  }
+
+  /* Show debug panel when active on desktop */
+  .debug-panel.active {
+    display: flex;
+  }
+
+  /* Better spacing for voice panel on desktop */
+  .voice-panel {
+    max-width: 340px;
+  }
 }
 
 /* ========== ROUTE MANAGEMENT PANEL ========== */
 .route-management-panel {
-    position: fixed;
-    top: 180px; /* Start below all toggle buttons */
-    right: 16px;
-    width: 380px;
-    max-width: calc(100vw - 32px);
-    max-height: calc(100vh - 200px); /* Account for buttons above and margin */
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 16px;
-    padding: 20px;
-    z-index: 998; /* Below toggle buttons but above map */
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 
-                0 4px 16px rgba(0, 0, 0, 0.08);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    display: none;
-    flex-direction: column;
-    overflow-y: auto;
+  position: fixed;
+  top: 180px;
+  /* Start below all toggle buttons */
+  right: 16px;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 200px);
+  /* Account for buttons above and margin */
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 16px;
+  padding: 20px;
+  z-index: 998;
+  /* Below toggle buttons but above map */
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: none;
+  flex-direction: column;
+  overflow-y: auto;
 }
 
 .route-management-panel.active {
-    display: flex;
+  display: flex;
 }
 
 .route-panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 2px solid rgba(0, 0, 0, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.08);
 }
 
 .route-panel-header h3 {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 700;
-    color: #1a1a1a;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #1a1a1a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .route-panel-header .icon {
-    font-size: 24px;
+  font-size: 24px;
 }
 
 .route-toggle-btn {
-    background: transparent;
-    border: none;
-    font-size: 20px;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 6px;
-    transition: background 0.2s;
-    color: #666;
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.2s;
+  color: #666;
 }
 
 .route-toggle-btn:hover {
-    background: rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .route-panel-description {
-    font-size: 13px;
-    color: #666;
-    margin-bottom: 16px;
-    line-height: 1.5;
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 16px;
+  line-height: 1.5;
 }
 
 .route-list-container {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .route-item {
-    background: rgba(255, 255, 255, 0.8);
-    border: 2px solid rgba(0, 0, 0, 0.1);
-    border-radius: 12px;
-    padding: 14px;
-    transition: all 0.2s;
-    cursor: pointer;
+  background: rgba(255, 255, 255, 0.8);
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  padding: 14px;
+  transition: all 0.2s;
+  cursor: pointer;
 }
 
 .route-item:hover {
-    border-color: #3b49df;
-    box-shadow: 0 4px 12px rgba(59, 73, 223, 0.15);
-    transform: translateY(-2px);
+  border-color: #3b49df;
+  box-shadow: 0 4px 12px rgba(59, 73, 223, 0.15);
+  transform: translateY(-2px);
 }
 
 .route-item.empty {
-    background: rgba(0, 0, 0, 0.03);
-    border-style: dashed;
-    opacity: 0.7;
+  background: rgba(0, 0, 0, 0.03);
+  border-style: dashed;
+  opacity: 0.7;
 }
 
 .route-item-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
 }
 
 .route-item-name {
-    font-weight: 600;
-    font-size: 16px;
-    color: #1a1a1a;
+  font-weight: 600;
+  font-size: 16px;
+  color: #1a1a1a;
 }
 
 .route-item-actions {
-    display: flex;
-    gap: 6px;
+  display: flex;
+  gap: 6px;
 }
 
 .route-item-btn {
-    background: rgba(59, 73, 223, 0.1);
-    border: 1px solid rgba(59, 73, 223, 0.2);
-    border-radius: 6px;
-    padding: 4px 8px;
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.2s;
-    color: #3b49df;
+  background: rgba(59, 73, 223, 0.1);
+  border: 1px solid rgba(59, 73, 223, 0.2);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #3b49df;
 }
 
 .route-item-btn:hover {
-    background: rgba(59, 73, 223, 0.2);
+  background: rgba(59, 73, 223, 0.2);
 }
 
 .route-item-btn.delete {
-    background: rgba(220, 53, 69, 0.1);
-    border-color: rgba(220, 53, 69, 0.2);
-    color: #dc3545;
+  background: rgba(220, 53, 69, 0.1);
+  border-color: rgba(220, 53, 69, 0.2);
+  color: #dc3545;
 }
 
 .route-item-btn.delete:hover {
-    background: rgba(220, 53, 69, 0.2);
+  background: rgba(220, 53, 69, 0.2);
 }
 
 .route-item-content {
-    font-size: 13px;
-    color: #666;
-    line-height: 1.6;
+  font-size: 13px;
+  color: #666;
+  line-height: 1.6;
 }
 
 .route-item-content.empty-content {
-    font-style: italic;
-    color: #999;
+  font-style: italic;
+  color: #999;
 }
 
 .route-item-path {
-    margin-top: 6px;
-    font-size: 12px;
-    color: #888;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #888;
 }
 
 .route-item-path strong {
-    color: #3b49df;
+  color: #3b49df;
 }
 
 /* Route Form Styles */
 .route-form-container {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 2px solid rgba(0, 0, 0, 0.08);
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 2px solid rgba(0, 0, 0, 0.08);
 }
 
 .route-form-title {
-    font-size: 18px;
-    font-weight: 600;
-    margin-bottom: 16px;
-    color: #1a1a1a;
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: #1a1a1a;
 }
 
 .form-group {
-    margin-bottom: 16px;
+  margin-bottom: 16px;
 }
 
 .form-group label {
-    display: block;
-    font-size: 14px;
-    font-weight: 500;
-    margin-bottom: 6px;
-    color: #333;
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 6px;
+  color: #333;
 }
 
 .route-input-wrapper {
-    position: relative;
-    width: 100%;
+  position: relative;
+  width: 100%;
 }
 
 .route-input {
-    width: 100%;
-    padding: 10px 12px;
-    border: 2px solid rgba(0, 0, 0, 0.1);
-    border-radius: 8px;
-    font-size: 14px;
-    transition: all 0.2s;
-    background: white;
-    box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.2s;
+  background: white;
+  box-sizing: border-box;
 }
 
 .route-input:focus {
-    outline: none;
-    border-color: #3b49df;
-    box-shadow: 0 0 0 3px rgba(59, 73, 223, 0.1);
+  outline: none;
+  border-color: #3b49df;
+  box-shadow: 0 0 0 3px rgba(59, 73, 223, 0.1);
 }
 
 /* Location Autocomplete */
 .location-autocomplete {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    margin-top: 4px;
-    background: white;
-    border: 2px solid rgba(59, 73, 223, 0.2);
-    border-radius: 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-    z-index: 1000;
-    max-height: 500px; /* Increased from 300px to show more results */
-    overflow-y: auto;
-    animation: slideDown 0.2s ease-out;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: white;
+  border: 2px solid rgba(59, 73, 223, 0.2);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  z-index: 1000;
+  max-height: 500px;
+  /* Increased from 300px to show more results */
+  overflow-y: auto;
+  animation: slideDown 0.2s ease-out;
 }
 
 @keyframes slideDown {
-    from {
-        opacity: 0;
-        transform: translateY(-5px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .autocomplete-options {
-    display: flex;
-    flex-direction: column;
+  display: flex;
+  flex-direction: column;
 }
 
 .autocomplete-option {
-    padding: 12px;
-    cursor: pointer;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-    transition: all 0.2s;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+  padding: 12px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .autocomplete-option:last-child {
-    border-bottom: none;
+  border-bottom: none;
 }
 
 .autocomplete-option:hover {
-    background: rgba(59, 73, 223, 0.05);
+  background: rgba(59, 73, 223, 0.05);
 }
 
 .autocomplete-option.selected {
-    background: rgba(59, 73, 223, 0.1);
-    border-left: 3px solid #3b49df;
+  background: rgba(59, 73, 223, 0.1);
+  border-left: 3px solid #3b49df;
 }
 
 .autocomplete-option-name {
-    font-size: 14px;
-    font-weight: 600;
-    color: #1a1a1a;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a1a;
 }
 
 .autocomplete-option-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
 }
 
 .autocomplete-option-name {
-    font-size: 14px;
-    font-weight: 600;
-    color: #1a1a1a;
-    flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a1a;
+  flex: 1;
 }
 
 .country-badge {
-    font-size: 10px;
-    padding: 2px 6px;
-    background: rgba(59, 73, 223, 0.1);
-    color: #3b49df;
-    border-radius: 4px;
-    font-weight: 500;
-    white-space: nowrap;
+  font-size: 10px;
+  padding: 2px 6px;
+  background: rgba(59, 73, 223, 0.1);
+  color: #3b49df;
+  border-radius: 4px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .autocomplete-option-address {
-    font-size: 12px;
-    color: #666;
-    line-height: 1.4;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
 }
 
 .autocomplete-more-info {
-    padding: 8px 12px;
-    text-align: center;
-    font-size: 11px;
-    color: #999;
-    font-style: italic;
-    border-top: 1px solid rgba(0, 0, 0, 0.05);
-    background: rgba(0, 0, 0, 0.02);
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 11px;
+  color: #999;
+  font-style: italic;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  background: rgba(0, 0, 0, 0.02);
 }
 
 .autocomplete-loading {
-    padding: 12px;
-    text-align: center;
-    color: #666;
-    font-size: 13px;
+  padding: 12px;
+  text-align: center;
+  color: #666;
+  font-size: 13px;
 }
 
 .autocomplete-no-results {
-    padding: 12px;
-    text-align: center;
-    color: #999;
-    font-size: 13px;
-    font-style: italic;
+  padding: 12px;
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+  font-style: italic;
 }
 
 .form-hint {
-    display: block;
-    font-size: 11px;
-    color: #999;
-    margin-top: 4px;
+  display: block;
+  font-size: 11px;
+  color: #999;
+  margin-top: 4px;
 }
 
 .form-actions {
-    display: flex;
-    gap: 10px;
-    margin-top: 20px;
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
 }
 
 .btn-save-route,
 .btn-cancel-route {
-    flex: 1;
-    padding: 10px 16px;
-    border: none;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
 .btn-save-route {
-    background: #3b49df;
-    color: white;
+  background: #3b49df;
+  color: white;
 }
 
 .btn-save-route:hover {
-    background: #2d39b3;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(59, 73, 223, 0.3);
+  background: #2d39b3;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 73, 223, 0.3);
 }
 
 .btn-cancel-route {
-    background: rgba(0, 0, 0, 0.05);
-    color: #666;
+  background: rgba(0, 0, 0, 0.05);
+  color: #666;
 }
 
 .btn-cancel-route:hover {
-    background: rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.1);
 }
 
 .route-form-status {
-    margin-top: 12px;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 13px;
-    text-align: center;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: center;
 }
 
 .route-form-status.success {
-    background: rgba(40, 167, 69, 0.1);
-    color: #28a745;
-    border: 1px solid rgba(40, 167, 69, 0.2);
+  background: rgba(40, 167, 69, 0.1);
+  color: #28a745;
+  border: 1px solid rgba(40, 167, 69, 0.2);
 }
 
 .route-form-status.error {
-    background: rgba(220, 53, 69, 0.1);
-    color: #dc3545;
-    border: 1px solid rgba(220, 53, 69, 0.2);
+  background: rgba(220, 53, 69, 0.1);
+  color: #dc3545;
+  border: 1px solid rgba(220, 53, 69, 0.2);
 }
 
 .route-form-status.loading {
-    background: rgba(59, 73, 223, 0.1);
-    color: #3b49df;
-    border: 1px solid rgba(59, 73, 223, 0.2);
+  background: rgba(59, 73, 223, 0.1);
+  color: #3b49df;
+  border: 1px solid rgba(59, 73, 223, 0.2);
 }
 
 /* Current Location Display */
 .current-location-display {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
-    background: rgba(59, 73, 223, 0.08);
-    border: 2px solid rgba(59, 73, 223, 0.2);
-    border-radius: 8px;
-    margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(59, 73, 223, 0.08);
+  border: 2px solid rgba(59, 73, 223, 0.2);
+  border-radius: 8px;
+  margin-bottom: 4px;
 }
 
 .location-icon {
-    font-size: 18px;
-    line-height: 1;
+  font-size: 18px;
+  line-height: 1;
 }
 
 .location-text {
-    font-size: 14px;
-    color: #3b49df;
-    font-weight: 500;
-    flex: 1;
+  font-size: 14px;
+  color: #3b49df;
+  font-weight: 500;
+  flex: 1;
 }
 
 /* Location Selection List */
 .location-selection-list {
-    margin-top: 16px;
-    padding: 12px;
-    background: rgba(0, 0, 0, 0.02);
-    border-radius: 8px;
-    border: 2px solid rgba(59, 73, 223, 0.2);
+  margin-top: 16px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+  border: 2px solid rgba(59, 73, 223, 0.2);
 }
 
 .selection-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: #333;
-    margin: 0 0 12px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 12px 0;
 }
 
 .location-options {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    max-height: 300px;
-    overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .location-option {
-    padding: 12px;
-    background: white;
-    border: 2px solid rgba(0, 0, 0, 0.1);
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.2s;
+  padding: 12px;
+  background: white;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
 .location-option:hover {
-    border-color: #3b49df;
-    background: rgba(59, 73, 223, 0.05);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(59, 73, 223, 0.15);
+  border-color: #3b49df;
+  background: rgba(59, 73, 223, 0.05);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(59, 73, 223, 0.15);
 }
 
 .location-option.selected {
-    border-color: #3b49df;
-    background: rgba(59, 73, 223, 0.1);
-    box-shadow: 0 0 0 3px rgba(59, 73, 223, 0.1);
+  border-color: #3b49df;
+  background: rgba(59, 73, 223, 0.1);
+  box-shadow: 0 0 0 3px rgba(59, 73, 223, 0.1);
 }
 
 .location-option-name {
-    font-size: 14px;
-    font-weight: 600;
-    color: #1a1a1a;
-    margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 4px;
 }
 
 .location-option-address {
-    font-size: 12px;
-    color: #666;
-    line-height: 1.4;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
 }
 
 /* Route Management Toggle Button */
 .route-management-toggle-btn {
-    position: fixed;
-    top: 70px; /* Positioned below debug button with spacing */
-    right: 16px;
-    background: linear-gradient(135deg, #3b49df 0%, #5a67d8 100%);
-    color: white;
-    border: none;
-    border-radius: 50px;
-    padding: 12px 18px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    z-index: 1000;
-    box-shadow: 0 8px 24px rgba(59, 73, 223, 0.4),
-                0 4px 12px rgba(90, 103, 216, 0.3);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    letter-spacing: 0.3px;
-    white-space: nowrap;
+  position: fixed;
+  top: 70px;
+  /* Positioned below debug button with spacing */
+  right: 16px;
+  background: linear-gradient(135deg, #3b49df 0%, #5a67d8 100%);
+  color: white;
+  border: none;
+  border-radius: 50px;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 1000;
+  box-shadow: 0 8px 24px rgba(59, 73, 223, 0.4),
+    0 4px 12px rgba(90, 103, 216, 0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 
 .route-management-toggle-btn:hover {
-    background: linear-gradient(135deg, #2d39b3 0%, #4348ca 100%);
-    transform: translateY(-2px);
-    box-shadow: 0 12px 32px rgba(59, 73, 223, 0.5),
-                0 6px 16px rgba(67, 72, 202, 0.4);
+  background: linear-gradient(135deg, #2d39b3 0%, #4348ca 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(59, 73, 223, 0.5),
+    0 6px 16px rgba(67, 72, 202, 0.4);
 }
 
 /* Mobile styles for route management panel */
 @media screen and (max-width: 768px) {
-    .route-management-panel {
-        position: fixed;
-        top: 0;
-        right: 0;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        max-width: 100%;
-        max-height: 100%;
-        border-radius: 0;
-        top: 0; /* Full screen on mobile */
-    }
-    
-    .route-management-toggle-btn {
-        top: 76px; /* Below debug button with more spacing on mobile */
-        right: 16px;
-        padding: 10px 16px;
-        font-size: 13px;
-    }
-    
-    .mobile-toggle-btn {
-        top: 136px; /* Below route management button with more spacing on mobile */
-        right: 16px;
-    }
-    
-    .debug-toggle-btn {
-        top: 16px;
-        right: 16px;
-        padding: 10px 16px;
-        font-size: 13px;
-    }
-    
-    .close-route-panel-btn {
-        display: block !important;
-    }
+  .route-management-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    top: 0;
+    /* Full screen on mobile */
+  }
+
+  .route-management-toggle-btn {
+    top: 76px;
+    /* Below debug button with more spacing on mobile */
+    right: 16px;
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  .mobile-toggle-btn {
+    top: 136px;
+    /* Below route management button with more spacing on mobile */
+    right: 16px;
+  }
+
+  .debug-toggle-btn {
+    top: 16px;
+    right: 16px;
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  .close-route-panel-btn {
+    display: block !important;
+  }
+}
+
+/* ========================================
+   ADDITIONAL FULLSCREEN ENFORCEMENT
+   Memastikan map benar-benar fullscreen tanpa gap
+   ======================================== */
+
+/* Force viewport units untuk semua elemen saat navigasi */
+body.navigating,
+html.navigating {
+  /* Remove any default spacing */
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Ensure map container covers entire viewport */
+body.navigating #map,
+html.navigating #map {
+  /* Use calc untuk memastikan tidak ada gap */
+  width: 100vw !important;
+  width: 100dvw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  /* Fallback untuk browser yang tidak support dvh */
+  height: calc(
+    100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+  ) !important;
+}
+
+/* Ensure Leaflet container fills completely */
+body.navigating .leaflet-container {
+  /* Prevent any internal spacing */
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Remove any margins/padding from all map-related elements */
+body.navigating .leaflet-pane,
+body.navigating .leaflet-map-pane,
+body.navigating .leaflet-tile-pane,
+body.navigating .leaflet-overlay-pane,
+body.navigating .leaflet-shadow-pane,
+body.navigating .leaflet-marker-pane,
+body.navigating .leaflet-tooltip-pane,
+body.navigating .leaflet-popup-pane,
+body.navigating .leaflet-tile-container,
+body.navigating .leaflet-image-layer {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+/* Ensure routing machine elements don't cause overflow */
+body.navigating .leaflet-routing-container,
+body.navigating .leaflet-routing-alternatives-container {
+  max-height: 100vh !important;
+  max-height: 100dvh !important;
+  overflow-y: auto !important;
+}
+
+/* Remove any scrollbars that might appear */
+body.navigating,
+html.navigating,
+body.navigating #map,
+body.navigating .leaflet-container {
+  scrollbar-width: none !important;
+  /* Firefox */
+  -ms-overflow-style: none !important;
+  /* IE and Edge */
+}
+
+body.navigating ::-webkit-scrollbar,
+html.navigating ::-webkit-scrollbar {
+  display: none !important;
+  /* Chrome, Safari, Opera */
+}
+
+/* Ensure no gap at top/bottom/left/right */
+body.navigating #map::before,
+body.navigating #map::after,
+body.navigating .leaflet-container::before,
+body.navigating .leaflet-container::after {
+  display: none !important;
+  content: none !important;
+}
+
+/* Additional enforcement for mobile viewports */
+@media screen and (max-width: 768px) {
+  body.navigating #map,
+  html.navigating #map {
+    /* Use viewport height minus safe area on mobile */
+    height: 100vh !important;
+    height: 100dvh !important;
+    height: calc(
+      100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+    ) !important;
+  }
+
+  body.navigating .leaflet-container {
+    height: 100vh !important;
+    height: 100dvh !important;
+    height: calc(
+      100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+    ) !important;
+  }
+}
+
+/* Force fullscreen on orientation change */
+@media (orientation: portrait) {
+  body.navigating #map,
+  body.navigating .leaflet-container {
+    width: 100vw !important;
+    width: 100dvw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+  }
+}
+
+@media (orientation: landscape) {
+  body.navigating #map,
+  body.navigating .leaflet-container {
+    width: 100vw !important;
+    width: 100dvw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+  }
 }
