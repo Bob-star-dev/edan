@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-CAM YOLO Background Detector</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background-color: #ffffff;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        
+        /* Suppress tracking prevention warnings (tidak bisa dihilangkan sepenuhnya) */
+        /* Browser akan tetap show warning di console, tapi tidak akan mengganggu fungsi */
+        
+        /* Hidden canvas untuk processing */
+        #hiddenCanvas {
+            display: none;
+        }
+        
+        /* Status indicator (optional, bisa disembunyikan) */
+        #status {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 1000;
+            opacity: 0.3; /* Hampir tidak terlihat */
+            transition: opacity 0.3s;
+        }
+        
+        #status:hover {
+            opacity: 1;
+        }
+        
+        .status-item {
+            margin: 5px 0;
+        }
+        
+        .status-online {
+            color: #4CAF50;
+        }
+        
+        .status-offline {
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <!-- Status indicator (optional) -->
+    <div id="status">
+        <div class="status-item">
+            <span id="statusText">Initializing...</span>
+        </div>
+        <div class="status-item">
+            Camera: <span id="cameraStatus" class="status-offline">Offline</span>
+        </div>
+        <div class="status-item">
+            Model: <span id="modelStatus" class="status-offline">Loading...</span>
+        </div>
+        <div class="status-item">
+            FPS: <span id="fps">0</span>
+        </div>
+        <div class="status-item">
+            Objects: <span id="objectCount">0</span>
+        </div>
+    </div>
+    
+    <!-- Hidden canvas untuk image processing -->
+    <canvas id="hiddenCanvas"></canvas>
+    
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+    
+    <!-- Main detector script -->
+    <script src="config.js"></script>
+    <script src="detector.js"></script>
+</body>
+</html>
+

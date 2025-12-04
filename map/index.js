@@ -4864,75 +4864,135 @@ function startTurnByTurnNavigation() {
     console.log('🔄 Restarting GPS tracking for navigation...');
     startLocationTracking();
     
-    // Aktifkan YOLO Detector di background saat navigasi dimulai
-    // YOLO detector akan berjalan bersamaan dengan navigasi GPS untuk deteksi objek
-    if (typeof window.YOLODetector !== 'undefined') {
-        console.log('🔄 Activating YOLO Detector in background for navigation...');
-        const yoloState = window.YOLODetector.getState();
+    // Aktifkan ESP32-CAM Detector di background saat navigasi dimulai
+    // Detector akan berjalan bersamaan dengan navigasi GPS untuk deteksi objek
+    if (typeof window.YOLODetector !== 'undefined' || typeof window.ESP32CAMDetector !== 'undefined') {
+        const detector = window.ESP32CAMDetector || window.YOLODetector;
+        console.log('🔄 Activating ESP32-CAM Detector in background for navigation...');
+        const detectorState = detector.getState();
         
-        if (!yoloState.isActive) {
-            // Initialize dan activate YOLO detector jika belum aktif
-            window.YOLODetector.init().then(function(initSuccess) {
+        // Setup connection status callback untuk monitoring koneksi
+        if (detector.setConnectionStatusCallback) {
+            detector.setConnectionStatusCallback(function(connected, url) {
+                if (connected) {
+                    console.log(`[ESP32CAM] ✅ Camera connected: ${url || 'Unknown URL'}`);
+                    console.log(`[ESP32CAM] 📡 Status: ONLINE - Ready to detect objects and send vibrate signals`);
+                    console.log(`[ESP32CAM] 📳 Vibration threshold: ${1.5}m - Objects closer than this will trigger vibration`);
+                    console.log(`[ESP32CAM] 🔄 Running in background mode - no UI interference`);
+                    console.log(`[ESP32CAM] ⚡ Detection active: ${detector.getState().isActive ? 'YES' : 'NO'}`);
+                    console.log(`[ESP32CAM] 🤖 Model loaded: ${detector.getState().isInitialized ? 'YES' : 'NO'}`);
+                } else {
+                    console.warn(`[ESP32CAM] ⚠️ Camera disconnected`);
+                    console.warn(`[ESP32CAM] 🔄 Attempting to reconnect...`);
+                }
+            });
+        }
+        
+        if (!detectorState.isActive) {
+            // Initialize dan activate detector jika belum aktif
+            detector.init().then(function(initSuccess) {
                 if (initSuccess) {
-                    window.YOLODetector.activate().then(async function(activateSuccess) {
+                    detector.activate().then(function(activateSuccess) {
                         if (activateSuccess) {
-                            console.log('✅ YOLO Detector activated in background - running alongside navigation');
+                            console.log('✅ ESP32-CAM Detector activated in background - running alongside navigation');
+                            console.log('📹 ESP32-CAM will detect objects and trigger vibrate if distance < 1.5m');
                             
-                            // Check detailed status after activation
-                            setTimeout(async () => {
+                            // Check status after activation
+                            setTimeout(() => {
                                 try {
-                                    const detailedStatus = await window.YOLODetector.getDetailedStatus();
-                                    console.log('📊 YOLO Detector Detailed Status:', detailedStatus);
-                                    console.log('🔗 ESP32-CAM Connection:', detailedStatus.connection.connected ? '✅ CONNECTED' : '❌ NOT CONNECTED');
-                                    if (detailedStatus.connection.connected) {
-                                        console.log('   Method:', detailedStatus.connection.method);
-                                        console.log('   URL:', detailedStatus.connection.url);
-                                    } else {
-                                        console.log('   Error:', detailedStatus.connection.error);
+                                    const state = detector.getState();
+                                    const connStatus = detector.getConnectionStatus ? detector.getConnectionStatus() : { connected: false, url: null };
+                                    console.log('📊 ESP32-CAM Detector Status:', {
+                                        isActive: state.isActive,
+                                        isInitialized: state.isInitialized,
+                                        cameraUrl: state.cameraUrl || connStatus.url,
+                                        cameraConnected: state.cameraConnected !== undefined ? state.cameraConnected : connStatus.connected
+                                    });
+                                    
+                                    // Start periodic status monitoring
+                                    if (window.esp32camStatusInterval) {
+                                        clearInterval(window.esp32camStatusInterval);
                                     }
+                                    window.esp32camStatusInterval = setInterval(() => {
+                                        try {
+                                            const currentState = detector.getState();
+                                            const currentConn = detector.getConnectionStatus ? detector.getConnectionStatus() : { connected: false, url: null };
+                                            if (currentState.isActive) {
+                                                const status = currentState.cameraConnected !== undefined 
+                                                    ? currentState.cameraConnected 
+                                                    : currentConn.connected;
+                                                if (status) {
+                                                    console.log(`[ESP32CAM] 💚 Status: ONLINE | URL: ${currentState.cameraUrl || currentConn.url || 'Unknown'}`);
+                                                } else {
+                                                    console.warn(`[ESP32CAM] ❌ Status: OFFLINE | Attempting to reconnect...`);
+                                                }
+                                            }
+                                        } catch (e) {
+                                            // Ignore errors in status check
+                                        }
+                                    }, 10000); // Check every 10 seconds
                                 } catch (statusError) {
-                                    console.warn('⚠️ Failed to get detailed status:', statusError);
+                                    console.warn('⚠️ Failed to get detector status:', statusError);
                                 }
                             }, 3000);
                         } else {
-                            console.warn('⚠️ Failed to activate YOLO Detector - navigation will continue without object detection');
-                            
-                            // Check connection status even if activation failed
-                            setTimeout(async () => {
-                                try {
-                                    const connectionStatus = await window.YOLODetector.checkESP32Connection();
-                                    console.log('🔍 ESP32-CAM Connection Check:', connectionStatus);
-                                } catch (checkError) {
-                                    console.error('❌ Connection check failed:', checkError);
-                                }
-                            }, 2000);
+                            console.warn('⚠️ Failed to activate ESP32-CAM Detector - navigation will continue without object detection');
                         }
                     }).catch(function(error) {
-                        console.error('❌ Error activating YOLO Detector:', error);
-                        // Navigation tetap berjalan meskipun YOLO detector gagal
+                        console.error('❌ Error activating ESP32-CAM Detector:', error);
+                        // Navigation tetap berjalan meskipun detector gagal
                     });
                 } else {
-                    console.warn('⚠️ Failed to initialize YOLO Detector - navigation will continue without object detection');
+                    console.warn('⚠️ Failed to initialize ESP32-CAM Detector - navigation will continue without object detection');
                 }
             }).catch(function(error) {
-                console.error('❌ Error initializing YOLO Detector:', error);
-                // Navigation tetap berjalan meskipun YOLO detector gagal
+                console.error('❌ Error initializing ESP32-CAM Detector:', error);
+                // Navigation tetap berjalan meskipun detector gagal
             });
         } else {
-            console.log('✅ YOLO Detector already active - will continue running during navigation');
+            console.log('✅ ESP32-CAM Detector already active - will continue running during navigation');
             
             // Check status of already active detector
-            setTimeout(async () => {
+            setTimeout(() => {
                 try {
-                    const detailedStatus = await window.YOLODetector.getDetailedStatus();
-                    console.log('📊 YOLO Detector Status (already active):', detailedStatus);
+                    const state = detector.getState();
+                    const connStatus = detector.getConnectionStatus ? detector.getConnectionStatus() : { connected: false, url: null };
+                    console.log('📊 ESP32-CAM Detector Status (already active):', {
+                        isActive: state.isActive,
+                        isInitialized: state.isInitialized,
+                        cameraUrl: state.cameraUrl || connStatus.url,
+                        cameraConnected: state.cameraConnected !== undefined ? state.cameraConnected : connStatus.connected
+                    });
+                    
+                    // Start periodic status monitoring
+                    if (window.esp32camStatusInterval) {
+                                        clearInterval(window.esp32camStatusInterval);
+                                    }
+                                    window.esp32camStatusInterval = setInterval(() => {
+                                        try {
+                                            const currentState = detector.getState();
+                                            const currentConn = detector.getConnectionStatus ? detector.getConnectionStatus() : { connected: false, url: null };
+                                            if (currentState.isActive) {
+                                                const status = currentState.cameraConnected !== undefined 
+                                                    ? currentState.cameraConnected 
+                                                    : currentConn.connected;
+                                                if (status) {
+                                                    console.log(`[ESP32CAM] 💚 Status: ONLINE | URL: ${currentState.cameraUrl || currentConn.url || 'Unknown'}`);
+                                                } else {
+                                                    console.warn(`[ESP32CAM] ❌ Status: OFFLINE | Attempting to reconnect...`);
+                                                }
+                                            }
+                                        } catch (e) {
+                                            // Ignore errors in status check
+                                        }
+                                    }, 10000); // Check every 10 seconds
                 } catch (statusError) {
                     console.warn('⚠️ Failed to get status:', statusError);
                 }
             }, 1000);
         }
     } else {
-        console.log('ℹ️ YOLO Detector not available - navigation will continue without object detection');
+        console.log('ℹ️ ESP32-CAM Detector not available - navigation will continue without object detection');
     }
     
     // CRITICAL: Fokus peta ke lokasi user saat ini saat navigasi dimulai

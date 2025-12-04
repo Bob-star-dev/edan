@@ -1,0 +1,5 @@
+# Ignore semua file kecuali source code
+*.log
+.DS_Store
+Thumbs.db
+

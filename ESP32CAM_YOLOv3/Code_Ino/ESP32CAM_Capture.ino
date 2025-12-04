@@ -46,9 +46,6 @@ void sendToVibratorTask(void *parameter)
   http.begin(url);
   
   // Kirim request dengan timeout
-  http.setTimeout(1000);  // Timeout 1 detik
-  http.setConnectTimeout(1000);  // Connection timeout 1 detik
-  
   int code = http.GET();
   
   if (code > 0) {
@@ -93,8 +90,10 @@ void sendToVibrator(String path)
 // ===========================================================================
 void handleLeft()
 {
-  Serial.println("📥 Received LEFT vibrate request from Python");
-  // Kirim response ke Python segera (tidak menunggu ESP32-C3)
+  Serial.println("📥 Received LEFT vibrate request");
+  // Add CORS headers
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  // Kirim response segera (tidak menunggu ESP32-C3)
   server.send(200, "text/plain", "LEFT OK");
   // Kirim ke ESP32-C3 setelah response (non-blocking via FreeRTOS task)
   sendToVibrator("/left");
@@ -102,8 +101,10 @@ void handleLeft()
 
 void handleRight()
 {
-  Serial.println("📥 Received RIGHT vibrate request from Python");
-  // Kirim response ke Python segera (tidak menunggu ESP32-C3)
+  Serial.println("📥 Received RIGHT vibrate request");
+  // Add CORS headers
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  // Kirim response segera (tidak menunggu ESP32-C3)
   server.send(200, "text/plain", "RIGHT OK");
   // Kirim ke ESP32-C3 setelah response (non-blocking via FreeRTOS task)
   sendToVibrator("/right");
@@ -123,6 +124,14 @@ void serveJpg() {
                 frame->getWidth(), frame->getHeight(),
                 static_cast<int>(frame->size()));
 
+  // Add CORS headers untuk mengizinkan akses dari browser
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "0");
+  
   server.setContentLength(frame->size());
   server.send(200, "image/jpeg");
 
@@ -180,14 +189,31 @@ void initWifi() {
 }
 
 // ===========================================================================
+// HANDLE OPTIONS (untuk CORS preflight)
+// ===========================================================================
+void handleOptions() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  server.send(200, "text/plain", "");
+}
+
+// ===========================================================================
 // SERVER
 // ===========================================================================
 void initServer() {
   server.on(URL, handleJpg);
+  
+  // Handle OPTIONS request untuk CORS
+  server.on("/cam.jpg", HTTP_OPTIONS, handleOptions);
 
   // Endpoint untuk YOLO
   server.on("/left", handleLeft);
   server.on("/right", handleRight);
+  
+  // CORS untuk endpoint vibrate juga
+  server.on("/left", HTTP_OPTIONS, handleOptions);
+  server.on("/right", HTTP_OPTIONS, handleOptions);
 
   server.begin();
 }
