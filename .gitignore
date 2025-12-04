@@ -71,3 +71,7 @@ node_modules/
 # YOLO model weights (too large for GitHub)
 ESP32CAM_YOLOv3/YOLO/*.weights
 *.weights
+
+# Large zip files
+ESP32CAM_YOLOv3.zip
+*.zip
