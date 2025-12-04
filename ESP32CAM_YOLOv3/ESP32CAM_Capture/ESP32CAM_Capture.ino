@@ -38,9 +38,18 @@ void sendToVibrator(String path)
   Serial.println(url);
 
   http.begin(url);
+  http.setTimeout(1000);  // Timeout 1 detik
+  http.setConnectTimeout(1000);  // Connection timeout 1 detik
+  
   int code = http.GET();
   Serial.print("RESPONSE CODE: ");
   Serial.println(code);
+  
+  if (code <= 0) {
+    Serial.print("ERROR: ");
+    Serial.println(http.errorToString(code));
+  }
+  
   http.end();
 }
 
@@ -49,14 +58,18 @@ void sendToVibrator(String path)
 // ===========================================================================
 void handleLeft()
 {
-  sendToVibrator("/left");
+  // Kirim response dulu agar tidak blocking Python request
   server.send(200, "text/plain", "LEFT OK");
+  // Kirim ke vibrator setelah response (non-blocking)
+  sendToVibrator("/left");
 }
 
 void handleRight()
 {
-  sendToVibrator("/right");
+  // Kirim response dulu agar tidak blocking Python request
   server.send(200, "text/plain", "RIGHT OK");
+  // Kirim ke vibrator setelah response (non-blocking)
+  sendToVibrator("/right");
 }
 
 // ===========================================================================
