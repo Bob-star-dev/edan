@@ -443,26 +443,43 @@
         }
         
         .partner-card {
-            background: rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
             padding: 2.5rem 2rem;
             border-radius: 20px;
             transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
             width: 100%;
             max-width: 300px;
-            border: 2px solid rgba(226, 232, 240, 0.8);
+            border: 3px solid rgba(255, 255, 255, 0.5);
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 140px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .partner-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+            transition: left 0.5s;
+        }
+        
+        .partner-card:hover::before {
+            left: 100%;
         }
         
         .partner-card:hover {
-            transform: translateY(-8px) scale(1.02);
-            box-shadow: 0 20px 50px rgba(79, 70, 229, 0.2);
-            border-color: var(--primary-blue);
-            background: rgba(255, 255, 255, 0.95);
+            transform: translateY(-8px) scale(1.05);
+            box-shadow: 0 20px 60px rgba(102, 126, 234, 0.4);
+            border-color: rgba(255, 255, 255, 0.9);
+            background: rgba(255, 255, 255, 1);
         }
         
         .partner-card a {
@@ -481,13 +498,15 @@
             width: auto;
             height: auto;
             object-fit: contain;
-            filter: grayscale(100%);
+            filter: brightness(1.1) contrast(1.1);
             transition: all 0.4s ease;
+            position: relative;
+            z-index: 1;
         }
         
         .partner-card:hover .partner-logo {
-            filter: grayscale(0%);
-            transform: scale(1.08);
+            filter: brightness(1.2) contrast(1.2) drop-shadow(0 4px 8px rgba(102, 126, 234, 0.3));
+            transform: scale(1.1);
         }
         
         /* ========== TEAM MEMBERS SECTION ========== */
@@ -537,11 +556,29 @@
             background: rgba(255, 255, 255, 1);
         }
         
+        .team-member-photo {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 4px solid rgba(79, 70, 229, 0.1);
+            margin: 0 auto 1.5rem;
+            display: block;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        }
+        
+        .team-member:hover .team-member-photo {
+            transform: scale(1.05);
+            border-color: var(--primary-blue);
+            box-shadow: 0 12px 32px rgba(79, 70, 229, 0.2);
+        }
+        
         .team-member-name {
             font-size: 1.1rem;
             font-weight: 600;
             color: var(--dark);
-            margin-top: 1rem;
+            margin-top: 0;
             line-height: 1.5;
         }
         
@@ -1443,7 +1480,7 @@
     </section>
 
     <!-- Our Partners Section -->
-    <section id="our-partners" class="partners" style="background: linear-gradient(to bottom, #ffffff 0%, #f8fafc 100%);">
+    <section id="our-partners" class="partners">
         <div class="container">
             <div class="section-title">
                 <h2>Our Partners</h2>
@@ -1488,32 +1525,38 @@
             
             <div class="team-grid">
                 <div class="team-member">
-                    <div class="team-member-name">Gideon Bagas Moliate Nababan</div>
-                    <div class="team-member-role">Pengembang</div>
+                    <img src="asset/assetfoto/ZabrinaSalsabillaKumalaratih.jpg" alt="Zabrina Salsabilla Kumalaratih" class="team-member-photo">
+                    <div class="team-member-name">Zabrina Salsabilla Kumalaratih</div>
+                    <div class="team-member-role">CEO</div>
                 </div>
                 
                 <div class="team-member">
-                    <div class="team-member-name">Shofi Dwi Rahma</div>
-                    <div class="team-member-role">Pengembang</div>
+                    <img src="asset/assetfoto/NathanaelChristianSetiadi.jpg" alt="Nathanael Christian Setiadi" class="team-member-photo">
+                    <div class="team-member-name">Nathanael Christian Setiadi</div>
+                    <div class="team-member-role">COO</div>
                 </div>
                 
                 <div class="team-member">
-                    <div class="team-member-name">Goldwin Claudia Tongge</div>
-                    <div class="team-member-role">Pengembang</div>
+                    <img src="asset/assetfoto/MevvaCallystaJustin.jpg" alt="Mevva Callysta Justin" class="team-member-photo">
+                    <div class="team-member-name">Mevva Callysta Justin</div>
+                    <div class="team-member-role">CMO</div>
                 </div>
                 
                 <div class="team-member">
-                    <div class="team-member-name">Sheila Ghassana Ulya Pratomo</div>
-                    <div class="team-member-role">Pengembang</div>
+                    <img src="asset/assetfoto/AyudyaAzzahra.jpg" alt="Ayudya Azzahra" class="team-member-photo">
+                    <div class="team-member-name">Ayudya Azzahra</div>
+                    <div class="team-member-role">CFO</div>
                 </div>
                 
                 <div class="team-member">
-                    <div class="team-member-name">Lidya Eirene Aritonang</div>
-                    <div class="team-member-role">Pengembang</div>
+                    <img src="asset/assetfoto/VallerieGraciachristaYudhistira.jpg" alt="Vallerie Graciachrista Yudhistira" class="team-member-photo">
+                    <div class="team-member-name">Vallerie Graciachrista Yudhistira</div>
+                    <div class="team-member-role">CPO</div>
                 </div>
                 
                 <div class="team-member">
-                    <div class="team-member-name">Bintang Zahira Putri</div>
+                    <img src="asset/assetfoto/AttharIbrahimAquillaWibowo.jpg" alt="Atthar Ibrahim Aquilla Wibowo" class="team-member-photo">
+                    <div class="team-member-name">Atthar Ibrahim Aquilla Wibowo</div>
                     <div class="team-member-role">Pengembang</div>
                 </div>
             </div>
@@ -1876,6 +1919,77 @@
                     });
             });
         }
+        
+        // Fix team member photos loading with proper path handling
+        document.addEventListener('DOMContentLoaded', function() {
+            const teamPhotos = document.querySelectorAll('.team-member-photo');
+            
+            // Map of team member names to their actual photo filenames
+            const photoMap = {
+                'Gideon Bagas Moliate Nababan': 'Atthar Ibrahim Aquilla Wibowo.jpg',
+                'Shofi Dwi Rahma': 'Vallerie Graciachrista Yudhistira -CPO.jpg',
+                'Goldwin Claudia Tongge': 'Ayudya Azzahra -CFO.jpg',
+                'Sheila Ghassana Ulya Pratomo': 'Mevva Callysta Justin -CMO.jpg',
+                'Lidya Eirene Aritonang': 'Nathanael Christian Setiadi - COO.jpg',
+                'Bintang Zahira Putri': 'Zabrina Salsabilla Kumalaratih - CEO.jpg'
+            };
+            
+            teamPhotos.forEach(function(img) {
+                const memberName = img.alt;
+                const fileName = photoMap[memberName];
+                
+                if (fileName) {
+                    // Build path properly - encode folder and filename separately
+                    const folderPath = 'asset/asset foto';
+                    const fullPath = folderPath + '/' + fileName;
+                    
+                    // Encode each path segment separately (folder name and filename)
+                    const pathParts = fullPath.split('/');
+                    const encodedPath = pathParts.map((part, index) => {
+                        // Don't encode the first part (usually empty or 'asset')
+                        if (index === 0 || part === 'asset') {
+                            return part;
+                        }
+                        // Encode parts with spaces or special characters
+                        return encodeURIComponent(part);
+                    }).join('/');
+                    
+                    // Set the src with properly encoded path
+                    img.src = encodedPath;
+                    console.log('Loading image for', memberName, 'from:', encodedPath);
+                    
+                    // If image fails, try with spaces as %20 (simpler encoding)
+                    img.addEventListener('error', function() {
+                        console.log('Attempt 1 failed, trying %20 encoding for:', memberName);
+                        const altPath = fullPath.replace(/ /g, '%20');
+                        this.src = altPath;
+                        
+                        // If still fails, try unencoded
+                        this.addEventListener('error', function() {
+                            console.log('Attempt 2 failed, trying unencoded path for:', memberName);
+                            this.src = fullPath;
+                            
+                            // Final fallback - show placeholder
+                            this.addEventListener('error', function() {
+                                console.warn('All attempts failed for:', memberName, '- showing placeholder');
+                                this.style.display = 'none';
+                                const placeholder = document.createElement('div');
+                                placeholder.className = 'team-member-photo';
+                                placeholder.style.cssText = 'width: 150px; height: 150px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; margin: 0 auto 1.5rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);';
+                                const initials = memberName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                                placeholder.textContent = initials;
+                                this.parentNode.insertBefore(placeholder, this);
+                            }, { once: true });
+                        }, { once: true });
+                    }, { once: true });
+                    
+                    // Log successful loads
+                    img.addEventListener('load', function() {
+                        console.log('✅ Image loaded successfully:', memberName);
+                    }, { once: true });
+                }
+            });
+        });
     </script>
 </body>
 </html>

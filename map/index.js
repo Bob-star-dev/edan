@@ -432,6 +432,11 @@ let announcedInstructions = []; // Track all instructions that have been announc
 let shouldAnnounceRoute = false; // Flag to control when route should be announced
 let pendingRouteAnnouncement = null; // Store pending route announcement data (routeId, startName, endName)
 
+// Turn markers variables for navigation
+let turnMarkers = []; // Array to store turn markers on the map
+let turnMarkerData = []; // Array to store turn marker metadata
+let nextTurnMarkerIndex = 0; // Index of next turn marker to highlight
+
 // FIXED: Debounce/throttle mechanism untuk announceNextDirection
 let lastAnnounceCallTime = 0;
 let lastAnnounceDistance = null;
@@ -5546,8 +5551,14 @@ async function geocodeLocation(location, userLatLng = null) {
                 });
                 
                 // Update destination with full name
-                updateDestination(newLat, newLng, fullName);
-                updateVoiceStatus('✅ Tujuan: ' + shortName + ' - Ucapkan "Navigasi" untuk memulai');
+                try {
+                    updateDestination(newLat, newLng, fullName);
+                    updateVoiceStatus('✅ Tujuan: ' + shortName + ' - Ucapkan "Navigasi" untuk memulai');
+                } catch (updateError) {
+                    console.error('Error updating destination:', updateError);
+                    // Continue anyway - destination was found, just route update failed
+                    updateVoiceStatus('✅ Tujuan: ' + shortName + ' - Ucapkan "Navigasi" untuk memulai');
+                }
                 return;
             }
         } catch (nominatimError) {
@@ -8850,11 +8861,38 @@ function createSingleTurnMarker(turnLatLng, turnDirection, instructionText, dist
 
 // Function to clear all turn markers
 function clearTurnMarkers() {
-    turnMarkers.forEach(function(marker) {
-        map.removeLayer(marker);
-    });
+    // Ensure turnMarkers is defined before using it
+    if (typeof turnMarkers === 'undefined') {
+        turnMarkers = [];
+    }
+    if (typeof turnMarkerData === 'undefined') {
+        turnMarkerData = [];
+    }
+    
+    // Clear markers - handle both formats: array of markers or array of objects with marker property
+    if (turnMarkers && turnMarkers.length > 0) {
+        turnMarkers.forEach(function(marker) {
+            // Check if marker is an object with marker property or direct marker
+            if (marker && typeof marker === 'object') {
+                if (marker.marker && map.hasLayer(marker.marker)) {
+                    map.removeLayer(marker.marker);
+                } else if (map.hasLayer(marker)) {
+                    map.removeLayer(marker);
+                }
+            } else if (map.hasLayer(marker)) {
+                map.removeLayer(marker);
+            }
+        });
+    }
+    
     turnMarkers = [];
     turnMarkerData = []; // Also clear stored data
+    
+    // Reset next turn marker index if defined
+    if (typeof nextTurnMarkerIndex !== 'undefined') {
+        nextTurnMarkerIndex = 0;
+    }
+    
     console.log('🗑️ Cleared all turn markers');
 }
 

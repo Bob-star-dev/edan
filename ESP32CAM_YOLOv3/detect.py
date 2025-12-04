@@ -135,6 +135,17 @@ def send_vibrate_signal(camera_base_url, side="left"):
         else:
             base_url = camera_base_url
         
+        # Jika menggunakan mDNS, coba resolve ke IP dulu untuk menghindari masalah di thread
+        # Tapi jika sudah IP, langsung pakai
+        if "senavision.local" in base_url or ".local" in base_url:
+            # Resolve mDNS ke IP untuk thread
+            try:
+                hostname = base_url.replace("http://", "").split("/")[0]
+                ip = socket.gethostbyname(hostname)
+                base_url = base_url.replace(hostname, ip)
+            except:
+                pass  # Jika gagal resolve, tetap pakai mDNS
+        
         # Gunakan endpoint /left atau /right sesuai posisi objek
         endpoint = "/left" if side == "left" else "/right"
         vibrate_url = f"{base_url}{endpoint}"
@@ -142,11 +153,34 @@ def send_vibrate_signal(camera_base_url, side="left"):
         # Kirim request dalam thread terpisah agar tidak blocking
         def send_request():
             try:
+                # Set socket timeout untuk thread ini
+                socket.setdefaulttimeout(3)  # 3 detik timeout
+                
                 req = urllib.request.Request(vibrate_url)
-                urllib.request.urlopen(req, timeout=2)
-                print(f"✓ Vibrate signal sent to {vibrate_url} ({side.upper()} vibrator)")
+                response = urllib.request.urlopen(req, timeout=3)
+                response_code = response.getcode()
+                response_data = response.read().decode('utf-8', errors='ignore')
+                
+                if response_code == 200:
+                    print(f"✓ Vibrate signal sent to {vibrate_url} ({side.upper()} vibrator) - Response: {response_data.strip()}")
+                else:
+                    print(f"⚠ Vibrate signal sent but got response code {response_code}")
+                    
+            except socket.timeout:
+                print(f"✗ Failed to send vibrate signal to {side}: socket timeout (3s)")
+            except urllib.error.URLError as e:
+                error_msg = str(e)
+                if "timed out" in error_msg.lower() or "timeout" in error_msg.lower():
+                    print(f"✗ Failed to send vibrate signal to {side}: timeout (ESP32-CAM tidak merespons dalam 3 detik)")
+                elif "Name or service not known" in error_msg or "nodename nor servname" in error_msg.lower():
+                    print(f"✗ Failed to send vibrate signal to {side}: cannot resolve hostname")
+                else:
+                    print(f"✗ Failed to send vibrate signal to {side}: {error_msg}")
             except Exception as e:
-                print(f"✗ Failed to send vibrate signal to {side}: {e}")
+                print(f"✗ Failed to send vibrate signal to {side}: {type(e).__name__}: {e}")
+            finally:
+                # Reset socket timeout
+                socket.setdefaulttimeout(None)
         
         # Jalankan di thread terpisah
         thread = threading.Thread(target=send_request, daemon=True)
