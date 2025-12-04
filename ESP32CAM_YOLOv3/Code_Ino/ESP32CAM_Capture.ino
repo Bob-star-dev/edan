@@ -46,6 +46,9 @@ void sendToVibratorTask(void *parameter)
   http.begin(url);
   
   // Kirim request dengan timeout
+  http.setTimeout(1000);  // Timeout 1 detik
+  http.setConnectTimeout(1000);  // Connection timeout 1 detik
+  
   int code = http.GET();
   
   if (code > 0) {

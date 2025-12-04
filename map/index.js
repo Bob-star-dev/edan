@@ -63,6 +63,10 @@ let gpsRetryCount = 0; // Counter untuk retry GPS jika terputus
 let announceInterval = null; // Interval untuk memanggil announceNextDirection secara berkala
 let isFirstLocationUpdate = true; // Track if this is the first location update
 
+// NEW: Track turn instructions from directions container with real-time distance
+let turnInstructionsList = []; // Array of { text, coordinate, lastAnnouncedDistance, instructionIndex }
+let currentTurnIndex = 0; // Index of current turn being tracked
+
 // CRITICAL: Track the BEST GPS location (highest accuracy)
 // This prevents default/cached locations from overwriting accurate GPS data
 let bestGPSLocation = null; // Store { lat, lng, accuracy }
@@ -70,8 +74,8 @@ const MAX_ACCEPTABLE_ACCURACY = 300; // Only accept GPS locations with accuracy 
 
 // GPS Smoothing - untuk mengurangi noise/jitter pada koordinat GPS
 let gpsHistory = []; // Array untuk menyimpan history GPS coordinates
-const GPS_HISTORY_SIZE = 5; // Jumlah titik GPS yang digunakan untuk smoothing
-const MIN_DISTANCE_FOR_UPDATE = 1.5; // Minimum jarak (meter) untuk update marker (reduces jitter, improved accuracy)
+const GPS_HISTORY_SIZE = 2; // Jumlah titik GPS yang digunakan untuk smoothing (reduced for faster response)
+const MIN_DISTANCE_FOR_UPDATE = 0.3; // Minimum jarak (meter) untuk update marker (reduced for real-time accuracy)
 
 // Configuration for location update interval
 // Options: 500ms (very fast), 1000ms (1s - realtime), 2000ms (2s), 3000ms (3s), 5000ms (5s)
@@ -85,6 +89,13 @@ let destinationMarker = null; // No destination marker until user sets a destina
 
 // Route control - will be created after we get user's location
 let route = null;
+
+// Turn markers array for navigation
+let turnMarkers = [];
+let nextTurnMarkerIndex = 0;
+
+// Flag untuk menandai bahwa kita sedang menunggu announcement setelah route dibuat
+let pendingRouteAnnouncementData = null; // { shortName, fullName, onComplete }
 
 // Helper function to move routing directions to custom container
 function moveRoutingDirectionsToContainer() {
@@ -249,13 +260,25 @@ window.SpeechCoordinator = {
         
         // High priority (navigation directions) - wait only for critical warnings
         if (priority === 'high') {
-            // Only wait for critical warnings, navigation can interrupt normal mode detector speech
+            // CRITICAL: Untuk announcement belokan, hanya tunggu critical warning yang benar-benar aktif
+            // Jika critical warning sudah selesai atau tidak aktif, langsung izinkan
             if (this.isModeDetectorWarning) {
                 const actuallyWarning = (typeof window.speechSynthesis !== 'undefined') && 
                                        window.speechSynthesis.speaking && 
                                        this.isModeDetectorWarning;
                 if (actuallyWarning) {
-                    console.log('[SpeechCoordinator] ⏸️ Navigation speech delayed - mode detector warning active');
+                    // Untuk belokan, jangan tunggu terlalu lama - izinkan setelah 200ms maksimal
+                    console.log('[SpeechCoordinator] ⏸️ Navigation speech delayed - mode detector warning active, will allow after 200ms...');
+                    // Set flag untuk izinkan setelah 200ms
+                    setTimeout(() => {
+                        this.isModeDetectorWarning = false;
+                        this.isNavigationSpeaking = true;
+                        if (typeof isSpeaking !== 'undefined') {
+                            isSpeaking = true;
+                        }
+                        console.log('[SpeechCoordinator] ✅ Navigation speech allowed after timeout (HIGH PRIORITY - turn instructions are critical)');
+                    }, 200);
+                    // Return false untuk trigger retry mechanism di announceNextDirection
                     return false;
                 } else {
                     this.isModeDetectorWarning = false;
@@ -273,6 +296,32 @@ window.SpeechCoordinator = {
                     }
                 }
                 this.isModeDetectorSpeaking = false;
+            }
+            
+            // CRITICAL: Jika ada speech navigation lain yang sedang berjalan, cancel untuk announcement baru
+            // Ini memastikan announcement belokan selalu bisa muncul (belokan lebih penting dari announcement lain)
+            if (this.isNavigationSpeaking) {
+                const actuallySpeaking = (typeof window.speechSynthesis !== 'undefined') && 
+                                        window.speechSynthesis.speaking;
+                if (actuallySpeaking) {
+                    console.log('[SpeechCoordinator] 🔄 Navigation interrupting previous navigation speech for new turn announcement');
+                    if (typeof window.speechSynthesis !== 'undefined') {
+                        window.speechSynthesis.cancel();
+                    }
+                    // Tunggu sedikit untuk cancel selesai
+                    setTimeout(() => {
+                        this.isNavigationSpeaking = true;
+                        if (typeof isSpeaking !== 'undefined') {
+                            isSpeaking = true;
+                        }
+                    }, 50);
+                } else {
+                    // Speech sudah selesai, reset flag
+                    this.isNavigationSpeaking = false;
+                    if (typeof isSpeaking !== 'undefined') {
+                        isSpeaking = false;
+                    }
+                }
             }
             
             // Set navigation state BEFORE allowing speech
@@ -432,6 +481,10 @@ let announcedInstructions = []; // Track all instructions that have been announc
 let shouldAnnounceRoute = false; // Flag to control when route should be announced
 let pendingRouteAnnouncement = null; // Store pending route announcement data (routeId, startName, endName)
 
+// Turn markers variables for navigation
+// NOTE: turnMarkers and nextTurnMarkerIndex are already declared at lines 94-95, so we don't redeclare them here
+let turnMarkerData = []; // Array to store turn marker metadata
+
 // FIXED: Debounce/throttle mechanism untuk announceNextDirection
 let lastAnnounceCallTime = 0;
 let lastAnnounceDistance = null;
@@ -471,6 +524,134 @@ function toggleDebugPanel() {
             } else {
                 debugPanel.classList.add('active');
                 toggleBtn.textContent = '✖️ Tutup';
+            }
+        }
+    }
+}
+
+// Copy all debug logs to clipboard
+async function copyDebugLogs() {
+    const debugLogsContainer = document.getElementById('debugLogs');
+    const copyBtn = document.getElementById('copyDebugBtn');
+    
+    if (!debugLogsContainer) {
+        console.warn('Debug logs container not found');
+        return;
+    }
+    
+    let logText = ''; // Declare in outer scope for fallback
+    
+    try {
+        // Get all log entries from DOM
+        const logEntries = debugLogsContainer.querySelectorAll('.debug-log-entry');
+        
+        if (logEntries.length === 0) {
+            // Try to get from stored debugLogs array
+            if (debugLogs.length === 0) {
+                console.log('No debug logs to copy');
+                if (copyBtn) {
+                    const originalText = copyBtn.textContent;
+                    copyBtn.textContent = '⚠️ No logs';
+                    setTimeout(() => {
+                        copyBtn.textContent = originalText;
+                    }, 2000);
+                }
+                return;
+            }
+            
+            // Format from stored array
+            logText = `=== SENAVISION Debug Logs ===\n`;
+            logText += `Generated: ${new Date().toLocaleString('id-ID')}\n`;
+            logText += `Total logs: ${debugLogs.length}\n\n`;
+            
+            debugLogs.forEach((log, index) => {
+                const timeStr = log.time ? log.time.toLocaleTimeString('id-ID', { 
+                    hour: '2-digit', 
+                    minute: '2-digit', 
+                    second: '2-digit',
+                    fractionalSecondDigits: 3
+                }) : 'N/A';
+                logText += `[${index + 1}] [${timeStr}] [${log.type.toUpperCase()}] ${log.message}\n`;
+            });
+            
+            // Copy to clipboard
+            await navigator.clipboard.writeText(logText);
+            console.log(`✅ Copied ${debugLogs.length} debug logs to clipboard`);
+            
+            if (copyBtn) {
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = '✅ Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                }, 2000);
+            }
+            return;
+        }
+        
+        // Format from DOM elements
+        logText = `=== SENAVISION Debug Logs ===\n`;
+        logText += `Generated: ${new Date().toLocaleString('id-ID')}\n`;
+        logText += `Total logs: ${logEntries.length}\n\n`;
+        
+        logEntries.forEach((entry, index) => {
+            const timeEl = entry.querySelector('.debug-log-time');
+            const messageEl = entry.querySelector('.debug-log-message');
+            
+            const timeStr = timeEl ? timeEl.textContent : 'N/A';
+            const message = messageEl ? messageEl.textContent : entry.textContent;
+            const type = entry.classList.contains('error') ? 'ERROR' : 
+                        entry.classList.contains('warn') ? 'WARN' : 
+                        entry.classList.contains('info') ? 'INFO' : 'LOG';
+            
+            logText += `[${index + 1}] ${timeStr} [${type}] ${message}\n`;
+        });
+        
+        // Copy to clipboard
+        await navigator.clipboard.writeText(logText);
+        console.log(`✅ Copied ${logEntries.length} debug logs to clipboard`);
+        
+        // Update button to show success
+        if (copyBtn) {
+            const originalText = copyBtn.textContent;
+            copyBtn.textContent = '✅ Copied!';
+            setTimeout(() => {
+                copyBtn.textContent = originalText;
+            }, 2000);
+        }
+        
+    } catch (error) {
+        console.error('❌ Failed to copy debug logs:', error);
+        
+        // Fallback: try using execCommand for older browsers
+        try {
+            if (!logText) {
+                logText = 'No logs available';
+            }
+            const textArea = document.createElement('textarea');
+            textArea.value = logText;
+            textArea.style.position = 'fixed';
+            textArea.style.opacity = '0';
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            
+            console.log('✅ Copied using fallback method');
+            if (copyBtn) {
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = '✅ Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                }, 2000);
+            }
+        } catch (fallbackError) {
+            console.error('❌ Fallback copy also failed:', fallbackError);
+            if (copyBtn) {
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = '❌ Failed';
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                }, 2000);
             }
         }
     }
@@ -888,9 +1069,9 @@ function onLocationFound(e) {
     if (currentUserPosition) {
         // CRITICAL: Jangan update marker jika lokasi tidak akurat (default/cached)
         // Hanya update jika lokasi baru lebih akurat atau sudah sangat akurat
-        const shouldUpdate = !isUnacceptableAccuracy || !bestGPSLocation || accuracy < bestGPSLocation.accuracy;
+        const shouldUpdateAccuracy = !isUnacceptableAccuracy || !bestGPSLocation || accuracy < bestGPSLocation.accuracy;
         
-        if (!shouldUpdate) {
+        if (!shouldUpdateAccuracy) {
             console.log('🔒 Blocking marker update - keeping accurate GPS location');
             // Gunakan lokasi GPS terbaik yang sudah ada
             if (bestGPSLocation) {
@@ -912,51 +1093,60 @@ function onLocationFound(e) {
         // setLatLng() memastikan marker selalu bergerak mengikuti lokasi GPS AKURAT
         const oldLatLng = currentUserPosition.getLatLng();
         
-        // GPS Smoothing: Tambahkan koordinat ke history untuk smoothing
-        gpsHistory.push({ lat: e.latlng.lat, lng: e.latlng.lng, accuracy: accuracy });
-        if (gpsHistory.length > GPS_HISTORY_SIZE) {
-            gpsHistory.shift(); // Hapus titik tertua
-        }
-        
-        // Hitung smoothed position (rata-rata dari history) jika ada cukup data dan akurasi baik
+        // CRITICAL: During navigation, use GPS position directly for real-time accuracy
+        // Only apply minimal smoothing when not navigating to reduce jitter
         let smoothedLatLng = e.latlng;
-        if (gpsHistory.length >= 3 && accuracy < 50) { // Hanya smooth jika akurasi baik (< 50m)
-            const avgLat = gpsHistory.reduce((sum, p) => sum + p.lat, 0) / gpsHistory.length;
-            const avgLng = gpsHistory.reduce((sum, p) => sum + p.lng, 0) / gpsHistory.length;
-            smoothedLatLng = L.latLng(avgLat, avgLng);
+        
+        if (isNavigating) {
+            // During navigation: Use GPS position directly for maximum accuracy and responsiveness
+            // No smoothing during navigation to ensure real-time position tracking
+            smoothedLatLng = e.latlng;
+            console.log('🧭 Navigation mode: Using GPS position directly (no smoothing)');
+        } else {
+            // When not navigating: Apply minimal smoothing to reduce jitter
+            gpsHistory.push({ lat: e.latlng.lat, lng: e.latlng.lng, accuracy: accuracy });
+            if (gpsHistory.length > GPS_HISTORY_SIZE) {
+                gpsHistory.shift(); // Hapus titik tertua
+            }
+            
+            // Minimal smoothing: only if we have 2+ points and accuracy is good
+            if (gpsHistory.length >= 2 && accuracy < 30) {
+                // Use weighted average: more weight to latest position
+                const latest = gpsHistory[gpsHistory.length - 1];
+                const previous = gpsHistory[gpsHistory.length - 2];
+                // 70% latest, 30% previous for faster response
+                const avgLat = (latest.lat * 0.7) + (previous.lat * 0.3);
+                const avgLng = (latest.lng * 0.7) + (previous.lng * 0.3);
+                smoothedLatLng = L.latLng(avgLat, avgLng);
+            }
         }
         
         // FIXED: Store smoothedLatLng in a variable accessible later for map panning
         const finalUserPosition = smoothedLatLng;
         
-        // Hanya update marker jika user bergerak cukup jauh (reduces jitter)
+        // CRITICAL: During navigation, always update marker for real-time tracking
+        // When not navigating, use distance threshold to reduce jitter
         const distanceMoved = oldLatLng ? oldLatLng.distanceTo(smoothedLatLng) : 0;
-        if (distanceMoved >= MIN_DISTANCE_FOR_UPDATE || !oldLatLng) {
+        const shouldUpdateMarker = isNavigating ? true : (distanceMoved >= MIN_DISTANCE_FOR_UPDATE || !oldLatLng);
+        
+        if (shouldUpdateMarker) {
             currentUserPosition.setLatLng(smoothedLatLng);
             // Tampilkan accuracy aktual di popup, bukan radius terbatas
             currentUserPosition.setPopupContent("📍 Lokasi Anda (Akurasi GPS: " + actualAccuracy.toFixed(0) + "m)");
             
-            // Update marker icon if navigation state changed - SMALLER SIZE
-            if (isNavigating) {
-                const navIcon = L.divIcon({
-                    className: 'custom-user-marker navigation-marker',
-                    html: `<div style="position: relative; width: 0; height: 0;">
-                        <div style="position: absolute; left: 50%; top: 0; transform: translateX(-50%); width: 4px; height: 20px; background: #34c759; border-radius: 2px; box-shadow: 0 1px 4px rgba(0,0,0,0.3);"></div>
-                        <div style="position: absolute; left: 50%; top: 20px; transform: translateX(-50%); width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid #34c759; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));"></div>
-                    </div>`,
-                    iconSize: [12, 28],
-                    iconAnchor: [6, 0]
-                });
-                currentUserPosition.setIcon(navIcon);
-            }
+            // Keep blue circle icon during navigation (no change to green arrow)
+            // Marker tetap biru saat navigasi sesuai permintaan user
             
             // Log untuk debugging - memastikan marker selalu update
-            if (distanceMoved > 1) { // Hanya log jika bergerak lebih dari 1 meter
+            if (isNavigating && distanceMoved > 0.5) { // Log lebih sering during navigation
+                console.log('📍 Marker updated (nav) - moved ' + distanceMoved.toFixed(2) + 'm to:', smoothedLatLng.lat.toFixed(6) + ', ' + smoothedLatLng.lng.toFixed(6));
+            } else if (!isNavigating && distanceMoved > 1) {
                 console.log('📍 Marker updated - moved ' + distanceMoved.toFixed(1) + 'm to:', smoothedLatLng.lat.toFixed(6) + ', ' + smoothedLatLng.lng.toFixed(6));
             }
         } else {
-            // Jitter detected - tidak update marker untuk mengurangi noise
-            if (Math.random() < 0.01) { // Log hanya 1% dari waktu untuk menghindari spam
+            // Jitter detected - tidak update marker untuk mengurangi noise (only when not navigating)
+            // During navigation, always update for real-time accuracy
+            if (!isNavigating && Math.random() < 0.01) { // Log hanya 1% dari waktu untuk menghindari spam
                 console.log('📍 GPS jitter filtered - movement < ' + MIN_DISTANCE_FOR_UPDATE + 'm');
             }
         }
@@ -980,56 +1170,14 @@ function onLocationFound(e) {
             L.latLng(bestGPSLocation.lat, bestGPSLocation.lng) : 
             (isUnacceptableAccuracy ? (bestGPSLocation ? L.latLng(bestGPSLocation.lat, bestGPSLocation.lng) : e.latlng) : e.latlng);
         
-        // Create navigation-style marker: green line with arrow (like Google Maps)
-        // Use different icon based on navigation state
-        let customIcon;
-        if (isNavigating) {
-            // Navigation mode: green line with arrow pointing down - SMALLER SIZE
-            customIcon = L.divIcon({
-                className: 'custom-user-marker navigation-marker',
-                html: `<div style="
-                    position: relative;
-                    width: 0;
-                    height: 0;
-                ">
-                    <!-- Green line (vertical) -->
-                    <div style="
-                        position: absolute;
-                        left: 50%;
-                        top: 0;
-                        transform: translateX(-50%);
-                        width: 4px;
-                        height: 20px;
-                        background: #34c759;
-                        border-radius: 2px;
-                        box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-                    "></div>
-                    <!-- Green arrow pointing down -->
-                    <div style="
-                        position: absolute;
-                        left: 50%;
-                        top: 20px;
-                        transform: translateX(-50%);
-                        width: 0;
-                        height: 0;
-                        border-left: 6px solid transparent;
-                        border-right: 6px solid transparent;
-                        border-top: 8px solid #34c759;
-                        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
-                    "></div>
-                </div>`,
-                iconSize: [12, 28],
-                iconAnchor: [6, 0] // Anchor at top center
-            });
-        } else {
-            // Normal mode: blue circle
-            customIcon = L.divIcon({
-                className: 'custom-user-marker',
-                html: '<div style="background: #3b49df; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 10px rgba(0,0,0,0.3);"></div>',
-                iconSize: [20, 20],
-                iconAnchor: [10, 10]
-            });
-        }
+        // Always use blue circle icon (both navigation and normal mode)
+        // Marker tetap biru saat navigasi sesuai permintaan user
+        const customIcon = L.divIcon({
+            className: 'custom-user-marker',
+            html: '<div style="background: #3b49df; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 10px rgba(0,0,0,0.3);"></div>',
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
+        });
         
         // Buat marker tepat di lokasi GPS AKURAT
         currentUserPosition = L.marker(markerLocation, {
@@ -1072,42 +1220,16 @@ function onLocationFound(e) {
             
             // FIXED: Navigation mode - Always pan map to follow user position during navigation
             // This ensures the map view always follows the user's GPS position
-            // Calculate smoothed position here if not already calculated above
-            let targetPosition = e.latlng;
-            if (gpsHistory.length >= 3 && accuracy < 50) {
-                const avgLat = gpsHistory.reduce((sum, p) => sum + p.lat, 0) / gpsHistory.length;
-                const avgLng = gpsHistory.reduce((sum, p) => sum + p.lng, 0) / gpsHistory.length;
-                targetPosition = L.latLng(avgLat, avgLng);
-            }
+            // CRITICAL: Use GPS position directly during navigation (no smoothing for map panning)
+            const targetPosition = e.latlng; // Use GPS position directly for real-time accuracy
             
             // Calculate distance from current map center to user position
             const mapCenter = map.getCenter();
             const distanceFromCenter = mapCenter ? mapCenter.distanceTo(targetPosition) : 999999;
             
-            // FIXED: Always pan to user position if it's more than 10m from map center
-            // This ensures map follows user even for small movements
-            if (distanceFromCenter > 10) {
-                map.panTo(targetPosition, { 
-                    duration: 0.5,
-                    easeLinearity: 0.25
-                });
-                console.log('📍 Map panning to follow user during navigation:', distanceFromCenter.toFixed(0), 'm from center');
-            }
-            
-            // FIXED: Also check if user moved significantly from last pan position
-            // This ensures map updates even if user is near center but has moved
-            if (distanceMoved > 2) { // Reduced threshold to 2m for more responsive following
-                // Double-check: pan again if user moved significantly
-                const currentCenter = map.getCenter();
-                const currentDistance = currentCenter ? currentCenter.distanceTo(targetPosition) : 999999;
-                if (currentDistance > 5) {
-                    map.panTo(targetPosition, { 
-                        duration: 0.3, // Faster pan for small movements
-                        easeLinearity: 0.25
-                    });
-                    console.log('📍 Map updating to follow user movement:', distanceMoved.toFixed(0), 'm moved');
-                }
-            }
+            // DISABLED: Auto-pan during navigation - user can manually control map
+            // Map tetap bisa di-geser dan di-zoom manual oleh user
+            // Tidak ada auto-pan yang memaksa map mengikuti user
         }
         // Saat navigasi tidak aktif, marker tidak akan dipaksa update saat klik/zoom
         // Marker hanya akan update melalui normal GPS update flow (line 910) yang sudah ada filter jitter
@@ -1139,6 +1261,10 @@ function onLocationFound(e) {
                 isNavigating = false;
                 announcedInstructions = [];
                 lastAnnouncedInstruction = null;
+                // NEW: Reset turn instructions list
+                turnInstructionsList = [];
+                currentTurnIndex = 0;
+                console.log('[Navigation] ✅ Reset turn instructions list - navigation stopped');
                 
                 // Clear announceNextDirection interval
                 if (announceInterval) {
@@ -1243,6 +1369,13 @@ function onLocationFound(e) {
                 if (backBtn) {
                     backBtn.style.display = '';
                     backBtn.style.visibility = '';
+                }
+                
+                // CRITICAL: Hide floating debug button when navigation stops
+                const floatingDebugBtn = document.getElementById('floatingDebugBtn');
+                if (floatingDebugBtn) {
+                    floatingDebugBtn.style.display = 'none';
+                    floatingDebugBtn.style.visibility = 'hidden';
                 }
                 
                 // Force map resize
@@ -1494,6 +1627,16 @@ function forceUpdateRoute(userLatLng) {
         
         // Save route data for navigation tracking
         const routeData = e.routes[0];
+        
+        // CRITICAL: Store route data with all instructions and coordinates for turn detection
+        currentRouteData = routeData;
+        console.log('[Navigation] ✅ Route data stored:', {
+            hasInstructions: !!(routeData && routeData.instructions),
+            instructionCount: routeData && routeData.instructions ? routeData.instructions.length : 0,
+            hasCoordinates: !!(routeData && routeData.coordinates),
+            coordinateCount: routeData && routeData.coordinates ? routeData.coordinates.length : 0
+        });
+        
         currentLegIndex = 0;
         lastAnnouncedInstruction = null;
         announcedInstructions = []; // Reset announced instructions
@@ -1584,6 +1727,58 @@ function forceUpdateRoute(userLatLng) {
             
             // Clear pending announcement
             pendingRouteAnnouncement = null;
+        } else if (pendingRouteAnnouncementData) {
+            // NEW: Handle announcement for geocoded destinations
+            const pending = pendingRouteAnnouncementData;
+            const sum = e.routes[0].summary;
+            const distanceKm = sum.totalDistance ? (sum.totalDistance / 1000).toFixed(1) : '0';
+            const timeMinutes = sum.totalTime ? Math.round(sum.totalTime / 60) : 0;
+            
+            console.log('✅✅✅ Route found - announcing destination and route info');
+            
+            // STEP 6: Announcement nama lokasi tujuan dan jarak rute
+            const destinationAnnouncement = 'Tujuan Anda adalah ' + pending.shortName + 
+                '. Jarak ' + distanceKm + ' kilometer, perkiraan waktu tempuh ' + timeMinutes + ' menit.';
+            
+            speakText(destinationAnnouncement, 'id-ID', true, function() {
+                // STEP 7: Announcement instruksi untuk Navigasi
+                const instructionAnnouncement = 'Katakan Navigasi jika ingin memulai perjalanan. ' +
+                    'Jika tidak, sebutkan nama lokasi lagi.';
+                
+                speakText(instructionAnnouncement, 'id-ID', true, function() {
+                    // STEP 8: Hidupkan mikrofon untuk mendengarkan "Navigasi"
+                    setTimeout(function() {
+                        if (recognition && !isListening) {
+                            try {
+                                recognition.start();
+                                isListening = true;
+                                recognition._waitingForNavigasi = true;
+                                console.log('🎤 Microphone restarted - listening for "Navigasi" command');
+                                updateVoiceStatus('✅ Tujuan: ' + pending.shortName + ' - Ucapkan "Navigasi" untuk memulai');
+                                
+                                // Auto-stop after 15 seconds if "Navigasi" not said
+                                recognition._navigasiTimer = setTimeout(function() {
+                                    if (recognition && recognition._waitingForNavigasi && isListening) {
+                                        recognition.stop();
+                                        recognition._stopped = true;
+                                        recognition._waitingForNavigasi = false;
+                                        recognition._navigasiTimer = null;
+                                        isListening = false;
+                                        console.log('🔇 Microphone stopped - "Navigasi" window expired');
+                                        updateVoiceStatus('✅ Tujuan: ' + pending.shortName + ' - Ucapkan "Halo" lalu "Navigasi" untuk memulai');
+                                    }
+                                }, 15000); // 15 second window
+                            } catch (error) {
+                                console.error('Failed to restart microphone:', error);
+                                recognition._stopped = true;
+                            }
+                        }
+                    }, 500);
+                });
+            });
+            
+            // Clear pending announcement data
+            pendingRouteAnnouncementData = null;
         } else {
             // No pending announcement - old behavior
             console.log('✅✅✅ Route found - waiting for user to say "Navigasi" to start');
@@ -2152,10 +2347,11 @@ function startLocationTracking() {
     
     // IMPROVED: Use watchPosition untuk continuous tracking (lebih reliable dari interval)
     // watchPosition akan terus memberikan update GPS tanpa perlu request berulang
+    // CRITICAL: During navigation, use faster updates and always fresh GPS
     const watchOptions = {
         enableHighAccuracy: true, // SELALU gunakan GPS high accuracy
-        timeout: 60000, // Timeout lebih lama (60 detik) untuk GPS lock
-        maximumAge: 0 // JANGAN gunakan cached - SELALU fresh GPS
+        timeout: isNavigating ? 30000 : 60000, // Faster timeout during navigation (30s vs 60s)
+        maximumAge: 0 // JANGAN gunakan cached - SELALU fresh GPS (critical for accuracy)
     };
     
     // Start watchPosition untuk tracking kontinyu
@@ -4429,50 +4625,24 @@ function handleVoiceCommand(transcript) {
         console.log('Found city:', cityKey, knownCities[cityKey]);
         const city = knownCities[cityKey];
         
-        // Stop microphone briefly to announce destination, then restart for "Navigasi" command
-        // Keep microphone active for 10 seconds to listen for "Navigasi" command
+        // STEP 4: Matikan mikrofon setelah tujuan ditemukan
         if (isListening && recognition) {
             recognition.stop();
             isListening = false;
         }
         
-        // Announce destination for known cities
-        speakText('Tujuan Anda adalah ' + city.name, 'id-ID', true, function() {
-            // After announcing destination, give instruction before asking for "Navigasi" command
-            speakText('Jika ingin mengganti tujuan sebutkan lokasi dan jika tidak katakan navigasi untuk memulai perjalanan', 'id-ID', true, function() {
-                // Restart microphone to listen for "Navigasi" command (window of 10 seconds)
-                setTimeout(function() {
-                    if (recognition && !isListening) {
-                        try {
-                            recognition.start();
-                            isListening = true;
-                            recognition._waitingForNavigasi = true; // Flag to mark waiting for Navigasi
-                            console.log('🎤 Microphone restarted - listening for "Navigasi" command (10 second window)');
-                            
-                            // Auto-stop after 10 seconds if "Navigasi" not said
-                            // Store timer ID so we can cancel it if user says "Ganti Rute" before timer expires
-                            recognition._navigasiTimer = setTimeout(function() {
-                                if (recognition && recognition._waitingForNavigasi && isListening) {
-                                    recognition.stop();
-                                    recognition._stopped = true;
-                                    recognition._waitingForNavigasi = false;
-                                    recognition._navigasiTimer = null;
-                                    isListening = false;
-                                    console.log('🔇 Microphone stopped - "Navigasi" window expired, say "Halo" to restart');
-                                    updateVoiceStatus('✅ Tujuan: ' + city.name + ' - Ucapkan "Halo" lalu "Navigasi" untuk memulai');
-                                }
-                            }, 10000); // 10 second window
-                        } catch (error) {
-                            console.error('Failed to restart microphone:', error);
-                            recognition._stopped = true;
-                        }
-                    }
-                }, 500);
-            });
-        });
+        // STEP 5: Update destination dan tunggu route dibuat
+        // Set pending announcement data untuk dipanggil setelah route dibuat
+        pendingRouteAnnouncementData = {
+            shortName: city.name,
+            fullName: city.name
+        };
         
         updateDestination(city.lat, city.lng, city.name);
-        updateVoiceStatus('✅ Tujuan: ' + city.name + ' - Ucapkan "Navigasi" untuk memulai');
+        updateVoiceStatus('🔍 Membuat rute ke ' + city.name + '...');
+        
+        // Announcement akan dipanggil di event handler 'routesfound' setelah route dibuat
+        console.log('⏳ Waiting for route to be created - announcement will be triggered automatically');
         return;
     } else {
         console.log('City NOT found:', cityKey);
@@ -4524,11 +4694,69 @@ function startTurnByTurnNavigation() {
     hasUserInteraction = true;
     console.log('[Navigation] ✅ User interaction confirmed for speech synthesis');
 
-    // Check if route data exists
+    // Check if route data exists - wait for route to be created if destination is set
     if (!route) {
-        suppressMicActivationSpeech = false;
-        speakText('Rute belum ditetapkan. Silakan sebutkan tujuan terlebih dahulu.', 'id-ID', true);
-        updateVoiceStatus('⚠️ Setel tujuan terlebih dahulu');
+        // Check if destination is set - if yes, wait for route to be created
+        if (latLngB && currentUserPosition) {
+            console.log('[Navigation] ⏳ Route not ready yet, waiting for route creation...');
+            updateVoiceStatus('⏳ Menunggu rute dibuat...');
+            
+            // Wait for route to be created (check every 200ms, max 5 seconds)
+            let waitCount = 0;
+            const maxWait = 25; // 25 * 200ms = 5 seconds
+            
+            const waitForRoute = setInterval(function() {
+                waitCount++;
+                
+                if (route && route._routes && route._routes[0]) {
+                    clearInterval(waitForRoute);
+                    console.log('[Navigation] ✅ Route ready, starting navigation...');
+                    // Recursively call startTurnByTurnNavigation now that route is ready
+                    startTurnByTurnNavigation();
+                } else if (waitCount >= maxWait) {
+                    clearInterval(waitForRoute);
+                    console.warn('[Navigation] ⚠️ Route creation timeout');
+                    suppressMicActivationSpeech = false;
+                    speakText('Rute belum siap. Silakan tunggu beberapa saat atau sebutkan tujuan lagi.', 'id-ID', true);
+                    updateVoiceStatus('⚠️ Rute belum siap');
+                }
+            }, 200);
+            
+            return;
+        } else {
+            suppressMicActivationSpeech = false;
+            speakText('Rute belum ditetapkan. Silakan sebutkan tujuan terlebih dahulu.', 'id-ID', true);
+            updateVoiceStatus('⚠️ Setel tujuan terlebih dahulu');
+            return;
+        }
+    }
+    
+    // Additional check: ensure route has route data
+    if (!route._routes || !route._routes[0]) {
+        console.log('[Navigation] ⏳ Route object exists but route data not ready, waiting...');
+        updateVoiceStatus('⏳ Menunggu data rute...');
+        
+        // Wait for route data (check every 200ms, max 5 seconds)
+        let waitCount = 0;
+        const maxWait = 25; // 25 * 200ms = 5 seconds
+        
+        const waitForRouteData = setInterval(function() {
+            waitCount++;
+            
+            if (route && route._routes && route._routes[0]) {
+                clearInterval(waitForRouteData);
+                console.log('[Navigation] ✅ Route data ready, starting navigation...');
+                // Recursively call startTurnByTurnNavigation now that route data is ready
+                startTurnByTurnNavigation();
+            } else if (waitCount >= maxWait) {
+                clearInterval(waitForRouteData);
+                console.warn('[Navigation] ⚠️ Route data timeout');
+                suppressMicActivationSpeech = false;
+                speakText('Data rute belum siap. Silakan tunggu beberapa saat atau sebutkan tujuan lagi.', 'id-ID', true);
+                updateVoiceStatus('⚠️ Data rute belum siap');
+            }
+        }, 200);
+        
         return;
     }
     
@@ -4584,6 +4812,11 @@ function startTurnByTurnNavigation() {
     // CRITICAL: Set flag navigasi aktif
     isNavigating = true;
     
+    // NEW: Reset turn instructions list for new navigation session
+    turnInstructionsList = [];
+    currentTurnIndex = 0;
+    console.log('[Navigation] ✅ Reset turn instructions list for new navigation');
+    
     // CRITICAL: Ensure currentRouteData is set from route object if not already set
     if (!currentRouteData && route) {
         // Try multiple ways to get route data
@@ -4614,6 +4847,14 @@ function startTurnByTurnNavigation() {
             hasInstructions: !!(currentRouteData && currentRouteData.instructions),
             instructionCount: currentRouteData && currentRouteData.instructions ? currentRouteData.instructions.length : 0
         });
+    }
+    
+    // NEW: Initialize turn instructions list after route data is ready
+    if (currentRouteData && currentRouteData.instructions && currentRouteData.instructions.length > 0) {
+        initializeTurnInstructionsList();
+        console.log('[Navigation] ✅ Turn instructions list initialized with', turnInstructionsList.length, 'turns');
+    } else {
+        console.warn('[Navigation] ⚠️ Cannot initialize turn instructions - route data not ready');
     }
     
     // CRITICAL: Request Wake Lock untuk menjaga device tetap aktif (GPS tidak mati)
@@ -4699,17 +4940,15 @@ function startTurnByTurnNavigation() {
     if (currentUserPosition) {
         const userLatLng = currentUserPosition.getLatLng();
         
-        // Update marker icon to navigation style (green line with arrow) - SMALLER SIZE
-        const navIcon = L.divIcon({
-            className: 'custom-user-marker navigation-marker',
-            html: `<div style="position: relative; width: 0; height: 0;">
-                <div style="position: absolute; left: 50%; top: 0; transform: translateX(-50%); width: 4px; height: 20px; background: #34c759; border-radius: 2px; box-shadow: 0 1px 4px rgba(0,0,0,0.3);"></div>
-                <div style="position: absolute; left: 50%; top: 20px; transform: translateX(-50%); width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid #34c759; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));"></div>
-            </div>`,
-            iconSize: [12, 28],
-            iconAnchor: [6, 0]
+        // Keep blue circle icon during navigation (no change to green arrow)
+        // Marker tetap biru saat navigasi sesuai permintaan user
+        const blueIcon = L.divIcon({
+            className: 'custom-user-marker',
+            html: '<div style="background: #3b49df; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 10px rgba(0,0,0,0.3);"></div>',
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
         });
-        currentUserPosition.setIcon(navIcon);
+        currentUserPosition.setIcon(blueIcon);
         
         // Add 3D/isometric perspective class to body and hide sidebar FIRST
         document.body.classList.add('navigating');
@@ -4749,81 +4988,122 @@ function startTurnByTurnNavigation() {
         
         // FIXED: For mobile browsers - hide address bar by scrolling and forcing viewport
         // This works better on Android Chrome and mobile browsers
-        setTimeout(function() {
+        const hideAddressBar = () => {
             // Scroll to hide address bar
             window.scrollTo(0, 1);
-            setTimeout(function() {
+            setTimeout(() => {
                 window.scrollTo(0, 0);
-                // Force viewport update
-                const vh = window.innerHeight;
-                document.documentElement.style.height = vh + 'px';
-                document.body.style.height = vh + 'px';
-            }, 100);
-        }, 100);
-        
-        // FIXED: Additional method to hide browser UI on mobile
-        // Force viewport to actual screen dimensions
-        const forceViewport = () => {
-            const actualHeight = window.innerHeight;
-            const actualWidth = window.innerWidth;
-            document.documentElement.style.height = actualHeight + 'px';
-            document.documentElement.style.width = actualWidth + 'px';
-            document.body.style.height = actualHeight + 'px';
-            document.body.style.width = actualWidth + 'px';
+                // Re-apply fullscreen styles after scroll
+                applyBodyFullscreen();
+                applyFullscreenStyles();
+            }, 50);
         };
-        forceViewport();
+        
+        // Hide address bar multiple times to ensure it stays hidden
+        hideAddressBar();
+        setTimeout(hideAddressBar, 100);
+        setTimeout(hideAddressBar, 300);
+        
         // Re-apply on resize and orientation change
-        window.addEventListener('resize', forceViewport);
+        const handleViewportChange = () => {
+            applyBodyFullscreen();
+            applyFullscreenStyles();
+        };
+        window.addEventListener('resize', handleViewportChange);
         window.addEventListener('orientationchange', () => {
-            setTimeout(forceViewport, 200);
+            setTimeout(handleViewportChange, 200);
         });
         
         // FIXED: FORCE fullscreen styles immediately - BEFORE zoom
         // Use actual window dimensions for mobile (hides address bar)
-        const vh = window.innerHeight || document.documentElement.clientHeight;
-        const vw = window.innerWidth || document.documentElement.clientWidth;
-        const useDvh = CSS.supports('height', '100dvh');
-        const useDvw = CSS.supports('width', '100dvw');
+        // CRITICAL: Get actual screen dimensions after potential address bar hide
+        const getActualDimensions = () => {
+            // Force a small scroll to hide address bar on mobile
+            window.scrollTo(0, 1);
+            setTimeout(() => {
+                window.scrollTo(0, 0);
+            }, 10);
+            
+            // Get actual dimensions after scroll
+            const vh = window.innerHeight || document.documentElement.clientHeight || screen.height;
+            const vw = window.innerWidth || document.documentElement.clientWidth || screen.width;
+            
+            return { vh, vw };
+        };
         
-        // FIXED: Use actual pixel values for mobile to ensure fullscreen
-        const actualHeight = vh + 'px';
-        const actualWidth = vw + 'px';
+        // Get dimensions multiple times to ensure we get the correct size after address bar hides
+        let { vh, vw } = getActualDimensions();
         
-        document.documentElement.style.width = actualWidth;
-        document.documentElement.style.height = actualHeight;
-        document.documentElement.style.margin = '0';
-        document.documentElement.style.padding = '0';
-        document.documentElement.style.overflow = 'hidden';
-        document.documentElement.style.position = 'fixed';
-        document.documentElement.style.top = '0';
-        document.documentElement.style.left = '0';
-        document.documentElement.style.right = '0';
-        document.documentElement.style.bottom = '0';
-        document.documentElement.style.inset = '0';
-        document.documentElement.style.maxWidth = actualWidth;
-        document.documentElement.style.maxHeight = actualHeight;
-        document.documentElement.style.minWidth = actualWidth;
-        document.documentElement.style.minHeight = actualHeight;
+        // Wait a bit and get dimensions again (address bar might hide with delay)
+        setTimeout(() => {
+            const dims = getActualDimensions();
+            if (dims.vh > vh) {
+                vh = dims.vh;
+                vw = dims.vw;
+            }
+        }, 300);
         
-        document.body.style.width = actualWidth;
-        document.body.style.height = actualHeight;
-        document.body.style.margin = '0';
-        document.body.style.padding = '0';
-        document.body.style.overflow = 'hidden';
-        document.body.style.position = 'fixed';
-        document.body.style.top = '0';
-        document.body.style.left = '0';
-        document.body.style.right = '0';
-        document.body.style.bottom = '0';
-        document.body.style.inset = '0';
-        document.body.style.maxWidth = actualWidth;
-        document.body.style.maxHeight = actualHeight;
-        document.body.style.minWidth = actualWidth;
-        document.body.style.minHeight = actualHeight;
+        // CRITICAL: Set viewport meta tag dynamically for mobile
+        let viewportMeta = document.querySelector('meta[name="viewport"]');
+        if (!viewportMeta) {
+            viewportMeta = document.createElement('meta');
+            viewportMeta.name = 'viewport';
+            document.head.appendChild(viewportMeta);
+        }
+        viewportMeta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
         
-        // Hide sidebar for fullscreen navigation
+        // Function to apply fullscreen styles to HTML and body
+        const applyBodyFullscreen = () => {
+            const dims = getActualDimensions();
+            const height = dims.vh + 'px';
+            const width = dims.vw + 'px';
+            
+            // Force HTML and body to exact screen dimensions
+            document.documentElement.style.width = width;
+            document.documentElement.style.height = height;
+            document.documentElement.style.margin = '0';
+            document.documentElement.style.padding = '0';
+            document.documentElement.style.overflow = 'hidden';
+            document.documentElement.style.position = 'fixed';
+            document.documentElement.style.top = '0';
+            document.documentElement.style.left = '0';
+            document.documentElement.style.right = '0';
+            document.documentElement.style.bottom = '0';
+            document.documentElement.style.inset = '0';
+            document.documentElement.style.maxWidth = width;
+            document.documentElement.style.maxHeight = height;
+            document.documentElement.style.minWidth = width;
+            document.documentElement.style.minHeight = height;
+            document.documentElement.style.boxSizing = 'border-box';
+            
+            document.body.style.width = width;
+            document.body.style.height = height;
+            document.body.style.margin = '0';
+            document.body.style.padding = '0';
+            document.body.style.overflow = 'hidden';
+            document.body.style.position = 'fixed';
+            document.body.style.top = '0';
+            document.body.style.left = '0';
+            document.body.style.right = '0';
+            document.body.style.bottom = '0';
+            document.body.style.inset = '0';
+            document.body.style.maxWidth = width;
+            document.body.style.maxHeight = height;
+            document.body.style.minWidth = width;
+            document.body.style.minHeight = height;
+            document.body.style.boxSizing = 'border-box';
+        };
+        
+        // Apply immediately and after delays
+        applyBodyFullscreen();
+        setTimeout(applyBodyFullscreen, 100);
+        setTimeout(applyBodyFullscreen, 300);
+        setTimeout(applyBodyFullscreen, 500);
+        
+        // Hide sidebar for fullscreen navigation, but keep debug tab accessible
         const navbar = document.getElementById('sideNavbar');
         if (navbar) {
+            // Hide sidebar but allow debug tab to be shown if needed
             navbar.style.display = 'none';
             navbar.style.visibility = 'hidden';
             navbar.classList.remove('active');
@@ -4844,52 +5124,150 @@ function startTurnByTurnNavigation() {
             backBtn.style.visibility = 'hidden';
         }
         
+        // CRITICAL: Create floating debug button that stays visible during navigation
+        let floatingDebugBtn = document.getElementById('floatingDebugBtn');
+        if (!floatingDebugBtn) {
+            floatingDebugBtn = document.createElement('button');
+            floatingDebugBtn.id = 'floatingDebugBtn';
+            floatingDebugBtn.className = 'floating-debug-btn';
+            floatingDebugBtn.innerHTML = '🐛 Debug';
+            floatingDebugBtn.title = 'Buka Debug Console';
+            floatingDebugBtn.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 10000;
+                background: rgba(59, 73, 223, 0.95);
+                color: white;
+                border: none;
+                border-radius: 50%;
+                width: 56px;
+                height: 56px;
+                font-size: 24px;
+                cursor: pointer;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.3s ease;
+            `;
+            floatingDebugBtn.onmouseover = function() {
+                this.style.transform = 'scale(1.1)';
+                this.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.4)';
+            };
+            floatingDebugBtn.onmouseout = function() {
+                this.style.transform = 'scale(1)';
+                this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+            };
+            floatingDebugBtn.onclick = function() {
+                // Show sidebar and switch to debug tab
+                const navbar = document.getElementById('sideNavbar');
+                if (navbar) {
+                    navbar.style.display = 'block';
+                    navbar.style.visibility = 'visible';
+                    navbar.classList.add('active');
+                    navbar.classList.remove('collapsed');
+                    switchNavbarTab('debug');
+                }
+            };
+            document.body.appendChild(floatingDebugBtn);
+            console.log('✅ Floating debug button created for navigation mode');
+        } else {
+            // Make sure it's visible
+            floatingDebugBtn.style.display = 'flex';
+            floatingDebugBtn.style.visibility = 'visible';
+            floatingDebugBtn.style.opacity = '1';
+        }
+        
         // FIXED: FORCE map to fullscreen immediately with actual pixel values
-        let mapElement = document.getElementById('map');
+        // Use function to apply styles with latest dimensions
+        const applyFullscreenStyles = () => {
+            const dims = getActualDimensions();
+            const height = dims.vh + 'px';
+            const width = dims.vw + 'px';
+            
+            let mapElement = document.getElementById('map');
+            
+            if (mapElement) {
+                mapElement.style.position = 'fixed';
+                mapElement.style.top = '0';
+                mapElement.style.left = '0';
+                mapElement.style.right = '0';
+                mapElement.style.bottom = '0';
+                mapElement.style.width = width;
+                mapElement.style.height = height;
+                mapElement.style.margin = '0';
+                mapElement.style.padding = '0';
+                mapElement.style.zIndex = '9999';
+                mapElement.style.overflow = 'hidden';
+                mapElement.style.inset = '0';
+                mapElement.style.minWidth = width;
+                mapElement.style.minHeight = height;
+                mapElement.style.maxWidth = width;
+                mapElement.style.maxHeight = height;
+                mapElement.style.boxSizing = 'border-box';
+            }
+            
+            // FIXED: FORCE leaflet container to fullscreen with actual pixel values
+            const leafletContainer = document.querySelector('.leaflet-container');
+            if (leafletContainer) {
+                leafletContainer.style.position = 'fixed';
+                leafletContainer.style.top = '0';
+                leafletContainer.style.left = '0';
+                leafletContainer.style.right = '0';
+                leafletContainer.style.bottom = '0';
+                leafletContainer.style.width = width;
+                leafletContainer.style.height = height;
+                leafletContainer.style.margin = '0';
+                leafletContainer.style.padding = '0';
+                leafletContainer.style.overflow = 'visible';
+                leafletContainer.style.inset = '0';
+                leafletContainer.style.minWidth = width;
+                leafletContainer.style.minHeight = height;
+                leafletContainer.style.maxWidth = width;
+                leafletContainer.style.maxHeight = height;
+                leafletContainer.style.zIndex = '9999';
+                leafletContainer.style.boxSizing = 'border-box';
+                // CRITICAL: Remove any 3D transforms
+                leafletContainer.style.transform = 'none';
+                leafletContainer.style.transformStyle = 'flat';
+                leafletContainer.style.perspective = 'none';
+            }
+            
+            // Apply to all leaflet panes
+            const leafletPanes = document.querySelectorAll('.leaflet-pane, .leaflet-map-pane');
+            leafletPanes.forEach(function(pane) {
+                pane.style.width = width;
+                pane.style.height = height;
+                pane.style.transform = 'none';
+                pane.style.transformStyle = 'flat';
+                pane.style.perspective = 'none';
+            });
+            
+            // Force map to recalculate size
+            if (map) {
+                setTimeout(() => {
+                    map.invalidateSize();
+                }, 100);
+            }
+        };
         
-        if (mapElement) {
-            mapElement.style.position = 'fixed';
-            mapElement.style.top = '0';
-            mapElement.style.left = '0';
-            mapElement.style.right = '0';
-            mapElement.style.bottom = '0';
-            mapElement.style.width = actualWidth;
-            mapElement.style.height = actualHeight;
-            mapElement.style.margin = '0';
-            mapElement.style.padding = '0';
-            mapElement.style.zIndex = '9999'; // FIXED: Higher z-index to ensure map is on top
-            mapElement.style.overflow = 'hidden';
-            mapElement.style.inset = '0';
-            mapElement.style.minWidth = actualWidth;
-            mapElement.style.minHeight = actualHeight;
-            mapElement.style.maxWidth = actualWidth;
-            mapElement.style.maxHeight = actualHeight;
-        }
+        // Apply immediately
+        applyFullscreenStyles();
         
-        // FIXED: FORCE leaflet container to fullscreen with actual pixel values
-        const leafletContainer = document.querySelector('.leaflet-container');
-        if (leafletContainer) {
-            leafletContainer.style.position = 'fixed';
-            leafletContainer.style.top = '0';
-            leafletContainer.style.left = '0';
-            leafletContainer.style.right = '0';
-            leafletContainer.style.bottom = '0';
-            leafletContainer.style.width = actualWidth;
-            leafletContainer.style.height = actualHeight;
-            leafletContainer.style.margin = '0';
-            leafletContainer.style.padding = '0';
-            leafletContainer.style.overflow = 'visible';
-            leafletContainer.style.inset = '0';
-            leafletContainer.style.minWidth = actualWidth;
-            leafletContainer.style.minHeight = actualHeight;
-            leafletContainer.style.maxWidth = actualWidth;
-            leafletContainer.style.maxHeight = actualHeight;
-            leafletContainer.style.zIndex = '9999'; // FIXED: Higher z-index
-            // CRITICAL: Remove any 3D transforms
-            leafletContainer.style.transform = 'none';
-            leafletContainer.style.transformStyle = 'flat';
-            leafletContainer.style.perspective = 'none';
-        }
+        // Re-apply after delays to catch address bar hiding
+        setTimeout(applyFullscreenStyles, 100);
+        setTimeout(applyFullscreenStyles, 300);
+        setTimeout(applyFullscreenStyles, 500);
+        
+        // Re-apply on resize and orientation change
+        const handleFullscreenResize = () => {
+            applyFullscreenStyles();
+        };
+        window.addEventListener('resize', handleFullscreenResize);
+        window.addEventListener('orientationchange', () => {
+            setTimeout(handleFullscreenResize, 200);
+        });
         
         // Force remove 3D transforms from all leaflet panes
         const leafletPanes = document.querySelectorAll('.leaflet-pane, .leaflet-map-pane, .leaflet-tile-pane, .leaflet-overlay-pane, .leaflet-shadow-pane, .leaflet-marker-pane, .leaflet-tooltip-pane, .leaflet-popup-pane, .leaflet-tile-container');
@@ -4899,8 +5277,56 @@ function startTurnByTurnNavigation() {
             pane.style.perspective = 'none';
         });
         
-        // Auto-zoom DISABLED - keep current zoom level when navigation starts
-        // map.setView(userLatLng, 19, { animate: true, duration: 0.5 });
+        // CRITICAL: NO AUTO-ZOOM - keep current zoom level when navigation starts
+        // User can manually zoom and pan the map - no forced changes
+        // map.setView(userLatLng, 19, { animate: true, duration: 0.5 }); // DISABLED
+        
+        // CRITICAL: Ensure map remains interactive - user can drag, zoom, and pan manually
+        // Map controls remain enabled during navigation
+        // Force enable all map controls to ensure map is not locked
+        setTimeout(() => {
+            if (map.dragging) {
+                map.dragging.enable(); // Ensure dragging is enabled
+            }
+            if (map.touchZoom) {
+                map.touchZoom.enable(); // Ensure touch zoom is enabled
+            }
+            if (map.doubleClickZoom) {
+                map.doubleClickZoom.enable(); // Ensure double-click zoom is enabled
+            }
+            if (map.scrollWheelZoom) {
+                map.scrollWheelZoom.enable(); // Ensure scroll wheel zoom is enabled
+            }
+            if (map.boxZoom) {
+                map.boxZoom.enable(); // Ensure box zoom is enabled
+            }
+            if (map.keyboard) {
+                map.keyboard.enable(); // Ensure keyboard controls are enabled
+            }
+            console.log('✅ Map controls enabled - user can manually zoom, pan, and interact with map');
+        }, 100);
+        
+        // Also enable immediately
+        if (map.dragging) {
+            map.dragging.enable();
+        }
+        if (map.touchZoom) {
+            map.touchZoom.enable();
+        }
+        if (map.doubleClickZoom) {
+            map.doubleClickZoom.enable();
+        }
+        if (map.scrollWheelZoom) {
+            map.scrollWheelZoom.enable();
+        }
+        if (map.boxZoom) {
+            map.boxZoom.enable();
+        }
+        if (map.keyboard) {
+            map.keyboard.enable();
+        }
+        
+        console.log('✅ Map controls enabled immediately - user can manually zoom, pan, and interact with map');
         
         // Listen for fullscreen changes
         const fullscreenChange = () => {
@@ -4984,7 +5410,12 @@ function startTurnByTurnNavigation() {
             }
         }, 200); // FIXED: Check every 200ms for maximum responsiveness - ensures announcements are made immediately when distance <= 50m
         
-        console.log('[Navigation] ✅ Started announceNextDirection interval (every 300ms for real-time accuracy)');
+        console.log('[Navigation] ✅ Started announceNextDirection interval (every 200ms for real-time accuracy)');
+        console.log('[Navigation] 📊 Route data for turn detection:', {
+            hasRouteData: currentRouteData !== null,
+            hasInstructions: currentRouteData && currentRouteData.instructions ? currentRouteData.instructions.length : 0,
+            hasCoordinates: currentRouteData && currentRouteData.coordinates ? currentRouteData.coordinates.length : 0
+        });
         console.log('[Navigation] 📊 Navigation state:', {
             isNavigating: isNavigating,
             hasRoute: !!route,
@@ -4995,7 +5426,7 @@ function startTurnByTurnNavigation() {
         });
         
         // FIXED: Handle window resize to maintain fullscreen with actual pixel values
-        const handleResize = () => {
+        const handleNavigationResize = () => {
             if (document.body.classList.contains('navigating')) {
                 // FIXED: Use actual window dimensions for mobile
                 const resizeVh = window.innerHeight;
@@ -5037,10 +5468,10 @@ function startTurnByTurnNavigation() {
             }
         };
         
-        window.addEventListener('resize', handleResize);
+        window.addEventListener('resize', handleNavigationResize);
         window.addEventListener('orientationchange', () => {
             setTimeout(() => {
-                handleResize();
+                handleNavigationResize();
                 map.invalidateSize();
             }, 200);
         });
@@ -5369,50 +5800,35 @@ function extractLocation(command) {
 // userLatLng: current user location for proximity search (optional)
 async function geocodeLocation(location, userLatLng = null) {
     try {
+        // Track if destination was successfully found
+        let destinationFound = false;
+        
         // FIRST: Check knownCities BEFORE trying Nominatim API (faster and more reliable)
         const cityKey = location.toLowerCase().trim().replace(/[.,;:!?]/g, '').trim();
         if (knownCities[cityKey]) {
             const city = knownCities[cityKey];
             console.log('✅ Found in knownCities:', cityKey, '→', city.name);
             
-            // Stop microphone untuk announcement
+            // STEP 4: Matikan mikrofon setelah tujuan ditemukan
             if (isListening && recognition) {
                 recognition.stop();
                 isListening = false;
             }
             
-            // Announce destination
-            speakText('Tujuan Anda adalah ' + city.name, 'id-ID', true, function() {
-                speakText('Jika ingin mengganti tujuan sebutkan lokasi dan jika tidak katakan navigasi untuk memulai perjalanan', 'id-ID', true, function() {
-                    setTimeout(function() {
-                        if (recognition && !isListening) {
-                            try {
-                                recognition.start();
-                                isListening = true;
-                                recognition._waitingForNavigasi = true;
-                                console.log('🎤 Microphone restarted - listening for "Navigasi" command (10 second window)');
-                                
-                                setTimeout(function() {
-                                    if (recognition && recognition._waitingForNavigasi && isListening) {
-                                        recognition.stop();
-                                        recognition._stopped = true;
-                                        recognition._waitingForNavigasi = false;
-                                        isListening = false;
-                                        console.log('🔇 Microphone stopped - "Navigasi" window expired');
-                                        updateVoiceStatus('✅ Tujuan: ' + city.name + ' - Ucapkan "Navigasi" untuk memulai');
-                                    }
-                                }, 10000);
-                            } catch (error) {
-                                console.error('Failed to restart microphone:', error);
-                                recognition._stopped = true;
-                            }
-                        }
-                    }, 500);
-                });
-            });
+            // STEP 5: Update destination dan tunggu route dibuat
+            // Set pending announcement data untuk dipanggil setelah route dibuat
+            pendingRouteAnnouncementData = {
+                shortName: city.name,
+                fullName: city.name
+            };
             
             updateDestination(city.lat, city.lng, city.name);
-            updateVoiceStatus('✅ Tujuan: ' + city.name + ' - Ucapkan "Navigasi" untuk memulai');
+            updateVoiceStatus('🔍 Membuat rute ke ' + city.name + '...');
+            
+            // Announcement akan dipanggil di event handler 'routesfound' setelah route dibuat
+            console.log('⏳ Waiting for route to be created - announcement will be triggered automatically');
+            
+            destinationFound = true;
             return; // Exit early - location found in knownCities
         }
         
@@ -5475,21 +5891,24 @@ async function geocodeLocation(location, userLatLng = null) {
             const response = await fetchNominatim(geocodeUrl);
             const data = await response.json();
             
-            console.log('📊 Geocoding results:', data.results ? data.results.length : 0, 'results found');
+            // FIXED: Nominatim returns array directly, not object with results property
+            const results = Array.isArray(data) ? data : (data.results || []);
+            console.log('📊 Geocoding results:', results.length, 'results found');
             
-            if (data && data.length > 0) {
+            if (results && results.length > 0) {
                 // If bounded search, find closest result to user location
-                let result = data[0];
+                let result = results[0];
+                let minDistance = 0;
                 
                 if (boundedSearch && currentUserPosition) {
                     const userLatLng = currentUserPosition.getLatLng();
                     
                     // Find closest result to user location
-                    let minDistance = Infinity;
-                    data.forEach(function(item) {
+                    minDistance = Infinity;
+                    results.forEach(function(item) {
                         const dist = Math.sqrt(
-                            Math.pow(item.lat - userLatLng.lat, 2) + 
-                            Math.pow(item.lon - userLatLng.lng, 2)
+                            Math.pow(parseFloat(item.lat) - userLatLng.lat, 2) + 
+                            Math.pow(parseFloat(item.lon) - userLatLng.lng, 2)
                         );
                         if (dist < minDistance) {
                             minDistance = dist;
@@ -5505,6 +5924,12 @@ async function geocodeLocation(location, userLatLng = null) {
                 const fullName = result.display_name || result.name;
                 const shortName = shortenAddress(fullName);
                 
+                console.log('[Navigation] Destination found:', fullName, 'at', newLat, newLng);
+                
+                // CRITICAL: Mark destination as found BEFORE any operations
+                // This ensures fallback won't run even if there's an error later
+                destinationFound = true;
+                
                 // Stop microphone briefly to announce destination, then restart for "Navigasi" command
                 // Keep microphone active for 10 seconds to listen for "Navigasi" command
                 if (isListening && recognition) {
@@ -5512,46 +5937,39 @@ async function geocodeLocation(location, userLatLng = null) {
                     isListening = false;
                 }
                 
-                // Announce shortened destination name
-                speakText('Tujuan Anda adalah ' + shortName, 'id-ID', true, function() {
-                    // After announcing destination, give instruction before asking for "Navigasi" command
-                    speakText('Jika ingin mengganti tujuan sebutkan lokasi dan jika tidak katakan navigasi untuk memulai perjalanan', 'id-ID', true, function() {
-                        // Restart microphone to listen for "Navigasi" command (window of 10 seconds)
-                        setTimeout(function() {
-                            if (recognition && !isListening) {
-                                try {
-                                    recognition.start();
-                                    isListening = true;
-                                    recognition._waitingForNavigasi = true; // Flag to mark waiting for Navigasi
-                                    console.log('🎤 Microphone restarted - listening for "Navigasi" command (10 second window)');
-                                    
-                                    // Auto-stop after 10 seconds if "Navigasi" not said
-                                    setTimeout(function() {
-                                        if (recognition && recognition._waitingForNavigasi && isListening) {
-                                            recognition.stop();
-                                            recognition._stopped = true;
-                                            recognition._waitingForNavigasi = false;
-                                            isListening = false;
-                                            console.log('🔇 Microphone stopped - "Navigasi" window expired, say "Halo" to restart');
-                                            updateVoiceStatus('✅ Tujuan: ' + shortName + ' - Ucapkan "Halo" lalu "Navigasi" untuk memulai');
-                                        }
-                                    }, 10000); // 10 second window
-                                } catch (error) {
-                                    console.error('Failed to restart microphone:', error);
-                                    recognition._stopped = true;
-                                }
-                            }
-                        }, 500);
-                    });
-                });
+                // STEP 4: Matikan mikrofon setelah tujuan ditemukan
+                // Mikrofon sudah dimatikan di atas (baris 5651-5654)
                 
-                // Update destination with full name
+                // STEP 5: Update destination dan tunggu route dibuat
+                // Set pending announcement data untuk dipanggil setelah route dibuat
+                pendingRouteAnnouncementData = {
+                    shortName: shortName,
+                    fullName: fullName
+                };
+                
                 updateDestination(newLat, newLng, fullName);
-                updateVoiceStatus('✅ Tujuan: ' + shortName + ' - Ucapkan "Navigasi" untuk memulai');
+                updateVoiceStatus('🔍 Membuat rute ke ' + shortName + '...');
+                
+                // Announcement akan dipanggil di event handler 'routesfound' setelah route dibuat
+                console.log('⏳ Waiting for route to be created - announcement will be triggered automatically');
+                
+                // CRITICAL: Return to prevent fallback (destinationFound already set above)
                 return;
+            } else {
+                console.log('⚠️ No geocoding results found for:', location);
             }
         } catch (nominatimError) {
-            console.log('Nominatim failed:', nominatimError);
+            console.error('❌ Nominatim geocoding failed:', nominatimError);
+            // Don't log empty error object, log the actual error message
+            if (nominatimError && nominatimError.message) {
+                console.error('   Error details:', nominatimError.message);
+            }
+        }
+        
+        // CRITICAL: Only fallback to city list if destination was NOT found
+        if (destinationFound) {
+            console.log('✅ Destination already found, skipping fallback city check');
+            return;
         }
         
         // Fallback to hardcoded cities for Indonesia (should not reach here if knownCities check at top worked)
@@ -6037,9 +6455,14 @@ function announceWelcomeGuide() {
         return;
     }
     
-    const welcomeText = 'Senavision Siap, Panduan Penggunaan: ' +
-        'Isilah rute terlebih dahulu, Ucapkan Rute 1 atau Rute 2 dan seterusnya untuk menuju Lokasi yang anda Tuju. ' +
-        'Selamat menikmati Perjalanan';
+    // ALUR BARU: Panduan penggunaan yang jelas sesuai permintaan
+    const welcomeText = 'Selamat datang di Senavision. Panduan penggunaan: ' +
+        'Setelah suara ini selesai, mikrofon akan aktif. ' +
+        'Sebutkan nama tujuan Anda, misalnya Jakarta, Bandung, atau nama lokasi lainnya. ' +
+        'Setelah tujuan ditetapkan, Anda akan mendengar informasi rute. ' +
+        'Kemudian ucapkan "Navigasi" untuk memulai perjalanan. ' +
+        'Navigator akan memberikan petunjuk arah seperti "Belok Kanan" dan "Belok Kiri" pada setiap belokan. ' +
+        'Selamat menikmati perjalanan Anda.';
     
     console.log('📢 Starting welcome guide announcement');
     updateVoiceStatus('📢 Memutar panduan penggunaan...');
@@ -6048,7 +6471,7 @@ function announceWelcomeGuide() {
     hasUserInteraction = true;
     
     speakText(welcomeText, 'id-ID', true, function() {
-        // After welcome message finishes, announce microphone is activated
+        // STEP 2: Setelah announcement selesai, aktifkan mikrofon
         console.log('✅ Welcome guide finished - activating microphone');
         
         // Initialize speech recognition if not already done
@@ -6061,13 +6484,13 @@ function announceWelcomeGuide() {
             recognition._stopped = false;
         }
         
-        // Start microphone to listen for user commands (without additional speech)
+        // STEP 2: Aktifkan mikrofon untuk mendengarkan nama tujuan
         if (!isListening && recognition) {
             try {
                 recognition.start();
                 isListening = true;
                 suppressMicActivationSpeech = false;
-                console.log('✅ Microphone activated after welcome guide');
+                console.log('✅ Microphone activated after welcome guide - listening for destination');
                 updateVoiceStatus('🎤 Mikrofon aktif. Sebutkan tujuan Anda.');
             } catch (error) {
                 console.error('❌ Failed to activate microphone:', error);
@@ -6307,15 +6730,39 @@ function _doSpeak(text, lang, priority, onComplete, preview) {
     
     // CRITICAL: Langsung speak tanpa pengecekan lagi
     try {
-        // CRITICAL: Cancel semua speech yang sedang berjalan untuk memastikan announcement baru bisa dimulai
-        if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
-            console.log('[Navigation] 🔄 Canceling existing speech before new announcement...');
+        // CRITICAL: Untuk priority announcement (seperti belokan), cancel speech yang sedang berjalan
+        // Tapi pastikan tidak cancel announcement belokan yang baru saja dimulai
+        if (priority && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
+            console.log('[Navigation] 🔄 Priority announcement - canceling existing speech before new announcement...');
             window.speechSynthesis.cancel();
             // Tunggu sedikit untuk cancel selesai
             setTimeout(() => {
                 _doSpeakInternal(utterance, text, lang, priority, onComplete, preview);
             }, 100);
             return;
+        }
+        
+        // Untuk non-priority, hanya cancel jika tidak ada speech navigation yang penting
+        if (!priority && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
+            // Check jika speech yang sedang berjalan adalah navigation speech
+            const isNavigationSpeech = (typeof window.SpeechCoordinator !== 'undefined') && 
+                                      window.SpeechCoordinator.isNavigationSpeaking;
+            if (!isNavigationSpeech) {
+                console.log('[Navigation] 🔄 Canceling non-navigation speech before new announcement...');
+                window.speechSynthesis.cancel();
+                setTimeout(() => {
+                    _doSpeakInternal(utterance, text, lang, priority, onComplete, preview);
+                }, 100);
+                return;
+            } else {
+                // Jika navigation speech sedang berjalan, queue announcement ini
+                console.log('[Navigation] ⏸️ Navigation speech active, queuing announcement...');
+                if (typeof announcementQueue === 'undefined') {
+                    announcementQueue = [];
+                }
+                announcementQueue.push({ text, lang, priority, onComplete, preview });
+                return;
+            }
         }
         
         _doSpeakInternal(utterance, text, lang, priority, onComplete, preview);
@@ -6364,15 +6811,32 @@ function _doSpeakInternal(utterance, text, lang, priority, onComplete, preview) 
         
         console.log('[Navigation] 🎯 Calling window.speechSynthesis.speak() NOW...');
         
-        // CRITICAL: Pastikan tidak ada speech yang sedang berjalan
-        if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
-            console.log('[Navigation] 🔄 Canceling existing speech...');
+        // CRITICAL: Untuk priority announcement (belokan), selalu cancel speech yang sedang berjalan
+        // Untuk non-priority, hanya cancel jika bukan navigation speech
+        if (priority && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
+            console.log('[Navigation] 🔄 Priority announcement - canceling existing speech...');
             window.speechSynthesis.cancel();
             // Tunggu cancel selesai
             setTimeout(() => {
                 window.speechSynthesis.speak(utterance);
-                console.log('[Navigation] ✅✅✅ window.speechSynthesis.speak() CALLED (after cancel)');
+                console.log('[Navigation] ✅✅✅ window.speechSynthesis.speak() CALLED (after cancel for priority)');
             }, 150);
+        } else if (!priority && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
+            // Untuk non-priority, check apakah speech yang sedang berjalan adalah navigation
+            const isNavigationSpeech = (typeof window.SpeechCoordinator !== 'undefined') && 
+                                      window.SpeechCoordinator.isNavigationSpeaking;
+            if (!isNavigationSpeech) {
+                console.log('[Navigation] 🔄 Canceling non-navigation speech...');
+                window.speechSynthesis.cancel();
+                setTimeout(() => {
+                    window.speechSynthesis.speak(utterance);
+                    console.log('[Navigation] ✅✅✅ window.speechSynthesis.speak() CALLED (after cancel)');
+                }, 150);
+            } else {
+                // Navigation speech sedang berjalan, langsung speak (akan queue atau interrupt)
+                window.speechSynthesis.speak(utterance);
+                console.log('[Navigation] ✅✅✅ window.speechSynthesis.speak() CALLED (navigation active)');
+            }
         } else {
             // CRITICAL: Pastikan voices sudah loaded sebelum speak
             const voices = window.speechSynthesis.getVoices();
@@ -7507,112 +7971,211 @@ function extractTurnDirection(text) {
     return null;
 }
 
-// Function to speak turn-by-turn directions based on user position (Google Maps style)
-// MODIFIED: Now announces ALL turns (big and small roads) with simple format "belok kanan" / "belok kiri"
+// NEW: Function to initialize turn instructions list from directions container
+// This reads all turn instructions from the directions/petunjuk tab
+function initializeTurnInstructionsList() {
+    turnInstructionsList = [];
+    currentTurnIndex = 0;
+    
+    if (!currentRouteData || !currentRouteData.instructions) {
+        console.log('[Navigation] ⚠️ No route data available for turn instructions');
+        return;
+    }
+    
+    console.log('[Navigation] 🔍 Initializing turn instructions list from route data...');
+    
+    // Read all instructions from route data
+    for (let i = 0; i < currentRouteData.instructions.length; i++) {
+        const instruction = currentRouteData.instructions[i];
+        if (!instruction || !instruction.text) continue;
+        
+        const text = convertInstructionToNatural(instruction.text);
+        
+        // Skip generic instructions (departure/arrival)
+        if (text.toLowerCase().includes('head') || 
+            text.toLowerCase().includes('berangkat') ||
+            text.toLowerCase().includes('arrived') ||
+            text.toLowerCase().includes('tiba')) {
+            continue;
+        }
+        
+        // Skip "go straight" or "lurus terus" instructions (not turns)
+        if (text.toLowerCase().includes('go straight') || 
+            text.toLowerCase().includes('lurus terus') ||
+            text.toLowerCase().includes('continue straight') ||
+            text.toLowerCase().includes('lanjutkan')) {
+            continue;
+        }
+        
+        // Extract turn direction (kanan/kiri) - only process turn instructions
+        const turnDirection = extractTurnDirection(text);
+        if (!turnDirection) {
+            continue;
+        }
+        
+        // Get coordinate for this instruction
+        let instructionLatLng = null;
+        
+        // Try to get instruction coordinate from waypoint
+        if (instruction.waypoint) {
+            const waypoint = instruction.waypoint;
+            if (Array.isArray(waypoint) && waypoint.length >= 2) {
+                instructionLatLng = L.latLng(waypoint[0], waypoint[1]);
+            } else if (waypoint.lat !== undefined && waypoint.lng !== undefined) {
+                instructionLatLng = L.latLng(waypoint.lat, waypoint.lng);
+            } else if (waypoint instanceof L.LatLng) {
+                instructionLatLng = waypoint;
+            }
+        }
+        
+        // If no waypoint, use instruction index to find coordinate in route
+        if (!instructionLatLng && instruction.index !== undefined && currentRouteData.coordinates) {
+            const coordIndex = instruction.index;
+            if (coordIndex >= 0 && coordIndex < currentRouteData.coordinates.length) {
+                const coord = currentRouteData.coordinates[coordIndex];
+                if (Array.isArray(coord) && coord.length >= 2) {
+                    instructionLatLng = L.latLng(coord[0], coord[1]);
+                } else if (coord.lat !== undefined && coord.lng !== undefined) {
+                    instructionLatLng = L.latLng(coord.lat, coord.lng);
+                }
+            }
+        }
+        
+        // If still no coordinate, use instruction index as approximate coordinate index
+        if (!instructionLatLng && currentRouteData.coordinates && currentRouteData.coordinates.length > 0) {
+            let coordIndex = i;
+            if (coordIndex >= 0 && coordIndex < currentRouteData.coordinates.length) {
+                const coord = currentRouteData.coordinates[coordIndex];
+                if (Array.isArray(coord) && coord.length >= 2) {
+                    instructionLatLng = L.latLng(coord[0], coord[1]);
+                } else if (coord.lat !== undefined && coord.lng !== undefined) {
+                    instructionLatLng = L.latLng(coord.lat, coord.lng);
+                }
+            }
+        }
+        
+        // If we have coordinate, add to turn instructions list
+        if (instructionLatLng) {
+            turnInstructionsList.push({
+                text: text,
+                coordinate: instructionLatLng,
+                lastAnnouncedDistance: Infinity, // Track last announced distance to detect 10m changes
+                instructionIndex: i,
+                originalText: instruction.text
+            });
+            console.log('[Navigation] ✅ Added turn instruction:', text, 'at coordinate', instructionLatLng.lat.toFixed(6), instructionLatLng.lng.toFixed(6));
+        } else {
+            console.log('[Navigation] ⚠️ Turn instruction', i, ':', text, '- No coordinate found, skipping');
+        }
+    }
+    
+    console.log('[Navigation] ✅ Initialized', turnInstructionsList.length, 'turn instructions');
+}
+
+// NEW: Function to announce turn instructions with real-time distance updates
+// This replaces the old announceNextDirection logic
+// Announcements happen every 10 meters as user moves closer to the turn
 function announceNextDirection() {
     if (!voiceDirectionsEnabled || !route || !isNavigating || !currentRouteData || !currentUserPosition) return;
     
     try {
-        // Get route instructions from DOM
-        const routingContainer = document.querySelector('.leaflet-routing-alternatives-container');
-        if (!routingContainer) return;
+        const userLatLng = currentUserPosition.getLatLng();
+        if (!userLatLng) return;
         
-        const activeRoute = routingContainer.querySelector('.leaflet-routing-alt:not(.leaflet-routing-alt-minimized)');
-        if (!activeRoute) return;
+        // Initialize turn instructions list if empty
+        if (turnInstructionsList.length === 0) {
+            initializeTurnInstructionsList();
+        }
         
-        const instructionRows = activeRoute.querySelectorAll('tbody tr');
-        if (!instructionRows.length) return;
+        // If still no turn instructions, return
+        if (turnInstructionsList.length === 0) {
+            console.log('[Navigation] ⚠️ No turn instructions available');
+            return;
+        }
         
-        // MODIFIED: Check ALL instructions (not just first 5) to catch all turns
-        for (let i = 0; i < instructionRows.length; i++) {
-            const row = instructionRows[i];
+        // Check if we have a current turn to track
+        if (currentTurnIndex >= turnInstructionsList.length) {
+            console.log('[Navigation] ✅ All turn instructions completed');
+            return;
+        }
+        
+        const currentTurn = turnInstructionsList[currentTurnIndex];
+        if (!currentTurn || !currentTurn.coordinate) {
+            // Move to next turn
+            currentTurnIndex++;
+            return;
+        }
+        
+        // Calculate real-time distance from user to current turn
+        const realTimeDistance = userLatLng.distanceTo(currentTurn.coordinate);
+        
+        // Round distance to nearest meter
+        const roundedDistance = Math.round(realTimeDistance);
+        
+        // Check if user has passed the turn (distance < 10m)
+        if (roundedDistance < 10) {
+            console.log('[Navigation] ✅ User passed turn:', currentTurn.text, 'Distance:', roundedDistance, 'm');
             
-            // Skip hidden rows
-            if (row.style.display === 'none') continue;
-            
-            const cells = row.querySelectorAll('td');
-            
-            if (cells.length < 2) continue;
-            
-            // Get instruction text and distance
-            let instructionText = row.querySelector('.leaflet-routing-instruction-text');
-            let instructionDistance = row.querySelector('.leaflet-routing-instruction-distance');
-            
-            if (!instructionText && cells.length >= 2) {
-                instructionText = cells[1];
-            }
-            if (!instructionDistance && cells.length >= 3) {
-                instructionDistance = cells[2];
-            }
-            
-            if (!instructionText) continue;
-            
-            const originalText = instructionText.textContent.trim();
-            const text = convertInstructionToNatural(originalText);
-            const distance = instructionDistance ? instructionDistance.textContent.trim() : '';
-            
-            // Skip if already announced or empty
-            if (!text || text === lastAnnouncedInstruction || announcedInstructions.includes(text)) {
-                continue;
-            }
-            
-            // Skip generic instructions (departure/arrival)
-            if (text.toLowerCase().includes('head') || 
-                text.toLowerCase().includes('berangkat') ||
-                text.toLowerCase().includes('arrived') ||
-                text.toLowerCase().includes('tiba')) {
-                continue;
-            }
-            
-            // Skip "go straight" or "lurus terus" instructions (not turns)
-            if (text.toLowerCase().includes('go straight') || 
-                text.toLowerCase().includes('lurus terus') ||
-                text.toLowerCase().includes('continue straight') ||
-                text.toLowerCase().includes('lanjutkan')) {
-                continue;
-            }
-            
-            // Extract turn direction (kanan/kiri)
-            const turnDirection = extractTurnDirection(text);
-            
-            // Only announce if it's a turn instruction (has direction)
-            if (!turnDirection) {
-                continue;
-            }
-            
-            // Parse distance - IMPROVED: Use more accurate calculation
-            let distanceInMeters = 0;
-            if (distance) {
-                const distanceInMeters = parseDistance(distance);
+            // Announce "0m" if not already announced
+            if (currentTurn.lastAnnouncedDistance > 0) {
+                const turnInstruction = currentTurn.text + ' 0 meter';
+                console.log('[Navigation] 🔊 Announcing final turn instruction:', turnInstruction);
                 
-                // Announce if within 200 meters and is a turn instruction
-                if (distanceInMeters <= 200 && distanceInMeters > 0) {
-                    console.log('📍 Next turn:', text, 'in', distance);
-                    
-                    // Only announce if not previously announced
-                    if (text !== lastAnnouncedInstruction && !announcedInstructions.includes(text)) {
-                        lastAnnouncedInstruction = text;
-                        announcedInstructions.push(text); // Mark as announced
-                        
-                        // BARU: Mode detector sudah dimatikan, jadi navigator bisa langsung berbicara
-                        const turnInstruction = distanceInMeters >= 2 
-                            ? 'Setelah ' + Math.round(distanceInMeters) + ' meter ' + text
-                            : text + ' sekarang';
-                        
-                        console.log('[Navigation] 🔊 Announcing turn instruction:', turnInstruction);
-                        
-                        // Pastikan text tidak kosong sebelum speak
-                        if (!turnInstruction || turnInstruction.trim() === '') {
-                            console.warn('[Navigation] ⚠️ Empty turn instruction, skipping');
-                            return;
-                        }
-                        
-                        // Announce the turn instruction (optimized for visually impaired users)
+                if (typeof window.SpeechCoordinator !== 'undefined') {
+                    const canSpeak = window.SpeechCoordinator.requestSpeak('high');
+                    if (canSpeak) {
                         speakText(turnInstruction, 'id-ID', true);
                     }
-                    break; // Only announce one instruction at a time
+                } else {
+                    speakText(turnInstruction, 'id-ID', true);
                 }
             }
+            
+            // Remove current turn and move to next
+            turnInstructionsList.splice(currentTurnIndex, 1);
+            // currentTurnIndex stays the same (next turn becomes current)
+            console.log('[Navigation] ✅ Moved to next turn. Remaining turns:', turnInstructionsList.length - currentTurnIndex);
+            return;
+        }
+        
+        // Check if distance has decreased by 10 meters or more since last announcement
+        const distanceDecreased = currentTurn.lastAnnouncedDistance - roundedDistance;
+        
+        if (distanceDecreased >= 10 || currentTurn.lastAnnouncedDistance === Infinity) {
+            // Update last announced distance
+            currentTurn.lastAnnouncedDistance = roundedDistance;
+            
+            // Create announcement text
+            const turnInstruction = currentTurn.text + ' ' + roundedDistance + ' meter';
+            
+            console.log('[Navigation] 🔊 Announcing turn instruction:', turnInstruction, 'Real-time distance:', roundedDistance, 'meters');
+            
+            // Request permission from SpeechCoordinator
+            if (typeof window.SpeechCoordinator !== 'undefined') {
+                const canSpeak = window.SpeechCoordinator.requestSpeak('high');
+                if (!canSpeak) {
+                    console.warn('[Navigation] ⚠️ Turn announcement blocked by SpeechCoordinator, will retry...');
+                    setTimeout(() => {
+                        const retryCanSpeak = window.SpeechCoordinator.requestSpeak('high');
+                        if (retryCanSpeak) {
+                            console.log('[Navigation] ✅ Retry successful, announcing turn instruction');
+                            speakText(turnInstruction, 'id-ID', true);
+                        } else {
+                            console.warn('[Navigation] ⚠️ Retry failed, forcing announcement anyway');
+                            if (window.speechSynthesis.speaking) {
+                                window.speechSynthesis.cancel();
+                            }
+                            setTimeout(() => {
+                                speakText(turnInstruction, 'id-ID', true);
+                            }, 100);
+                        }
+                    }, 200);
+                    return;
+                }
+            }
+            
+            // Announce the turn instruction
+            speakText(turnInstruction, 'id-ID', true);
         }
     } catch (error) {
         console.error('[Navigation] ❌ Error in announceNextDirection:', error);
@@ -8280,8 +8843,13 @@ function createTurnMarkers(routeData) {
 
 // Function to clear all turn markers
 function clearTurnMarkers() {
+    // Ensure turnMarkers is defined
+    if (typeof turnMarkers === 'undefined') {
+        turnMarkers = [];
+    }
+    
     turnMarkers.forEach(function(turnMarkerData) {
-        if (turnMarkerData.marker) {
+        if (turnMarkerData && turnMarkerData.marker) {
             map.removeLayer(turnMarkerData.marker);
         }
     });
@@ -8850,11 +9418,38 @@ function createSingleTurnMarker(turnLatLng, turnDirection, instructionText, dist
 
 // Function to clear all turn markers
 function clearTurnMarkers() {
-    turnMarkers.forEach(function(marker) {
-        map.removeLayer(marker);
-    });
+    // Ensure turnMarkers is defined before using it
+    if (typeof turnMarkers === 'undefined') {
+        turnMarkers = [];
+    }
+    if (typeof turnMarkerData === 'undefined') {
+        turnMarkerData = [];
+    }
+    
+    // Clear markers - handle both formats: array of markers or array of objects with marker property
+    if (turnMarkers && turnMarkers.length > 0) {
+        turnMarkers.forEach(function(marker) {
+            // Check if marker is an object with marker property or direct marker
+            if (marker && typeof marker === 'object') {
+                if (marker.marker && map.hasLayer(marker.marker)) {
+                    map.removeLayer(marker.marker);
+                } else if (map.hasLayer(marker)) {
+                    map.removeLayer(marker);
+                }
+            } else if (map.hasLayer(marker)) {
+                map.removeLayer(marker);
+            }
+        });
+    }
+    
     turnMarkers = [];
     turnMarkerData = []; // Also clear stored data
+    
+    // Reset next turn marker index if defined
+    if (typeof nextTurnMarkerIndex !== 'undefined') {
+        nextTurnMarkerIndex = 0;
+    }
+    
     console.log('🗑️ Cleared all turn markers');
 }
 

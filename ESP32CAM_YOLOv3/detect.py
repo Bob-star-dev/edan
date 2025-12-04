@@ -153,6 +153,17 @@ def send_vibrate_signal(camera_base_url, side="left"):
         else:
             base_url = camera_base_url
         
+        # Jika menggunakan mDNS, coba resolve ke IP dulu untuk menghindari masalah di thread
+        # Tapi jika sudah IP, langsung pakai
+        if "senavision.local" in base_url or ".local" in base_url:
+            # Resolve mDNS ke IP untuk thread
+            try:
+                hostname = base_url.replace("http://", "").split("/")[0]
+                ip = socket.gethostbyname(hostname)
+                base_url = base_url.replace(hostname, ip)
+            except:
+                pass  # Jika gagal resolve, tetap pakai mDNS
+        
         # Gunakan endpoint /left atau /right sesuai posisi objek
         endpoint = "/left" if side == "left" else "/right"
         vibrate_url = f"{base_url}{endpoint}"
