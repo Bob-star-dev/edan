@@ -121,8 +121,8 @@ body.navigating .leaflet-popup-pane {
   perspective: none !important;
 }
 
-/* CRITICAL: Keep important buttons visible during navigation */
-/* User wants buttons to remain visible like before navigation */
+/* CRITICAL: Keep important buttons visible and functional during navigation */
+/* User wants buttons to remain visible and clickable like before navigation */
 body.navigating .navbar-toggle-btn,
 body.navigating #navbarToggleBtn,
 body.navigating #backToHomeBtn {
@@ -134,6 +134,13 @@ body.navigating #backToHomeBtn {
   width: auto !important;
   height: auto !important;
   overflow: visible !important;
+  touch-action: auto !important;
+  -webkit-touch-callout: default !important;
+  -webkit-user-select: auto !important;
+  user-select: auto !important;
+  cursor: pointer !important;
+  position: relative !important;
+  position: fixed !important;
 }
 
 /* Keep sidebar accessible during navigation */
@@ -177,8 +184,8 @@ body.navigating .debug-panel {
   z-index: 10000 !important;
 }
 
-/* CRITICAL: Ensure all important UI buttons remain visible during navigation */
-/* Override any other CSS that might hide these buttons */
+/* CRITICAL: Ensure all important UI buttons remain visible and functional during navigation */
+/* Override any other CSS that might hide or disable these buttons */
 body.navigating button.navbar-toggle-btn,
 body.navigating button#navbarToggleBtn,
 body.navigating button#backToHomeBtn,
@@ -188,7 +195,9 @@ body.navigating #backToHomeBtn,
 body.navigating .side-navbar,
 body.navigating #sideNavbar,
 body.navigating #floatingDebugBtn,
-body.navigating button#floatingDebugBtn {
+body.navigating button#floatingDebugBtn,
+body.navigating .side-navbar *,
+body.navigating #sideNavbar * {
   display: block !important;
   display: flex !important;
   visibility: visible !important;
@@ -204,6 +213,11 @@ body.navigating button#floatingDebugBtn {
   overflow: visible !important;
   position: relative !important;
   position: fixed !important;
+  touch-action: auto !important;
+  -webkit-touch-callout: default !important;
+  -webkit-user-select: auto !important;
+  user-select: auto !important;
+  cursor: pointer !important;
 }
 
 /* Hide browser address bar and UI elements */
@@ -258,11 +272,18 @@ body.navigating {
 body.navigating #map,
 body.navigating .leaflet-container,
 body.navigating .leaflet-pane,
-body.navigating .leaflet-map-pane {
+body.navigating .leaflet-map-pane,
+body.navigating .leaflet-tile-pane,
+body.navigating .leaflet-overlay-pane,
+body.navigating .leaflet-shadow-pane,
+body.navigating .leaflet-marker-pane,
+body.navigating .leaflet-tooltip-pane,
+body.navigating .leaflet-popup-pane {
   touch-action: pan-x pan-y pinch-zoom !important;
   pointer-events: auto !important;
   user-select: none !important;
   -webkit-user-select: none !important;
+  -ms-touch-action: pan-x pan-y pinch-zoom !important;
 }
 
 /* Mobile-specific fixes for fullscreen */
@@ -306,6 +327,10 @@ body.navigating .leaflet-map-pane {
     inset: 0 !important;
     /* Prevent any gaps or margins */
     box-sizing: border-box !important;
+    /* CRITICAL: Ensure map can be interacted with */
+    touch-action: pan-x pan-y pinch-zoom !important;
+    pointer-events: auto !important;
+    -ms-touch-action: pan-x pan-y pinch-zoom !important;
   }
   
   /* CRITICAL: Keep important buttons visible on mobile during navigation */
@@ -365,12 +390,17 @@ body.navigating .leaflet-map-pane {
 }
 
 /* Ensure map takes full screen during navigation - ABSOLUTE FULLSCREEN */
+/* CRITICAL: Map must be interactive, not locked */
 body.navigating #map {
   position: fixed !important;
   top: 0 !important;
   left: 0 !important;
   right: 0 !important;
   bottom: 0 !important;
+  /* CRITICAL: Ensure map can be dragged and zoomed */
+  touch-action: pan-x pan-y pinch-zoom !important;
+  pointer-events: auto !important;
+  -ms-touch-action: pan-x pan-y pinch-zoom !important;
   width: 100vw !important;
   width: 100dvw !important;
   width: 100% !important;

@@ -63,6 +63,10 @@ let gpsRetryCount = 0; // Counter untuk retry GPS jika terputus
 let announceInterval = null; // Interval untuk memanggil announceNextDirection secara berkala
 let isFirstLocationUpdate = true; // Track if this is the first location update
 
+// NEW: Track turn instructions from directions container with real-time distance
+let turnInstructionsList = []; // Array of { text, coordinate, lastAnnouncedDistance, instructionIndex }
+let currentTurnIndex = 0; // Index of current turn being tracked
+
 // CRITICAL: Track the BEST GPS location (highest accuracy)
 // This prevents default/cached locations from overwriting accurate GPS data
 let bestGPSLocation = null; // Store { lat, lng, accuracy }
@@ -478,9 +482,8 @@ let shouldAnnounceRoute = false; // Flag to control when route should be announc
 let pendingRouteAnnouncement = null; // Store pending route announcement data (routeId, startName, endName)
 
 // Turn markers variables for navigation
-let turnMarkers = []; // Array to store turn markers on the map
+// NOTE: turnMarkers and nextTurnMarkerIndex are already declared at lines 94-95, so we don't redeclare them here
 let turnMarkerData = []; // Array to store turn marker metadata
-let nextTurnMarkerIndex = 0; // Index of next turn marker to highlight
 
 // FIXED: Debounce/throttle mechanism untuk announceNextDirection
 let lastAnnounceCallTime = 0;
@@ -1258,6 +1261,10 @@ function onLocationFound(e) {
                 isNavigating = false;
                 announcedInstructions = [];
                 lastAnnouncedInstruction = null;
+                // NEW: Reset turn instructions list
+                turnInstructionsList = [];
+                currentTurnIndex = 0;
+                console.log('[Navigation] ✅ Reset turn instructions list - navigation stopped');
                 
                 // Clear announceNextDirection interval
                 if (announceInterval) {
@@ -4805,6 +4812,11 @@ function startTurnByTurnNavigation() {
     // CRITICAL: Set flag navigasi aktif
     isNavigating = true;
     
+    // NEW: Reset turn instructions list for new navigation session
+    turnInstructionsList = [];
+    currentTurnIndex = 0;
+    console.log('[Navigation] ✅ Reset turn instructions list for new navigation');
+    
     // CRITICAL: Ensure currentRouteData is set from route object if not already set
     if (!currentRouteData && route) {
         // Try multiple ways to get route data
@@ -4835,6 +4847,14 @@ function startTurnByTurnNavigation() {
             hasInstructions: !!(currentRouteData && currentRouteData.instructions),
             instructionCount: currentRouteData && currentRouteData.instructions ? currentRouteData.instructions.length : 0
         });
+    }
+    
+    // NEW: Initialize turn instructions list after route data is ready
+    if (currentRouteData && currentRouteData.instructions && currentRouteData.instructions.length > 0) {
+        initializeTurnInstructionsList();
+        console.log('[Navigation] ✅ Turn instructions list initialized with', turnInstructionsList.length, 'turns');
+    } else {
+        console.warn('[Navigation] ⚠️ Cannot initialize turn instructions - route data not ready');
     }
     
     // CRITICAL: Request Wake Lock untuk menjaga device tetap aktif (GPS tidak mati)
@@ -5263,26 +5283,50 @@ function startTurnByTurnNavigation() {
         
         // CRITICAL: Ensure map remains interactive - user can drag, zoom, and pan manually
         // Map controls remain enabled during navigation
+        // Force enable all map controls to ensure map is not locked
+        setTimeout(() => {
+            if (map.dragging) {
+                map.dragging.enable(); // Ensure dragging is enabled
+            }
+            if (map.touchZoom) {
+                map.touchZoom.enable(); // Ensure touch zoom is enabled
+            }
+            if (map.doubleClickZoom) {
+                map.doubleClickZoom.enable(); // Ensure double-click zoom is enabled
+            }
+            if (map.scrollWheelZoom) {
+                map.scrollWheelZoom.enable(); // Ensure scroll wheel zoom is enabled
+            }
+            if (map.boxZoom) {
+                map.boxZoom.enable(); // Ensure box zoom is enabled
+            }
+            if (map.keyboard) {
+                map.keyboard.enable(); // Ensure keyboard controls are enabled
+            }
+            console.log('✅ Map controls enabled - user can manually zoom, pan, and interact with map');
+        }, 100);
+        
+        // Also enable immediately
         if (map.dragging) {
-            map.dragging.enable(); // Ensure dragging is enabled
+            map.dragging.enable();
         }
         if (map.touchZoom) {
-            map.touchZoom.enable(); // Ensure touch zoom is enabled
+            map.touchZoom.enable();
         }
         if (map.doubleClickZoom) {
-            map.doubleClickZoom.enable(); // Ensure double-click zoom is enabled
+            map.doubleClickZoom.enable();
         }
         if (map.scrollWheelZoom) {
-            map.scrollWheelZoom.enable(); // Ensure scroll wheel zoom is enabled
+            map.scrollWheelZoom.enable();
         }
         if (map.boxZoom) {
-            map.boxZoom.enable(); // Ensure box zoom is enabled
+            map.boxZoom.enable();
         }
         if (map.keyboard) {
-            map.keyboard.enable(); // Ensure keyboard controls are enabled
+            map.keyboard.enable();
         }
         
-        console.log('✅ Map controls enabled - user can manually zoom, pan, and interact with map');
+        console.log('✅ Map controls enabled immediately - user can manually zoom, pan, and interact with map');
         
         // Listen for fullscreen changes
         const fullscreenChange = () => {
@@ -7927,8 +7971,110 @@ function extractTurnDirection(text) {
     return null;
 }
 
-// Function to speak turn-by-turn directions based on user position (Google Maps style)
-// IMPROVED: Uses route data with coordinates for accurate real-time distance calculation
+// NEW: Function to initialize turn instructions list from directions container
+// This reads all turn instructions from the directions/petunjuk tab
+function initializeTurnInstructionsList() {
+    turnInstructionsList = [];
+    currentTurnIndex = 0;
+    
+    if (!currentRouteData || !currentRouteData.instructions) {
+        console.log('[Navigation] ⚠️ No route data available for turn instructions');
+        return;
+    }
+    
+    console.log('[Navigation] 🔍 Initializing turn instructions list from route data...');
+    
+    // Read all instructions from route data
+    for (let i = 0; i < currentRouteData.instructions.length; i++) {
+        const instruction = currentRouteData.instructions[i];
+        if (!instruction || !instruction.text) continue;
+        
+        const text = convertInstructionToNatural(instruction.text);
+        
+        // Skip generic instructions (departure/arrival)
+        if (text.toLowerCase().includes('head') || 
+            text.toLowerCase().includes('berangkat') ||
+            text.toLowerCase().includes('arrived') ||
+            text.toLowerCase().includes('tiba')) {
+            continue;
+        }
+        
+        // Skip "go straight" or "lurus terus" instructions (not turns)
+        if (text.toLowerCase().includes('go straight') || 
+            text.toLowerCase().includes('lurus terus') ||
+            text.toLowerCase().includes('continue straight') ||
+            text.toLowerCase().includes('lanjutkan')) {
+            continue;
+        }
+        
+        // Extract turn direction (kanan/kiri) - only process turn instructions
+        const turnDirection = extractTurnDirection(text);
+        if (!turnDirection) {
+            continue;
+        }
+        
+        // Get coordinate for this instruction
+        let instructionLatLng = null;
+        
+        // Try to get instruction coordinate from waypoint
+        if (instruction.waypoint) {
+            const waypoint = instruction.waypoint;
+            if (Array.isArray(waypoint) && waypoint.length >= 2) {
+                instructionLatLng = L.latLng(waypoint[0], waypoint[1]);
+            } else if (waypoint.lat !== undefined && waypoint.lng !== undefined) {
+                instructionLatLng = L.latLng(waypoint.lat, waypoint.lng);
+            } else if (waypoint instanceof L.LatLng) {
+                instructionLatLng = waypoint;
+            }
+        }
+        
+        // If no waypoint, use instruction index to find coordinate in route
+        if (!instructionLatLng && instruction.index !== undefined && currentRouteData.coordinates) {
+            const coordIndex = instruction.index;
+            if (coordIndex >= 0 && coordIndex < currentRouteData.coordinates.length) {
+                const coord = currentRouteData.coordinates[coordIndex];
+                if (Array.isArray(coord) && coord.length >= 2) {
+                    instructionLatLng = L.latLng(coord[0], coord[1]);
+                } else if (coord.lat !== undefined && coord.lng !== undefined) {
+                    instructionLatLng = L.latLng(coord.lat, coord.lng);
+                }
+            }
+        }
+        
+        // If still no coordinate, use instruction index as approximate coordinate index
+        if (!instructionLatLng && currentRouteData.coordinates && currentRouteData.coordinates.length > 0) {
+            let coordIndex = i;
+            if (coordIndex >= 0 && coordIndex < currentRouteData.coordinates.length) {
+                const coord = currentRouteData.coordinates[coordIndex];
+                if (Array.isArray(coord) && coord.length >= 2) {
+                    instructionLatLng = L.latLng(coord[0], coord[1]);
+                } else if (coord.lat !== undefined && coord.lng !== undefined) {
+                    instructionLatLng = L.latLng(coord.lat, coord.lng);
+                }
+            }
+        }
+        
+        // If we have coordinate, add to turn instructions list
+        if (instructionLatLng) {
+            turnInstructionsList.push({
+                text: text,
+                coordinate: instructionLatLng,
+                lastAnnouncedDistance: Infinity, // Track last announced distance to detect 10m changes
+                instructionIndex: i,
+                originalText: instruction.text
+            });
+            console.log('[Navigation] ✅ Added turn instruction:', text, 'at coordinate', instructionLatLng.lat.toFixed(6), instructionLatLng.lng.toFixed(6));
+        } else {
+            console.log('[Navigation] ⚠️ Turn instruction', i, ':', text, '- No coordinate found, skipping');
+        }
+    }
+    
+    console.log('[Navigation] ✅ Initialized', turnInstructionsList.length, 'turn instructions');
+}
+
+// NEW: Function to announce turn instructions with real-time distance updates
+// This replaces the old announceNextDirection logic
+// Announcements happen every 10 meters as user moves closer to the turn
 function announceNextDirection() {
     if (!voiceDirectionsEnabled || !route || !isNavigating || !currentRouteData || !currentUserPosition) return;
     
@@ -7936,272 +8082,100 @@ function announceNextDirection() {
         const userLatLng = currentUserPosition.getLatLng();
         if (!userLatLng) return;
         
-        // CRITICAL: Use route data with coordinates for accurate distance calculation
-        // This is more reliable than DOM-based distance
-        if (!currentRouteData.instructions || !currentRouteData.instructions.length) {
-            console.log('[Navigation] ⚠️ No route instructions available');
+        // Initialize turn instructions list if empty
+        if (turnInstructionsList.length === 0) {
+            initializeTurnInstructionsList();
+        }
+        
+        // If still no turn instructions, return
+        if (turnInstructionsList.length === 0) {
+            console.log('[Navigation] ⚠️ No turn instructions available');
             return;
         }
         
-        if (!currentRouteData.coordinates || !currentRouteData.coordinates.length) {
-            console.log('[Navigation] ⚠️ No route coordinates available');
+        // Check if we have a current turn to track
+        if (currentTurnIndex >= turnInstructionsList.length) {
+            console.log('[Navigation] ✅ All turn instructions completed');
             return;
         }
         
-        let closestTurn = null;
-        let closestDistance = Infinity;
-        let closestInstructionIndex = -1;
-        
-        // CRITICAL: Find the CLOSEST upcoming turn by calculating real-time distance from GPS
-        // This ensures announcements happen when actually approaching the turn point
-        console.log('[Navigation] 🔍 Checking', currentRouteData.instructions.length, 'instructions for turns...');
-        
-        for (let i = 0; i < currentRouteData.instructions.length; i++) {
-            const instruction = currentRouteData.instructions[i];
-            
-            if (!instruction || !instruction.text) continue;
-            
-            const text = convertInstructionToNatural(instruction.text);
-            
-            // Skip if already announced
-            if (!text || announcedInstructions.includes(text)) {
-                continue;
-            }
-            
-            // Skip generic instructions (departure/arrival)
-            if (text.toLowerCase().includes('head') || 
-                text.toLowerCase().includes('berangkat') ||
-                text.toLowerCase().includes('arrived') ||
-                text.toLowerCase().includes('tiba')) {
-                continue;
-            }
-            
-            // Skip "go straight" or "lurus terus" instructions (not turns)
-            if (text.toLowerCase().includes('go straight') || 
-                text.toLowerCase().includes('lurus terus') ||
-                text.toLowerCase().includes('continue straight') ||
-                text.toLowerCase().includes('lanjutkan')) {
-                continue;
-            }
-            
-            // Extract turn direction (kanan/kiri)
-            const turnDirection = extractTurnDirection(text);
-            
-            // Only process turn instructions
-            if (!turnDirection) {
-                continue;
-            }
-            
-            console.log('[Navigation] 📍 Found turn instruction', i, ':', text, 'Direction:', turnDirection);
-            
-            // CRITICAL: Calculate real-time distance from user GPS position to turn point
-            // Find the coordinate for this instruction
-            let instructionLatLng = null;
-            
-            // Try to get instruction coordinate from waypoint or index
-            if (instruction.waypoint) {
-                const waypoint = instruction.waypoint;
-                if (Array.isArray(waypoint) && waypoint.length >= 2) {
-                    instructionLatLng = L.latLng(waypoint[0], waypoint[1]);
-                } else if (waypoint.lat !== undefined && waypoint.lng !== undefined) {
-                    instructionLatLng = L.latLng(waypoint.lat, waypoint.lng);
-                } else if (waypoint instanceof L.LatLng) {
-                    instructionLatLng = waypoint;
-                }
-            }
-            
-            // If no waypoint, use instruction index to find coordinate in route
-            if (!instructionLatLng && instruction.index !== undefined) {
-                const coordIndex = instruction.index;
-                if (coordIndex >= 0 && coordIndex < currentRouteData.coordinates.length) {
-                    const coord = currentRouteData.coordinates[coordIndex];
-                    if (Array.isArray(coord) && coord.length >= 2) {
-                        instructionLatLng = L.latLng(coord[0], coord[1]);
-                    } else if (coord.lat !== undefined && coord.lng !== undefined) {
-                        instructionLatLng = L.latLng(coord.lat, coord.lng);
-                    }
-                }
-            }
-            
-            // If still no coordinate, try to find nearest coordinate based on instruction distance
-            if (!instructionLatLng && instruction.distance !== undefined && currentRouteData.coordinates) {
-                // Calculate cumulative distance to find approximate coordinate
-                let cumulativeDist = 0;
-                for (let j = 0; j < currentRouteData.coordinates.length - 1; j++) {
-                    const coord1 = currentRouteData.coordinates[j];
-                    const coord2 = currentRouteData.coordinates[j + 1];
-                    const lat1 = Array.isArray(coord1) ? coord1[0] : coord1.lat;
-                    const lng1 = Array.isArray(coord1) ? coord1[1] : coord1.lng;
-                    const lat2 = Array.isArray(coord2) ? coord2[0] : coord2.lat;
-                    const lng2 = Array.isArray(coord2) ? coord2[1] : coord2.lng;
-                    
-                    const segmentDist = L.latLng(lat1, lng1).distanceTo(L.latLng(lat2, lng2));
-                    cumulativeDist += segmentDist;
-                    
-                    if (cumulativeDist >= instruction.distance) {
-                        instructionLatLng = L.latLng(lat2, lng2);
-                        console.log('[Navigation] ✅ Found instruction coordinate from distance:', instructionLatLng.lat.toFixed(6), instructionLatLng.lng.toFixed(6));
-                        break;
-                    }
-                }
-            }
-            
-            // CRITICAL: If still no coordinate, use instruction index to find coordinate in route
-            // Leaflet Routing Machine instructions have an index property that points to route coordinates
-            if (!instructionLatLng && currentRouteData.coordinates && currentRouteData.coordinates.length > 0) {
-                // Try to find coordinate by matching instruction index with route coordinate index
-                // Instructions are usually in order, so we can use instruction index as approximate coordinate index
-                let coordIndex = i; // Use instruction index as coordinate index
-                
-                // Ensure index is within bounds
-                if (coordIndex >= 0 && coordIndex < currentRouteData.coordinates.length) {
-                    const coord = currentRouteData.coordinates[coordIndex];
-                    if (Array.isArray(coord) && coord.length >= 2) {
-                        instructionLatLng = L.latLng(coord[0], coord[1]);
-                        console.log('[Navigation] ✅ Found instruction coordinate from index:', coordIndex, instructionLatLng.lat.toFixed(6), instructionLatLng.lng.toFixed(6));
-                    } else if (coord.lat !== undefined && coord.lng !== undefined) {
-                        instructionLatLng = L.latLng(coord.lat, coord.lng);
-                        console.log('[Navigation] ✅ Found instruction coordinate from index (object):', coordIndex, instructionLatLng.lat.toFixed(6), instructionLatLng.lng.toFixed(6));
-                    }
-                }
-            }
-            
-            // Calculate real-time distance from user to turn point
-            if (instructionLatLng) {
-                const realTimeDistance = userLatLng.distanceTo(instructionLatLng);
-                
-                console.log('[Navigation] 📏 Turn', i, ':', text, '- Real-time distance:', realTimeDistance.toFixed(1), 'meters');
-                
-                // CRITICAL: Only consider turns within 200 meters (approaching the turn)
-                if (realTimeDistance > 0 && realTimeDistance <= 200) {
-                    // Find the closest turn that hasn't been announced
-                    if (realTimeDistance < closestDistance) {
-                        closestDistance = realTimeDistance;
-                        closestTurn = {
-                            text: text,
-                            distance: realTimeDistance,
-                            originalText: instruction.text,
-                            instructionIndex: i
-                        };
-                        closestInstructionIndex = i;
-                        console.log('[Navigation] ✅ Closest turn updated:', text, 'at', realTimeDistance.toFixed(1), 'meters');
-                    }
-                }
-            } else {
-                console.log('[Navigation] ⚠️ Turn', i, ':', text, '- No coordinate found, skipping');
-            }
+        const currentTurn = turnInstructionsList[currentTurnIndex];
+        if (!currentTurn || !currentTurn.coordinate) {
+            // Move to next turn
+            currentTurnIndex++;
+            return;
         }
         
-        // CRITICAL: Check if user has passed the last announced turn
-        if (lastAnnouncedInstruction) {
-            // Find the last announced turn in route data
-            for (let i = 0; i < currentRouteData.instructions.length; i++) {
-                const instruction = currentRouteData.instructions[i];
-                if (!instruction || !instruction.text) continue;
-                
-                const text = convertInstructionToNatural(instruction.text);
-                if (text === lastAnnouncedInstruction) {
-                    // Calculate distance to this turn
-                    let instructionLatLng = null;
-                    if (instruction.waypoint) {
-                        const waypoint = instruction.waypoint;
-                        if (Array.isArray(waypoint) && waypoint.length >= 2) {
-                            instructionLatLng = L.latLng(waypoint[0], waypoint[1]);
-                        } else if (waypoint.lat !== undefined && waypoint.lng !== undefined) {
-                            instructionLatLng = L.latLng(waypoint.lat, waypoint.lng);
-                        }
-                    }
-                    
-                    if (instructionLatLng) {
-                        const distanceToLastTurn = userLatLng.distanceTo(instructionLatLng);
-                        // If user is very close (< 15m) or has passed (< 0m means behind), reset
-                        if (distanceToLastTurn < 15) {
-                            console.log('[Navigation] ✅ User passed last turn:', lastAnnouncedInstruction, 'Distance:', distanceToLastTurn.toFixed(1), 'm');
-                            const lastIndex = announcedInstructions.indexOf(lastAnnouncedInstruction);
-                            if (lastIndex > -1) {
-                                announcedInstructions.splice(lastIndex, 1);
-                            }
-                            lastAnnouncedInstruction = null;
-                        }
-                    }
-                    break;
-                }
-            }
-        }
+        // Calculate real-time distance from user to current turn
+        const realTimeDistance = userLatLng.distanceTo(currentTurn.coordinate);
         
-        // CRITICAL: Announce the closest turn when approaching (30-200 meters)
-        if (closestTurn && closestTurn.distance > 0) {
-            // Only announce if this is a new turn (not the same as last announced)
-            if (closestTurn.text !== lastAnnouncedInstruction) {
-                // CRITICAL: Announce when within 30-200 meters (approaching the turn)
-                if (closestTurn.distance >= 30 && closestTurn.distance <= 200) {
-                    lastAnnouncedInstruction = closestTurn.text;
-                    if (!announcedInstructions.includes(closestTurn.text)) {
-                        announcedInstructions.push(closestTurn.text);
-                    }
-                    
-                    const turnInstruction = closestTurn.distance >= 30 
-                        ? 'Setelah ' + Math.round(closestTurn.distance) + ' meter ' + closestTurn.text
-                        : closestTurn.text + ' sekarang';
-                    
-                    console.log('[Navigation] 🔊 Announcing turn instruction:', turnInstruction, 'Real-time distance:', closestTurn.distance.toFixed(1), 'meters');
-                    
-                    // CRITICAL: Request permission from SpeechCoordinator dengan priority 'high'
-                    if (typeof window.SpeechCoordinator !== 'undefined') {
-                        const canSpeak = window.SpeechCoordinator.requestSpeak('high');
-                        if (!canSpeak) {
-                            console.warn('[Navigation] ⚠️ Turn announcement blocked by SpeechCoordinator, will retry...');
-                            setTimeout(() => {
-                                const retryCanSpeak = window.SpeechCoordinator.requestSpeak('high');
-                                if (retryCanSpeak) {
-                                    console.log('[Navigation] ✅ Retry successful, announcing turn instruction');
-                                    speakText(turnInstruction, 'id-ID', true);
-                                } else {
-                                    console.warn('[Navigation] ⚠️ Retry failed, forcing announcement anyway (turn instructions are critical)');
-                                    if (window.speechSynthesis.speaking) {
-                                        window.speechSynthesis.cancel();
-                                    }
-                                    setTimeout(() => {
-                                        speakText(turnInstruction, 'id-ID', true);
-                                    }, 100);
-                                }
-                            }, 200);
-                            return;
-                        }
-                    }
-                    
-                    // Announce the turn instruction
-                    speakText(turnInstruction, 'id-ID', true);
-                } else if (closestTurn.distance < 30 && closestTurn.distance > 0) {
-                    // Very close to turn (< 30m) - announce immediately
-                    lastAnnouncedInstruction = closestTurn.text;
-                    if (!announcedInstructions.includes(closestTurn.text)) {
-                        announcedInstructions.push(closestTurn.text);
-                    }
-                    
-                    const turnInstruction = closestTurn.text + ' sekarang';
-                    console.log('[Navigation] 🔊 Announcing turn instruction (very close):', turnInstruction, 'Real-time distance:', closestTurn.distance.toFixed(1), 'meters');
-                    
-                    if (typeof window.SpeechCoordinator !== 'undefined') {
-                        const canSpeak = window.SpeechCoordinator.requestSpeak('high');
-                        if (canSpeak) {
-                            speakText(turnInstruction, 'id-ID', true);
-                        }
-                    } else {
+        // Round distance to nearest meter
+        const roundedDistance = Math.round(realTimeDistance);
+        
+        // Check if user has passed the turn (distance < 10m)
+        if (roundedDistance < 10) {
+            console.log('[Navigation] ✅ User passed turn:', currentTurn.text, 'Distance:', roundedDistance, 'm');
+            
+            // Announce "0m" if not already announced
+            if (currentTurn.lastAnnouncedDistance > 0) {
+                const turnInstruction = currentTurn.text + ' 0 meter';
+                console.log('[Navigation] 🔊 Announcing final turn instruction:', turnInstruction);
+                
+                if (typeof window.SpeechCoordinator !== 'undefined') {
+                    const canSpeak = window.SpeechCoordinator.requestSpeak('high');
+                    if (canSpeak) {
                         speakText(turnInstruction, 'id-ID', true);
                     }
-                }
-            } else {
-                // Same turn as last announced - check if user has passed it
-                if (closestTurn.distance < 15) {
-                    console.log('[Navigation] ✅ User passed turn:', closestTurn.text, 'Resetting for next turn');
-                    lastAnnouncedInstruction = null;
-                    const lastIndex = announcedInstructions.indexOf(closestTurn.text);
-                    if (lastIndex > -1) {
-                        announcedInstructions.splice(lastIndex, 1);
-                    }
+                } else {
+                    speakText(turnInstruction, 'id-ID', true);
                 }
             }
+            
+            // Remove current turn and move to next
+            turnInstructionsList.splice(currentTurnIndex, 1);
+            // currentTurnIndex stays the same (next turn becomes current)
+            console.log('[Navigation] ✅ Moved to next turn. Remaining turns:', turnInstructionsList.length - currentTurnIndex);
+            return;
+        }
+        
+        // Check if distance has decreased by 10 meters or more since last announcement
+        const distanceDecreased = currentTurn.lastAnnouncedDistance - roundedDistance;
+        
+        if (distanceDecreased >= 10 || currentTurn.lastAnnouncedDistance === Infinity) {
+            // Update last announced distance
+            currentTurn.lastAnnouncedDistance = roundedDistance;
+            
+            // Create announcement text
+            const turnInstruction = currentTurn.text + ' ' + roundedDistance + ' meter';
+            
+            console.log('[Navigation] 🔊 Announcing turn instruction:', turnInstruction, 'Real-time distance:', roundedDistance, 'meters');
+            
+            // Request permission from SpeechCoordinator
+            if (typeof window.SpeechCoordinator !== 'undefined') {
+                const canSpeak = window.SpeechCoordinator.requestSpeak('high');
+                if (!canSpeak) {
+                    console.warn('[Navigation] ⚠️ Turn announcement blocked by SpeechCoordinator, will retry...');
+                    setTimeout(() => {
+                        const retryCanSpeak = window.SpeechCoordinator.requestSpeak('high');
+                        if (retryCanSpeak) {
+                            console.log('[Navigation] ✅ Retry successful, announcing turn instruction');
+                            speakText(turnInstruction, 'id-ID', true);
+                        } else {
+                            console.warn('[Navigation] ⚠️ Retry failed, forcing announcement anyway');
+                            if (window.speechSynthesis.speaking) {
+                                window.speechSynthesis.cancel();
+                            }
+                            setTimeout(() => {
+                                speakText(turnInstruction, 'id-ID', true);
+                            }, 100);
+                        }
+                    }, 200);
+                    return;
+                }
+            }
+            
+            // Announce the turn instruction
+            speakText(turnInstruction, 'id-ID', true);
         }
     } catch (error) {
         console.error('[Navigation] ❌ Error in announceNextDirection:', error);
