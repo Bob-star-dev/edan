@@ -8,7 +8,13 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**",
-      "mode-2-react/**"
+      "mode-2-react/**",
+      "**/venv/**",
+      "**/*.exe",
+      "ESP32CAM_YOLOv3/**",
+      "**/__pycache__/**",
+      "**/*.pyc",
+      "**/*.py"
     ],
     "rewrites": [
       {

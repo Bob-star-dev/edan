@@ -121,20 +121,89 @@ body.navigating .leaflet-popup-pane {
   perspective: none !important;
 }
 
-/* Hide ALL UI elements during navigation for fullscreen */
-body.navigating .side-navbar,
+/* CRITICAL: Keep important buttons visible during navigation */
+/* User wants buttons to remain visible like before navigation */
 body.navigating .navbar-toggle-btn,
-body.navigating #backToHomeBtn,
+body.navigating #navbarToggleBtn,
+body.navigating #backToHomeBtn {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  z-index: 10000 !important;
+  width: auto !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+/* Keep sidebar accessible during navigation */
+body.navigating .side-navbar,
+body.navigating #sideNavbar {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  z-index: 9999 !important;
+  width: auto !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+/* Hide only leaflet controls and permission popup during navigation */
 body.navigating .leaflet-control,
 body.navigating .leaflet-top,
 body.navigating .leaflet-bottom,
 body.navigating .leaflet-left,
-body.navigating .leaflet-right {
+body.navigating .leaflet-right,
+body.navigating .permission-popup {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
   z-index: -1 !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+}
+
+/* CRITICAL: Keep debug button visible during navigation */
+body.navigating .navbar-tab[data-tab="debug"],
+body.navigating #navbarTabDebug,
+body.navigating .debug-panel {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  z-index: 10000 !important;
+}
+
+/* CRITICAL: Ensure all important UI buttons remain visible during navigation */
+/* Override any other CSS that might hide these buttons */
+body.navigating button.navbar-toggle-btn,
+body.navigating button#navbarToggleBtn,
+body.navigating button#backToHomeBtn,
+body.navigating .navbar-toggle-btn,
+body.navigating #navbarToggleBtn,
+body.navigating #backToHomeBtn,
+body.navigating .side-navbar,
+body.navigating #sideNavbar,
+body.navigating #floatingDebugBtn,
+body.navigating button#floatingDebugBtn {
+  display: block !important;
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  z-index: 10000 !important;
+  width: auto !important;
+  height: auto !important;
+  min-width: auto !important;
+  min-height: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  overflow: visible !important;
+  position: relative !important;
+  position: fixed !important;
 }
 
 /* Hide browser address bar and UI elements */
@@ -162,19 +231,117 @@ body.navigating .address-bar {
   overflow: hidden !important;
 }
 
-/* Keep only zoom controls visible but make them less intrusive */
+/* Hide zoom controls during navigation for cleaner fullscreen */
 body.navigating .leaflet-control-zoom {
-  display: block !important;
-  visibility: visible !important;
-  opacity: 0.8 !important;
-  pointer-events: auto !important;
-  z-index: 1000 !important;
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
 }
 
 /* Hide browser UI elements during navigation */
 body.navigating {
   /* Hide browser address bar by scrolling */
   scroll-behavior: auto !important;
+  /* Prevent any scrolling that might show address bar */
+  overscroll-behavior: none !important;
+  -webkit-overflow-scrolling: touch !important;
+  /* Force hide address bar on mobile */
+  position: fixed !important;
+  overflow: hidden !important;
+  /* CRITICAL: Allow touch interaction on map - don't disable touch-action globally */
+  /* touch-action: none !important; REMOVED - allows map interaction */
+}
+
+/* CRITICAL: Ensure map container can be interacted with during navigation */
+body.navigating #map,
+body.navigating .leaflet-container,
+body.navigating .leaflet-pane,
+body.navigating .leaflet-map-pane {
+  touch-action: pan-x pan-y pinch-zoom !important;
+  pointer-events: auto !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+/* Mobile-specific fixes for fullscreen */
+@media (max-width: 768px) {
+  body.navigating,
+  html.navigating {
+    /* Use actual screen dimensions, not viewport */
+    width: 100% !important;
+    height: 100% !important;
+    position: fixed !important;
+    overflow: hidden !important;
+    /* Prevent address bar from showing */
+    overscroll-behavior-y: none !important;
+    overscroll-behavior-x: none !important;
+    -webkit-overflow-scrolling: touch !important;
+    /* Prevent any gaps */
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    inset: 0 !important;
+  }
+  
+  body.navigating #map,
+  body.navigating .leaflet-container {
+    /* Force fullscreen on mobile */
+    width: 100% !important;
+    height: 100% !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    z-index: 9999 !important;
+    inset: 0 !important;
+    /* Prevent any gaps or margins */
+    box-sizing: border-box !important;
+  }
+  
+  /* CRITICAL: Keep important buttons visible on mobile during navigation */
+  /* Allow navbar toggle, back button, sidebar, and debug button to remain visible */
+  body.navigating .navbar-toggle-btn,
+  body.navigating #navbarToggleBtn,
+  body.navigating #backToHomeBtn,
+  body.navigating .side-navbar,
+  body.navigating #sideNavbar,
+  body.navigating #floatingDebugBtn {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: 10000 !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  
+  /* Ensure no scrollbars appear */
+  body.navigating,
+  html.navigating,
+  body.navigating #map,
+  body.navigating .leaflet-container {
+    overflow: hidden !important;
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+  
+  body.navigating #map::-webkit-scrollbar,
+  body.navigating .leaflet-container::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
 }
 
 /* Force hide browser chrome on mobile */
@@ -206,8 +373,10 @@ body.navigating #map {
   bottom: 0 !important;
   width: 100vw !important;
   width: 100dvw !important;
+  width: 100% !important;
   height: 100vh !important;
   height: 100dvh !important;
+  height: 100% !important;
   /* Dynamic viewport height */
   margin: 0 !important;
   padding: 0 !important;
@@ -216,22 +385,31 @@ body.navigating #map {
   transform: none !important;
   transform-style: flat !important;
   perspective: none !important;
-  z-index: 1 !important;
+  z-index: 9999 !important;
   overflow: hidden !important;
   inset: 0 !important;
   min-width: 100vw !important;
   min-width: 100dvw !important;
+  min-width: 100% !important;
   min-height: 100vh !important;
   min-height: 100dvh !important;
+  min-height: 100% !important;
   max-width: 100vw !important;
+  max-width: 100dvw !important;
+  max-width: 100% !important;
   max-height: 100vh !important;
+  max-height: 100dvh !important;
+  max-height: 100% !important;
+  box-sizing: border-box !important;
 }
 
 body.navigating .leaflet-container {
   width: 100vw !important;
   width: 100dvw !important;
+  width: 100% !important;
   height: 100vh !important;
   height: 100dvh !important;
+  height: 100% !important;
   /* Dynamic viewport height */
   position: fixed !important;
   top: 0 !important;
@@ -243,10 +421,20 @@ body.navigating .leaflet-container {
   overflow: visible !important;
   clip: none !important;
   max-width: 100vw !important;
+  max-width: 100dvw !important;
+  max-width: 100% !important;
   max-height: 100vh !important;
+  max-height: 100dvh !important;
+  max-height: 100% !important;
   min-width: 100vw !important;
+  min-width: 100dvw !important;
+  min-width: 100% !important;
   min-height: 100vh !important;
+  min-height: 100dvh !important;
+  min-height: 100% !important;
   inset: 0 !important;
+  z-index: 9999 !important;
+  box-sizing: border-box !important;
 }
 
 body.navigating .leaflet-pane {
@@ -314,7 +502,18 @@ body.navigating {
   padding: 0 !important;
   overflow: hidden !important;
   width: 100vw !important;
+  width: 100dvw !important;
+  width: 100% !important;
   height: 100vh !important;
+  height: 100dvh !important;
+  height: 100% !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  inset: 0 !important;
+  box-sizing: border-box !important;
 }
 
 html.navigating {
@@ -322,7 +521,18 @@ html.navigating {
   padding: 0 !important;
   overflow: hidden !important;
   width: 100vw !important;
+  width: 100dvw !important;
+  width: 100% !important;
   height: 100vh !important;
+  height: 100dvh !important;
+  height: 100% !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  inset: 0 !important;
+  box-sizing: border-box !important;
 }
 
 /* Add floating navigation controls during navigation */
@@ -1972,6 +2182,7 @@ body.navigating .nav-control-btn:hover {
   border: 1px solid rgba(255, 193, 7, 0.2);
 }
 
+.copy-debug-btn,
 .clear-debug-btn,
 .auto-scroll-btn {
   background: rgba(95, 99, 104, 0.1);
@@ -1986,15 +2197,28 @@ body.navigating .nav-control-btn:hover {
   white-space: nowrap;
 }
 
+.copy-debug-btn:hover,
 .clear-debug-btn:hover,
 .auto-scroll-btn:hover {
   background: rgba(95, 99, 104, 0.2);
   transform: translateY(-1px);
 }
 
+.copy-debug-btn:active,
 .clear-debug-btn:active,
 .auto-scroll-btn:active {
   transform: translateY(0);
+}
+
+.copy-debug-btn {
+  background: rgba(59, 73, 223, 0.1);
+  color: #3b49df;
+  border-color: rgba(59, 73, 223, 0.3);
+}
+
+.copy-debug-btn:hover {
+  background: rgba(59, 73, 223, 0.2);
+  border-color: rgba(59, 73, 223, 0.4);
 }
 
 .auto-scroll-btn.active {
