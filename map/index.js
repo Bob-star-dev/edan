@@ -4950,326 +4950,62 @@ function startTurnByTurnNavigation() {
         });
         currentUserPosition.setIcon(blueIcon);
         
-        // Add 3D/isometric perspective class to body and hide sidebar FIRST
+        // SIMPLIFIED: Just add navigating class - no forced fullscreen or zoom
+        // Keep normal view like before navigation - no viewport manipulation
         document.body.classList.add('navigating');
         document.documentElement.classList.add('navigating');
         
-        // FIXED: Hide browser UI elements immediately for mobile
-        // Hide address bar and navigation bar by forcing viewport to fullscreen
-        const hideBrowserUI = () => {
-            // Force scroll to top to hide address bar (works on mobile browsers)
-            window.scrollTo(0, 0);
-            
-            // Set viewport height to actual screen height (hides address bar)
-            const setViewportHeight = () => {
-                const vh = window.innerHeight * 0.01;
-                document.documentElement.style.setProperty('--vh', `${vh}px`);
-            };
-            setViewportHeight();
-            window.addEventListener('resize', setViewportHeight);
-            window.addEventListener('orientationchange', setViewportHeight);
-        };
-        hideBrowserUI();
-        
-        // Request browser fullscreen API for true fullscreen
-        // Try multiple methods for maximum compatibility
-        const requestFullscreen = document.documentElement.requestFullscreen || 
-                                  document.documentElement.webkitRequestFullscreen || 
-                                  document.documentElement.webkitEnterFullscreen ||
-                                  document.documentElement.mozRequestFullScreen || 
-                                  document.documentElement.msRequestFullscreen;
-        
-        if (requestFullscreen) {
-            requestFullscreen.call(document.documentElement).catch(err => {
-                console.log('Fullscreen request failed:', err);
-                // Continue anyway - CSS will handle fullscreen
-            });
-        }
-        
-        // FIXED: For mobile browsers - hide address bar by scrolling and forcing viewport
-        // This works better on Android Chrome and mobile browsers
-        const hideAddressBar = () => {
-            // Scroll to hide address bar
-            window.scrollTo(0, 1);
-            setTimeout(() => {
-                window.scrollTo(0, 0);
-                // Re-apply fullscreen styles after scroll
-                applyBodyFullscreen();
-                applyFullscreenStyles();
-            }, 50);
-        };
-        
-        // Hide address bar multiple times to ensure it stays hidden
-        hideAddressBar();
-        setTimeout(hideAddressBar, 100);
-        setTimeout(hideAddressBar, 300);
-        
-        // Re-apply on resize and orientation change
-        const handleViewportChange = () => {
-            applyBodyFullscreen();
-            applyFullscreenStyles();
-        };
-        window.addEventListener('resize', handleViewportChange);
-        window.addEventListener('orientationchange', () => {
-            setTimeout(handleViewportChange, 200);
-        });
-        
-        // FIXED: FORCE fullscreen styles immediately - BEFORE zoom
-        // Use actual window dimensions for mobile (hides address bar)
-        // CRITICAL: Get actual screen dimensions after potential address bar hide
-        const getActualDimensions = () => {
-            // Force a small scroll to hide address bar on mobile
-            window.scrollTo(0, 1);
-            setTimeout(() => {
-                window.scrollTo(0, 0);
-            }, 10);
-            
-            // Get actual dimensions after scroll
-            const vh = window.innerHeight || document.documentElement.clientHeight || screen.height;
-            const vw = window.innerWidth || document.documentElement.clientWidth || screen.width;
-            
-            return { vh, vw };
-        };
-        
-        // Get dimensions multiple times to ensure we get the correct size after address bar hides
-        let { vh, vw } = getActualDimensions();
-        
-        // Wait a bit and get dimensions again (address bar might hide with delay)
-        setTimeout(() => {
-            const dims = getActualDimensions();
-            if (dims.vh > vh) {
-                vh = dims.vh;
-                vw = dims.vw;
-            }
-        }, 300);
-        
-        // CRITICAL: Set viewport meta tag dynamically for mobile
-        let viewportMeta = document.querySelector('meta[name="viewport"]');
-        if (!viewportMeta) {
-            viewportMeta = document.createElement('meta');
-            viewportMeta.name = 'viewport';
-            document.head.appendChild(viewportMeta);
-        }
-        viewportMeta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
-        
-        // Function to apply fullscreen styles to HTML and body
-        const applyBodyFullscreen = () => {
-            const dims = getActualDimensions();
-            const height = dims.vh + 'px';
-            const width = dims.vw + 'px';
-            
-            // Force HTML and body to exact screen dimensions
-            document.documentElement.style.width = width;
-            document.documentElement.style.height = height;
-            document.documentElement.style.margin = '0';
-            document.documentElement.style.padding = '0';
-            document.documentElement.style.overflow = 'hidden';
-            document.documentElement.style.position = 'fixed';
-            document.documentElement.style.top = '0';
-            document.documentElement.style.left = '0';
-            document.documentElement.style.right = '0';
-            document.documentElement.style.bottom = '0';
-            document.documentElement.style.inset = '0';
-            document.documentElement.style.maxWidth = width;
-            document.documentElement.style.maxHeight = height;
-            document.documentElement.style.minWidth = width;
-            document.documentElement.style.minHeight = height;
-            document.documentElement.style.boxSizing = 'border-box';
-            
-            document.body.style.width = width;
-            document.body.style.height = height;
-            document.body.style.margin = '0';
-            document.body.style.padding = '0';
-            document.body.style.overflow = 'hidden';
-            document.body.style.position = 'fixed';
-            document.body.style.top = '0';
-            document.body.style.left = '0';
-            document.body.style.right = '0';
-            document.body.style.bottom = '0';
-            document.body.style.inset = '0';
-            document.body.style.maxWidth = width;
-            document.body.style.maxHeight = height;
-            document.body.style.minWidth = width;
-            document.body.style.minHeight = height;
-            document.body.style.boxSizing = 'border-box';
-        };
-        
-        // Apply immediately and after delays
-        applyBodyFullscreen();
-        setTimeout(applyBodyFullscreen, 100);
-        setTimeout(applyBodyFullscreen, 300);
-        setTimeout(applyBodyFullscreen, 500);
-        
-        // Hide sidebar for fullscreen navigation, but keep debug tab accessible
+        // CRITICAL: Keep navbar visible during navigation - don't hide it
+        // User wants navbar to remain visible and functional like before navigation
         const navbar = document.getElementById('sideNavbar');
         if (navbar) {
-            // Hide sidebar but allow debug tab to be shown if needed
-            navbar.style.display = 'none';
-            navbar.style.visibility = 'hidden';
-            navbar.classList.remove('active');
-            navbar.classList.add('collapsed');
+            // Ensure navbar is visible and accessible
+            navbar.style.display = '';
+            navbar.style.visibility = '';
+            navbar.style.opacity = '';
+            navbar.style.pointerEvents = '';
+            // Don't remove active class - keep navbar state as is
         }
         
-        // Hide toggle button
+        // Keep toggle button visible
         const toggleBtn = document.getElementById('navbarToggleBtn');
         if (toggleBtn) {
-            toggleBtn.style.display = 'none';
-            toggleBtn.style.visibility = 'hidden';
+            toggleBtn.style.display = '';
+            toggleBtn.style.visibility = '';
+            toggleBtn.style.opacity = '';
+            toggleBtn.style.pointerEvents = '';
         }
         
-        // Hide back button
+        // Keep back button visible
         const backBtn = document.getElementById('backToHomeBtn');
         if (backBtn) {
-            backBtn.style.display = 'none';
-            backBtn.style.visibility = 'hidden';
+            backBtn.style.display = '';
+            backBtn.style.visibility = '';
+            backBtn.style.opacity = '';
+            backBtn.style.pointerEvents = '';
         }
         
-        // CRITICAL: Create floating debug button that stays visible during navigation
-        let floatingDebugBtn = document.getElementById('floatingDebugBtn');
-        if (!floatingDebugBtn) {
-            floatingDebugBtn = document.createElement('button');
-            floatingDebugBtn.id = 'floatingDebugBtn';
-            floatingDebugBtn.className = 'floating-debug-btn';
-            floatingDebugBtn.innerHTML = '🐛 Debug';
-            floatingDebugBtn.title = 'Buka Debug Console';
-            floatingDebugBtn.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                z-index: 10000;
-                background: rgba(59, 73, 223, 0.95);
-                color: white;
-                border: none;
-                border-radius: 50%;
-                width: 56px;
-                height: 56px;
-                font-size: 24px;
-                cursor: pointer;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                transition: all 0.3s ease;
-            `;
-            floatingDebugBtn.onmouseover = function() {
-                this.style.transform = 'scale(1.1)';
-                this.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.4)';
-            };
-            floatingDebugBtn.onmouseout = function() {
-                this.style.transform = 'scale(1)';
-                this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
-            };
-            floatingDebugBtn.onclick = function() {
-                // Show sidebar and switch to debug tab
-                const navbar = document.getElementById('sideNavbar');
-                if (navbar) {
-                    navbar.style.display = 'block';
-                    navbar.style.visibility = 'visible';
-                    navbar.classList.add('active');
-                    navbar.classList.remove('collapsed');
-                    switchNavbarTab('debug');
-                }
-            };
-            document.body.appendChild(floatingDebugBtn);
-            console.log('✅ Floating debug button created for navigation mode');
-        } else {
-            // Make sure it's visible
-            floatingDebugBtn.style.display = 'flex';
-            floatingDebugBtn.style.visibility = 'visible';
-            floatingDebugBtn.style.opacity = '1';
+        // Hide floating debug button during navigation
+        const floatingDebugBtn = document.getElementById('floatingDebugBtn');
+        if (floatingDebugBtn) {
+            floatingDebugBtn.style.display = 'none';
+            floatingDebugBtn.style.visibility = 'hidden';
+            floatingDebugBtn.style.opacity = '0';
         }
         
-        // FIXED: FORCE map to fullscreen immediately with actual pixel values
-        // Use function to apply styles with latest dimensions
-        const applyFullscreenStyles = () => {
-            const dims = getActualDimensions();
-            const height = dims.vh + 'px';
-            const width = dims.vw + 'px';
-            
-            let mapElement = document.getElementById('map');
-            
-            if (mapElement) {
-                mapElement.style.position = 'fixed';
-                mapElement.style.top = '0';
-                mapElement.style.left = '0';
-                mapElement.style.right = '0';
-                mapElement.style.bottom = '0';
-                mapElement.style.width = width;
-                mapElement.style.height = height;
-                mapElement.style.margin = '0';
-                mapElement.style.padding = '0';
-                mapElement.style.zIndex = '9999';
-                mapElement.style.overflow = 'hidden';
-                mapElement.style.inset = '0';
-                mapElement.style.minWidth = width;
-                mapElement.style.minHeight = height;
-                mapElement.style.maxWidth = width;
-                mapElement.style.maxHeight = height;
-                mapElement.style.boxSizing = 'border-box';
-            }
-            
-            // FIXED: FORCE leaflet container to fullscreen with actual pixel values
-            const leafletContainer = document.querySelector('.leaflet-container');
-            if (leafletContainer) {
-                leafletContainer.style.position = 'fixed';
-                leafletContainer.style.top = '0';
-                leafletContainer.style.left = '0';
-                leafletContainer.style.right = '0';
-                leafletContainer.style.bottom = '0';
-                leafletContainer.style.width = width;
-                leafletContainer.style.height = height;
-                leafletContainer.style.margin = '0';
-                leafletContainer.style.padding = '0';
-                leafletContainer.style.overflow = 'visible';
-                leafletContainer.style.inset = '0';
-                leafletContainer.style.minWidth = width;
-                leafletContainer.style.minHeight = height;
-                leafletContainer.style.maxWidth = width;
-                leafletContainer.style.maxHeight = height;
-                leafletContainer.style.zIndex = '9999';
-                leafletContainer.style.boxSizing = 'border-box';
-                // CRITICAL: Remove any 3D transforms
-                leafletContainer.style.transform = 'none';
-                leafletContainer.style.transformStyle = 'flat';
-                leafletContainer.style.perspective = 'none';
-            }
-            
-            // Apply to all leaflet panes
-            const leafletPanes = document.querySelectorAll('.leaflet-pane, .leaflet-map-pane');
-            leafletPanes.forEach(function(pane) {
-                pane.style.width = width;
-                pane.style.height = height;
-                pane.style.transform = 'none';
-                pane.style.transformStyle = 'flat';
-                pane.style.perspective = 'none';
-            });
-            
-            // Force map to recalculate size
-            if (map) {
-                setTimeout(() => {
-                    map.invalidateSize();
-                }, 100);
-            }
-        };
+        // Hide debug console/panel during navigation to keep navbar clean
+        const debugPanel = document.querySelector('.debug-panel');
+        if (debugPanel && !debugPanel.classList.contains('active')) {
+            debugPanel.style.display = 'none';
+            debugPanel.style.visibility = 'hidden';
+        }
         
-        // Apply immediately
-        applyFullscreenStyles();
+        // Ensure navbar is closed by default during navigation (user can open it manually)
+        if (navbar && navbar.classList.contains('active')) {
+            // Keep it open if user already opened it, but don't force it
+        }
         
-        // Re-apply after delays to catch address bar hiding
-        setTimeout(applyFullscreenStyles, 100);
-        setTimeout(applyFullscreenStyles, 300);
-        setTimeout(applyFullscreenStyles, 500);
-        
-        // Re-apply on resize and orientation change
-        const handleFullscreenResize = () => {
-            applyFullscreenStyles();
-        };
-        window.addEventListener('resize', handleFullscreenResize);
-        window.addEventListener('orientationchange', () => {
-            setTimeout(handleFullscreenResize, 200);
-        });
-        
-        // Force remove 3D transforms from all leaflet panes
+        // Remove 3D transforms from all leaflet panes (keep flat view)
         const leafletPanes = document.querySelectorAll('.leaflet-pane, .leaflet-map-pane, .leaflet-tile-pane, .leaflet-overlay-pane, .leaflet-shadow-pane, .leaflet-marker-pane, .leaflet-tooltip-pane, .leaflet-popup-pane, .leaflet-tile-container');
         leafletPanes.forEach(function(pane) {
             pane.style.transform = 'none';
@@ -5327,27 +5063,6 @@ function startTurnByTurnNavigation() {
         }
         
         console.log('✅ Map controls enabled immediately - user can manually zoom, pan, and interact with map');
-        
-        // Listen for fullscreen changes
-        const fullscreenChange = () => {
-            if (!document.fullscreenElement && !document.webkitFullscreenElement && 
-                !document.mozFullScreenElement && !document.msFullscreenElement) {
-                // User exited fullscreen, ensure styles are still applied
-                const useDvh = CSS.supports('height', '100dvh');
-                const useDvw = CSS.supports('width', '100dvw');
-                
-                document.documentElement.style.width = useDvw ? '100dvw' : '100vw';
-                document.documentElement.style.height = useDvh ? '100dvh' : '100vh';
-                document.body.style.width = useDvw ? '100dvw' : '100vw';
-                document.body.style.height = useDvh ? '100dvh' : '100vh';
-                map.invalidateSize();
-            }
-        };
-        
-        document.addEventListener('fullscreenchange', fullscreenChange);
-        document.addEventListener('webkitfullscreenchange', fullscreenChange);
-        document.addEventListener('mozfullscreenchange', fullscreenChange);
-        document.addEventListener('MSFullscreenChange', fullscreenChange);
         
         // FIXED: Ensure hasUserInteraction is true for mobile Speech Synthesis
         // This is critical for Speech Synthesis to work on mobile devices
@@ -5425,151 +5140,14 @@ function startTurnByTurnNavigation() {
             turnMarkerDataCount: turnMarkerData ? turnMarkerData.length : 0
         });
         
-        // FIXED: Handle window resize to maintain fullscreen with actual pixel values
-        const handleNavigationResize = () => {
-            if (document.body.classList.contains('navigating')) {
-                // FIXED: Use actual window dimensions for mobile
-                const resizeVh = window.innerHeight;
-                const resizeVw = window.innerWidth;
-                const resizeHeight = resizeVh + 'px';
-                const resizeWidth = resizeVw + 'px';
-                
-                // Update HTML and body
-                document.documentElement.style.width = resizeWidth;
-                document.documentElement.style.height = resizeHeight;
-                document.body.style.width = resizeWidth;
-                document.body.style.height = resizeHeight;
-                
-                const mapEl = document.getElementById('map');
-                const leafletEl = document.querySelector('.leaflet-container');
-                
-                if (mapEl) {
-                    mapEl.style.width = resizeWidth;
-                    mapEl.style.height = resizeHeight;
-                    mapEl.style.maxWidth = resizeWidth;
-                    mapEl.style.maxHeight = resizeHeight;
-                    mapEl.style.minWidth = resizeWidth;
-                    mapEl.style.minHeight = resizeHeight;
-                }
-                
-                if (leafletEl) {
-                    leafletEl.style.width = resizeWidth;
-                    leafletEl.style.height = resizeHeight;
-                    leafletEl.style.maxWidth = resizeWidth;
-                    leafletEl.style.maxHeight = resizeHeight;
-                    leafletEl.style.minWidth = resizeWidth;
-                    leafletEl.style.minHeight = resizeHeight;
-                }
-                
-                // Force map to recalculate size
-                setTimeout(() => {
-                    map.invalidateSize();
-                }, 100);
-            }
-        };
-        
-        window.addEventListener('resize', handleNavigationResize);
-        window.addEventListener('orientationchange', () => {
-            setTimeout(() => {
-                handleNavigationResize();
-                map.invalidateSize();
-            }, 200);
-        });
-        
-        // FIXED: Force map resize and ensure fullscreen - AGGRESSIVE FULLSCREEN
+        // Force map to recalculate size after class change (simple resize, no forced fullscreen)
         setTimeout(() => {
-            // FIXED: Recalculate actual dimensions (may have changed after address bar hide)
-            const newVh = window.innerHeight || document.documentElement.clientHeight;
-            const newVw = window.innerWidth || document.documentElement.clientWidth;
-            const newActualHeight = newVh + 'px';
-            const newActualWidth = newVw + 'px';
-            
-            // Set HTML and body to fullscreen with actual pixel values
-            document.documentElement.style.width = newActualWidth;
-            document.documentElement.style.height = newActualHeight;
-            document.documentElement.style.margin = '0';
-            document.documentElement.style.padding = '0';
-            document.documentElement.style.overflow = 'hidden';
-            document.documentElement.style.inset = '0';
-            document.documentElement.style.maxWidth = newActualWidth;
-            document.documentElement.style.maxHeight = newActualHeight;
-            document.documentElement.style.minWidth = newActualWidth;
-            document.documentElement.style.minHeight = newActualHeight;
-            
-            document.body.style.width = newActualWidth;
-            document.body.style.height = newActualHeight;
-            document.body.style.margin = '0';
-            document.body.style.padding = '0';
-            document.body.style.overflow = 'hidden';
-            document.body.style.inset = '0';
-            document.body.style.maxWidth = newActualWidth;
-            document.body.style.maxHeight = newActualHeight;
-            document.body.style.minWidth = newActualWidth;
-            document.body.style.minHeight = newActualHeight;
-            
-            // Double check map is fullscreen (reuse existing mapElement variable)
-            if (!mapElement) {
-                mapElement = document.getElementById('map');
-            }
-            if (mapElement) {
-                mapElement.style.position = 'fixed';
-                mapElement.style.top = '0';
-                mapElement.style.left = '0';
-                mapElement.style.right = '0';
-                mapElement.style.bottom = '0';
-                mapElement.style.width = newActualWidth;
-                mapElement.style.height = newActualHeight;
-                mapElement.style.margin = '0';
-                mapElement.style.padding = '0';
-                mapElement.style.zIndex = '9999'; // FIXED: Higher z-index
-                mapElement.style.overflow = 'hidden';
-                mapElement.style.inset = '0';
-                mapElement.style.minWidth = newActualWidth;
-                mapElement.style.minHeight = newActualHeight;
-                mapElement.style.maxWidth = newActualWidth;
-                mapElement.style.maxHeight = newActualHeight;
-            }
-            
-            // Also ensure leaflet container and all panes are fullscreen
-            const leafletContainer = document.querySelector('.leaflet-container');
-            if (leafletContainer) {
-                leafletContainer.style.width = newActualWidth;
-                leafletContainer.style.height = newActualHeight;
-                leafletContainer.style.position = 'fixed';
-                leafletContainer.style.top = '0';
-                leafletContainer.style.left = '0';
-                leafletContainer.style.right = '0';
-                leafletContainer.style.bottom = '0';
-                leafletContainer.style.margin = '0';
-                leafletContainer.style.padding = '0';
-                leafletContainer.style.overflow = 'visible';
-                leafletContainer.style.inset = '0';
-                leafletContainer.style.minWidth = newActualWidth;
-                leafletContainer.style.minHeight = newActualHeight;
-                leafletContainer.style.maxWidth = newActualWidth;
-                leafletContainer.style.maxHeight = newActualHeight;
-                leafletContainer.style.zIndex = '9999'; // FIXED: Higher z-index
-            }
-            
-            // Ensure all leaflet panes are fullscreen
-            const panes = document.querySelectorAll('.leaflet-pane, .leaflet-map-pane, .leaflet-tile-pane, .leaflet-overlay-pane, .leaflet-shadow-pane, .leaflet-marker-pane, .leaflet-tooltip-pane, .leaflet-popup-pane');
-            panes.forEach(pane => {
-                pane.style.width = newActualWidth;
-                pane.style.height = newActualHeight;
-                pane.style.overflow = 'visible';
-                pane.style.inset = '0';
-            });
-            
-            // Force map to recalculate size
-            map.invalidateSize();
-            
-            // Double check after a short delay
-            setTimeout(() => {
+            if (map) {
                 map.invalidateSize();
-            }, 200);
+            }
         }, 100);
         
-        console.log('📍 Map focused on user location at start of navigation:', userLatLng.lat.toFixed(6), userLatLng.lng.toFixed(6));
+        console.log('📍 Navigation started - map remains in normal view (no forced fullscreen or zoom)');
     }
     
     // CRITICAL FIX: Langsung announce tanpa test - bypass semua logika kompleks
@@ -6456,13 +6034,7 @@ function announceWelcomeGuide() {
     }
     
     // ALUR BARU: Panduan penggunaan yang jelas sesuai permintaan
-    const welcomeText = 'Selamat datang di Senavision. Panduan penggunaan: ' +
-        'Setelah suara ini selesai, mikrofon akan aktif. ' +
-        'Sebutkan nama tujuan Anda, misalnya Jakarta, Bandung, atau nama lokasi lainnya. ' +
-        'Setelah tujuan ditetapkan, Anda akan mendengar informasi rute. ' +
-        'Kemudian ucapkan "Navigasi" untuk memulai perjalanan. ' +
-        'Navigator akan memberikan petunjuk arah seperti "Belok Kanan" dan "Belok Kiri" pada setiap belokan. ' +
-        'Selamat menikmati perjalanan Anda.';
+    const welcomeText = 'Selamat datang di Senavision. Sebutkan tujuan Anda, lalu ucapkan "Navigasi" untuk memulai perjalanan.';
     
     console.log('📢 Starting welcome guide announcement');
     updateVoiceStatus('📢 Memutar panduan penggunaan...');

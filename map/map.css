@@ -77,11 +77,10 @@ html.navigating {
 }
 
 /* Force fullscreen for entire viewport - remove all gaps */
+/* SIMPLIFIED: Just add navigating class - no forced fullscreen or viewport manipulation */
 html.navigating,
 body.navigating {
-  inset: 0 !important;
-  position: fixed !important;
-  overflow: hidden !important;
+  /* No forced fullscreen - keep normal viewport */
 }
 
 body.navigating * {
@@ -143,17 +142,28 @@ body.navigating #backToHomeBtn {
   position: fixed !important;
 }
 
-/* Keep sidebar accessible during navigation */
+/* Keep sidebar accessible during navigation - CRITICAL: Navbar must remain visible and not affected by zoom */
 body.navigating .side-navbar,
 body.navigating #sideNavbar {
   display: block !important;
   visibility: visible !important;
   opacity: 1 !important;
   pointer-events: auto !important;
-  z-index: 9999 !important;
+  z-index: 10001 !important;
   width: auto !important;
   height: auto !important;
   overflow: visible !important;
+  position: fixed !important;
+  /* CRITICAL: Prevent zoom/transform from affecting navbar */
+  transform: none !important;
+  transform-origin: center center !important;
+  transform-style: flat !important;
+  perspective: none !important;
+  will-change: auto !important;
+  /* Ensure navbar stays in correct position */
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
 }
 
 /* Hide only leaflet controls and permission popup during navigation */
@@ -173,15 +183,22 @@ body.navigating .permission-popup {
   overflow: hidden !important;
 }
 
-/* CRITICAL: Keep debug button visible during navigation */
-body.navigating .navbar-tab[data-tab="debug"],
-body.navigating #navbarTabDebug,
+/* Hide debug console/panel during navigation - keep navbar clean */
 body.navigating .debug-panel {
-  display: block !important;
-  visibility: visible !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-  z-index: 10000 !important;
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+}
+
+/* Hide debug logs container during navigation */
+body.navigating .debug-logs,
+body.navigating #debugLogs {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 /* CRITICAL: Ensure all important UI buttons remain visible and functional during navigation */
@@ -191,19 +208,13 @@ body.navigating button#navbarToggleBtn,
 body.navigating button#backToHomeBtn,
 body.navigating .navbar-toggle-btn,
 body.navigating #navbarToggleBtn,
-body.navigating #backToHomeBtn,
-body.navigating .side-navbar,
-body.navigating #sideNavbar,
-body.navigating #floatingDebugBtn,
-body.navigating button#floatingDebugBtn,
-body.navigating .side-navbar *,
-body.navigating #sideNavbar * {
+body.navigating #backToHomeBtn {
   display: block !important;
   display: flex !important;
   visibility: visible !important;
   opacity: 1 !important;
   pointer-events: auto !important;
-  z-index: 10000 !important;
+  z-index: 10002 !important;
   width: auto !important;
   height: auto !important;
   min-width: auto !important;
@@ -211,13 +222,40 @@ body.navigating #sideNavbar * {
   max-width: none !important;
   max-height: none !important;
   overflow: visible !important;
-  position: relative !important;
   position: fixed !important;
   touch-action: auto !important;
   -webkit-touch-callout: default !important;
   -webkit-user-select: auto !important;
   user-select: auto !important;
   cursor: pointer !important;
+  /* CRITICAL: Prevent zoom/transform from affecting buttons */
+  transform: none !important;
+  transform-origin: center center !important;
+  transform-style: flat !important;
+  perspective: none !important;
+  will-change: auto !important;
+}
+
+/* Ensure navbar and its children are not affected by zoom/transform */
+body.navigating .side-navbar,
+body.navigating #sideNavbar,
+body.navigating .side-navbar *,
+body.navigating #sideNavbar * {
+  /* CRITICAL: Prevent zoom/transform from affecting navbar */
+  transform: none !important;
+  transform-origin: center center !important;
+  transform-style: flat !important;
+  perspective: none !important;
+  will-change: auto !important;
+}
+
+/* Hide floating debug button during navigation */
+body.navigating #floatingDebugBtn,
+body.navigating button#floatingDebugBtn {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 /* Hide browser address bar and UI elements */
@@ -254,18 +292,9 @@ body.navigating .leaflet-control-zoom {
   z-index: -1 !important;
 }
 
-/* Hide browser UI elements during navigation */
+/* SIMPLIFIED: No forced viewport manipulation during navigation */
 body.navigating {
-  /* Hide browser address bar by scrolling */
-  scroll-behavior: auto !important;
-  /* Prevent any scrolling that might show address bar */
-  overscroll-behavior: none !important;
-  -webkit-overflow-scrolling: touch !important;
-  /* Force hide address bar on mobile */
-  position: fixed !important;
-  overflow: hidden !important;
-  /* CRITICAL: Allow touch interaction on map - don't disable touch-action globally */
-  /* touch-action: none !important; REMOVED - allows map interaction */
+  /* Keep normal viewport - no forced fullscreen or scrolling manipulation */
 }
 
 /* CRITICAL: Ensure map container can be interacted with during navigation */
@@ -286,47 +315,16 @@ body.navigating .leaflet-popup-pane {
   -ms-touch-action: pan-x pan-y pinch-zoom !important;
 }
 
-/* Mobile-specific fixes for fullscreen */
+/* Mobile-specific: Keep normal view - no forced fullscreen */
 @media (max-width: 768px) {
   body.navigating,
   html.navigating {
-    /* Use actual screen dimensions, not viewport */
-    width: 100% !important;
-    height: 100% !important;
-    position: fixed !important;
-    overflow: hidden !important;
-    /* Prevent address bar from showing */
-    overscroll-behavior-y: none !important;
-    overscroll-behavior-x: none !important;
-    -webkit-overflow-scrolling: touch !important;
-    /* Prevent any gaps */
-    margin: 0 !important;
-    padding: 0 !important;
-    border: none !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    inset: 0 !important;
+    /* No forced fullscreen - keep normal viewport */
   }
   
   body.navigating #map,
   body.navigating .leaflet-container {
-    /* Force fullscreen on mobile */
-    width: 100% !important;
-    height: 100% !important;
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    border: none !important;
-    z-index: 9999 !important;
-    inset: 0 !important;
-    /* Prevent any gaps or margins */
-    box-sizing: border-box !important;
+    /* Keep normal map styling - no forced fullscreen */
     /* CRITICAL: Ensure map can be interacted with */
     touch-action: pan-x pan-y pinch-zoom !important;
     pointer-events: auto !important;
@@ -339,8 +337,7 @@ body.navigating .leaflet-popup-pane {
   body.navigating #navbarToggleBtn,
   body.navigating #backToHomeBtn,
   body.navigating .side-navbar,
-  body.navigating #sideNavbar,
-  body.navigating #floatingDebugBtn {
+  body.navigating #sideNavbar {
     display: block !important;
     visibility: visible !important;
     opacity: 1 !important;
@@ -351,148 +348,59 @@ body.navigating .leaflet-popup-pane {
     overflow: visible !important;
   }
   
-  /* Ensure no scrollbars appear */
-  body.navigating,
-  html.navigating,
-  body.navigating #map,
-  body.navigating .leaflet-container {
-    overflow: hidden !important;
-    -ms-overflow-style: none !important;
-    scrollbar-width: none !important;
+  /* Hide floating debug button during navigation on mobile */
+  body.navigating #floatingDebugBtn {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
   }
   
-  body.navigating #map::-webkit-scrollbar,
-  body.navigating .leaflet-container::-webkit-scrollbar {
-    display: none !important;
-    width: 0 !important;
-    height: 0 !important;
-  }
 }
 
-/* Force hide browser chrome on mobile */
+/* SIMPLIFIED: No forced safe-area manipulation on iOS */
 @supports (-webkit-touch-callout: none) {
-  /* iOS Safari */
+  /* iOS Safari - keep normal view */
   body.navigating {
-    /* Use safe-area-inset for iPhone notch */
-    padding-top: env(safe-area-inset-top) !important;
-    padding-bottom: env(safe-area-inset-bottom) !important;
-    padding-left: env(safe-area-inset-left) !important;
-    padding-right: env(safe-area-inset-right) !important;
+    /* No forced padding manipulation */
   }
 
   body.navigating #map {
-    /* Account for safe areas on iOS */
-    top: env(safe-area-inset-top) !important;
-    bottom: env(safe-area-inset-bottom) !important;
-    left: env(safe-area-inset-left) !important;
-    right: env(safe-area-inset-right) !important;
+    /* No forced safe-area manipulation */
   }
 }
 
-/* Ensure map takes full screen during navigation - ABSOLUTE FULLSCREEN */
-/* CRITICAL: Map must be interactive, not locked */
+/* SIMPLIFIED: Map remains in normal view during navigation - no forced fullscreen */
 body.navigating #map {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
+  /* Keep normal map styling - no forced fullscreen */
+  transform: none !important;
+  transform-style: flat !important;
+  perspective: none !important;
   /* CRITICAL: Ensure map can be dragged and zoomed */
   touch-action: pan-x pan-y pinch-zoom !important;
   pointer-events: auto !important;
   -ms-touch-action: pan-x pan-y pinch-zoom !important;
-  width: 100vw !important;
-  width: 100dvw !important;
-  width: 100% !important;
-  height: 100vh !important;
-  height: 100dvh !important;
-  height: 100% !important;
-  /* Dynamic viewport height */
-  margin: 0 !important;
-  padding: 0 !important;
-  border: none !important;
-  outline: none !important;
-  transform: none !important;
-  transform-style: flat !important;
-  perspective: none !important;
-  z-index: 9999 !important;
-  overflow: hidden !important;
-  inset: 0 !important;
-  min-width: 100vw !important;
-  min-width: 100dvw !important;
-  min-width: 100% !important;
-  min-height: 100vh !important;
-  min-height: 100dvh !important;
-  min-height: 100% !important;
-  max-width: 100vw !important;
-  max-width: 100dvw !important;
-  max-width: 100% !important;
-  max-height: 100vh !important;
-  max-height: 100dvh !important;
-  max-height: 100% !important;
-  box-sizing: border-box !important;
 }
 
 body.navigating .leaflet-container {
-  width: 100vw !important;
-  width: 100dvw !important;
-  width: 100% !important;
-  height: 100vh !important;
-  height: 100dvh !important;
-  height: 100% !important;
-  /* Dynamic viewport height */
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  overflow: visible !important;
-  clip: none !important;
-  max-width: 100vw !important;
-  max-width: 100dvw !important;
-  max-width: 100% !important;
-  max-height: 100vh !important;
-  max-height: 100dvh !important;
-  max-height: 100% !important;
-  min-width: 100vw !important;
-  min-width: 100dvw !important;
-  min-width: 100% !important;
-  min-height: 100vh !important;
-  min-height: 100dvh !important;
-  min-height: 100% !important;
-  inset: 0 !important;
-  z-index: 9999 !important;
-  box-sizing: border-box !important;
+  /* Keep normal container styling - no forced fullscreen */
+  transform: none !important;
+  transform-style: flat !important;
+  perspective: none !important;
 }
 
 body.navigating .leaflet-pane {
-  width: 100vw !important;
-  width: 100dvw !important;
-  height: 100vh !important;
-  height: 100dvh !important;
-  position: absolute !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  overflow: visible !important;
-  inset: 0 !important;
+  /* Keep normal pane styling - no forced fullscreen */
+  transform: none !important;
+  transform-style: flat !important;
+  perspective: none !important;
 }
 
 body.navigating .leaflet-map-pane {
-  width: 100vw !important;
-  width: 100dvw !important;
-  height: 100vh !important;
-  height: 100dvh !important;
-  position: absolute !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  overflow: visible !important;
-  inset: 0 !important;
+  /* Keep normal map pane styling - no forced fullscreen */
+  transform: none !important;
+  transform-style: flat !important;
+  perspective: none !important;
 }
 
 body.navigating .leaflet-tile-pane,
@@ -501,68 +409,26 @@ body.navigating .leaflet-shadow-pane,
 body.navigating .leaflet-marker-pane,
 body.navigating .leaflet-tooltip-pane,
 body.navigating .leaflet-popup-pane {
-  width: 100vw !important;
-  width: 100dvw !important;
-  height: 100vh !important;
-  height: 100dvh !important;
-  overflow: visible !important;
-  position: absolute !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  inset: 0 !important;
+  /* Keep normal pane styling - no forced fullscreen */
+  transform: none !important;
+  transform-style: flat !important;
+  perspective: none !important;
 }
 
 /* Additional fullscreen enforcement for all map elements */
 body.navigating .leaflet-tile-container,
 body.navigating .leaflet-image-layer,
 body.navigating .leaflet-layer {
-  width: 100vw !important;
-  width: 100dvw !important;
-  height: 100vh !important;
-  height: 100dvh !important;
-  max-width: 100vw !important;
-  max-height: 100vh !important;
+  /* Keep normal layer styling - no forced fullscreen */
 }
 
-/* Remove any padding/margin from body during navigation */
+/* SIMPLIFIED: No forced fullscreen during navigation - keep normal viewport */
 body.navigating {
-  margin: 0 !important;
-  padding: 0 !important;
-  overflow: hidden !important;
-  width: 100vw !important;
-  width: 100dvw !important;
-  width: 100% !important;
-  height: 100vh !important;
-  height: 100dvh !important;
-  height: 100% !important;
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  inset: 0 !important;
-  box-sizing: border-box !important;
+  /* No forced fullscreen - keep normal viewport */
 }
 
 html.navigating {
-  margin: 0 !important;
-  padding: 0 !important;
-  overflow: hidden !important;
-  width: 100vw !important;
-  width: 100dvw !important;
-  width: 100% !important;
-  height: 100vh !important;
-  height: 100dvh !important;
-  height: 100% !important;
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  inset: 0 !important;
-  box-sizing: border-box !important;
+  /* No forced fullscreen - keep normal viewport */
 }
 
 /* Add floating navigation controls during navigation */
@@ -666,6 +532,11 @@ body.navigating .nav-control-btn:hover {
   /* Default: hanya drag handle terlihat */
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   touch-action: pan-y;
+  /* CRITICAL: Prevent zoom/transform from affecting navbar */
+  transform-origin: center center;
+  transform-style: flat;
+  perspective: none;
+  will-change: transform;
 }
 
 .side-navbar.active {
