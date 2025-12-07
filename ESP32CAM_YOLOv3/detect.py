@@ -6,6 +6,7 @@ import socket
 import sys
 import time
 import threading
+import gc  # Garbage collection untuk memory management
 
 # Camera URL configuration
 # Option 1: mDNS hostname (senavision.local) - akan dicoba dulu dengan timeout pendek
@@ -17,9 +18,18 @@ CAMERA_URL_IP = "http://192.168.1.97/cam.jpg"  # IP address ESP32-CAM Anda
 # Timeout untuk mDNS (dalam detik) - jika lebih dari ini, akan fallback ke IP
 MDNS_TIMEOUT = 2  # 2 detik cukup untuk mDNS yang cepat, tidak terlalu lama menunggu
 
-# Konfigurasi vibrator
+# ============================================================================
+# KONFIGURASI VIBRATOR
+# ============================================================================
+# Alur kerja:
+# 1. Python detect.py → ESP32-CAM (/left atau /right)
+# 2. ESP32-CAM → ESP32-C3 Vibrator (http://192.168.1.27/left atau /right)
+# 3. ESP32-C3 → Aktifkan vibrator motor (PIN 4 untuk LEFT, PIN 5 untuk RIGHT)
+# ============================================================================
 VIBRATE_DISTANCE_THRESHOLD = 1.5  # Jarak dalam meter untuk trigger vibrate
 VIBRATE_DEBOUNCE_TIME = 0.5  # Waktu debounce dalam detik (mencegah spam request)
+VIBRATE_TIMEOUT = 5  # Timeout untuk request vibrate (dalam detik) - ditingkatkan dari 2 ke 5
+VIBRATE_RETRY_COUNT = 2  # Jumlah retry jika request gagal
 
 # YOLO model files
 weights_path = r"./YOLO/yolov3.weights"
@@ -61,6 +71,9 @@ colors = np.random.uniform(0, 255, size=(len(classes), 3))
 last_vibrate_time_left = 0
 last_vibrate_time_right = 0
 vibrate_lock = threading.Lock()
+
+# Variabel global untuk frame counter (untuk garbage collection)
+frame_count = 0
 
 # Focal length (dalam pixel) - dikalibrasi untuk ESP32-CAM dengan resolusi 800x600
 # Nilai ini dapat disesuaikan untuk meningkatkan akurasi
@@ -106,8 +119,13 @@ OBJECT_SIZES = {
 
 def send_vibrate_signal(camera_base_url, side="left"):
     """
-    Mengirim sinyal vibrate ke ESP32-CAM endpoint
-    ESP32-CAM akan meneruskan sinyal ke ESP32-C3 vibrator menggunakan /left atau /right
+    Mengirim sinyal vibrate ke ESP32-CAM endpoint.
+    
+    Alur kerja:
+    1. Python mengirim request ke ESP32-CAM: http://[ESP32-CAM_IP]/left atau /right
+    2. ESP32-CAM merespons Python dengan cepat (non-blocking)
+    3. ESP32-CAM mengirim request ke ESP32-C3 vibrator di background (FreeRTOS task)
+    4. ESP32-C3 mengaktifkan vibrator motor sesuai sisi (LEFT: PIN 4, RIGHT: PIN 5)
     
     Args:
         camera_base_url: Base URL kamera (misalnya "http://senavision.local" atau "http://192.168.1.97")
@@ -135,52 +153,44 @@ def send_vibrate_signal(camera_base_url, side="left"):
         else:
             base_url = camera_base_url
         
-        # Jika menggunakan mDNS, coba resolve ke IP dulu untuk menghindari masalah di thread
-        # Tapi jika sudah IP, langsung pakai
-        if "senavision.local" in base_url or ".local" in base_url:
-            # Resolve mDNS ke IP untuk thread
-            try:
-                hostname = base_url.replace("http://", "").split("/")[0]
-                ip = socket.gethostbyname(hostname)
-                base_url = base_url.replace(hostname, ip)
-            except:
-                pass  # Jika gagal resolve, tetap pakai mDNS
-        
         # Gunakan endpoint /left atau /right sesuai posisi objek
         endpoint = "/left" if side == "left" else "/right"
         vibrate_url = f"{base_url}{endpoint}"
         
         # Kirim request dalam thread terpisah agar tidak blocking
         def send_request():
-            try:
-                # Set socket timeout untuk thread ini
-                socket.setdefaulttimeout(3)  # 3 detik timeout
-                
-                req = urllib.request.Request(vibrate_url)
-                response = urllib.request.urlopen(req, timeout=3)
-                response_code = response.getcode()
-                response_data = response.read().decode('utf-8', errors='ignore')
-                
-                if response_code == 200:
-                    print(f"✓ Vibrate signal sent to {vibrate_url} ({side.upper()} vibrator) - Response: {response_data.strip()}")
-                else:
-                    print(f"⚠ Vibrate signal sent but got response code {response_code}")
-                    
-            except socket.timeout:
-                print(f"✗ Failed to send vibrate signal to {side}: socket timeout (3s)")
-            except urllib.error.URLError as e:
-                error_msg = str(e)
-                if "timed out" in error_msg.lower() or "timeout" in error_msg.lower():
-                    print(f"✗ Failed to send vibrate signal to {side}: timeout (ESP32-CAM tidak merespons dalam 3 detik)")
-                elif "Name or service not known" in error_msg or "nodename nor servname" in error_msg.lower():
-                    print(f"✗ Failed to send vibrate signal to {side}: cannot resolve hostname")
-                else:
-                    print(f"✗ Failed to send vibrate signal to {side}: {error_msg}")
-            except Exception as e:
-                print(f"✗ Failed to send vibrate signal to {side}: {type(e).__name__}: {e}")
-            finally:
-                # Reset socket timeout
-                socket.setdefaulttimeout(None)
+            # Retry mechanism
+            for attempt in range(VIBRATE_RETRY_COUNT):
+                try:
+                    req = urllib.request.Request(vibrate_url)
+                    # Gunakan timeout yang lebih panjang
+                    response = urllib.request.urlopen(req, timeout=VIBRATE_TIMEOUT)
+                    # Baca response untuk memastikan request berhasil
+                    response_text = response.read().decode('utf-8')
+                    if "OK" in response_text:
+                        print(f"✓ Vibrate signal sent to {vibrate_url} ({side.upper()} vibrator)")
+                    else:
+                        print(f"⚠ Vibrate signal sent but unexpected response: {response_text}")
+                    return  # Berhasil, keluar dari retry loop
+                except urllib.error.URLError as e:
+                    if attempt < VIBRATE_RETRY_COUNT - 1:
+                        # Tunggu sebentar sebelum retry
+                        time.sleep(0.1)
+                        continue
+                    else:
+                        # Semua retry gagal
+                        error_msg = str(e)
+                        if "timed out" in error_msg.lower():
+                            print(f"✗ Failed to send vibrate signal to {side}: timed out (ESP32-CAM mungkin tidak merespons atau ESP32-C3 vibrator tidak terhubung)")
+                        else:
+                            print(f"✗ Failed to send vibrate signal to {side}: {error_msg}")
+                except Exception as e:
+                    error_msg = str(e)
+                    if "timed out" in error_msg.lower():
+                        print(f"✗ Failed to send vibrate signal to {side}: timed out (ESP32-CAM mungkin tidak merespons atau ESP32-C3 vibrator tidak terhubung)")
+                    else:
+                        print(f"✗ Failed to send vibrate signal to {side}: {error_msg}")
+                    return  # Keluar dari retry loop untuk error selain timeout
         
         # Jalankan di thread terpisah
         thread = threading.Thread(target=send_request, daemon=True)
@@ -239,11 +249,39 @@ def calculate_distance(pixel_height, class_id, pixel_width=None):
 
 
 def detect_objects(frame, camera_url=None):
-    height, width, _ = frame.shape
-    blob = cv2.dnn.blobFromImage(frame, 1 / 255.0, (416, 416), swapRB=True, crop=False)
-    net.setInput(blob)
+    # Validasi frame
+    if frame is None or frame.size == 0:
+        print("Warning: Invalid frame received")
+        return frame
+    
+    try:
+        height, width, _ = frame.shape
+    except Exception as e:
+        print(f"Warning: Failed to get frame shape: {e}")
+        return frame
+    
+    # Resize frame jika terlalu besar untuk menghemat memori
+    max_dimension = 800
+    if width > max_dimension or height > max_dimension:
+        scale = max_dimension / max(width, height)
+        new_width = int(width * scale)
+        new_height = int(height * scale)
+        frame = cv2.resize(frame, (new_width, new_height))
+        height, width, _ = frame.shape
+    
+    try:
+        blob = cv2.dnn.blobFromImage(frame, 1 / 255.0, (416, 416), swapRB=True, crop=False)
+        net.setInput(blob)
 
-    layer_outputs = net.forward(output_layers)
+        layer_outputs = net.forward(output_layers)
+    except cv2.error as e:
+        if "bad allocation" in str(e).lower() or "insufficient memory" in str(e).lower():
+            print(f"Memory error in YOLO detection: {e}")
+            print("Attempting to free memory...")
+            gc.collect()  # Force garbage collection
+            return frame  # Return original frame without detection
+        else:
+            raise  # Re-raise if it's a different error
 
     boxes = []
     confidences = []
@@ -354,6 +392,9 @@ def detect_objects(frame, camera_url=None):
             side_str = " & ".join(side_info) if side_info else ""
             print(f"⚠ WARNING: Object detected at {closest_distance}m (threshold: {VIBRATE_DISTANCE_THRESHOLD}m) [{side_str}]")
 
+    # Cleanup memory (blob dan layer_outputs akan di-cleanup otomatis oleh Python GC)
+    # Tidak perlu explicit del karena akan di-handle oleh exception handler jika ada error
+    
     return frame
 
 
@@ -460,8 +501,12 @@ def main():
     
     cv2.namedWindow("Object Detection", cv2.WINDOW_AUTOSIZE)
     
-    # Connection timeout (5 seconds)
-    timeout = 5
+    # Connection timeout (10 seconds - ditingkatkan untuk stabilitas)
+    timeout = 10
+    
+    # Frame counter untuk garbage collection
+    global frame_count
+    frame_count = 0
     
     while True:
         try:
@@ -476,10 +521,32 @@ def main():
                 continue
             
             frame = detect_objects(frame, camera_url=url)
-            cv2.imshow("Object Detection", frame)
+            
+            if frame is not None:
+                cv2.imshow("Object Detection", frame)
+            else:
+                print("Warning: Frame is None, skipping display")
+                continue
 
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
+            
+            # Cleanup memory
+            try:
+                del imgnp
+                img_resp.close()
+            except:
+                pass
+            
+            # Increment frame counter
+            frame_count += 1
+            
+            # Force garbage collection setiap 10 frame untuk mencegah memory leak
+            if frame_count % 10 == 0:
+                gc.collect()
+            
+            # Delay kecil untuk mengurangi beban CPU dan memory
+            time.sleep(0.05)  # 50ms delay untuk mengurangi beban
                 
         except urllib.error.URLError as e:
             print(f"Connection error: {e}")
@@ -488,9 +555,23 @@ def main():
             # Wait a bit before retrying
             if cv2.waitKey(2000) & 0xFF == ord("q"):
                 break
+        except cv2.error as e:
+            error_msg = str(e)
+            if "bad allocation" in error_msg.lower() or "insufficient memory" in error_msg.lower():
+                print(f"Memory error: {e}")
+                print("Attempting to free memory and retry...")
+                gc.collect()  # Force garbage collection
+                time.sleep(1)  # Wait a bit before retry
+            else:
+                print(f"OpenCV error: {e}")
+            print("Press 'q' to quit or wait to retry...")
+            if cv2.waitKey(2000) & 0xFF == ord("q"):
+                break
         except Exception as e:
             print(f"Error occurred: {e}")
             print("Press 'q' to quit or wait to retry...")
+            # Cleanup on error
+            gc.collect()
             if cv2.waitKey(2000) & 0xFF == ord("q"):
                 break
 
