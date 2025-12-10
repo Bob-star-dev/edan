@@ -77,6 +77,9 @@
         <div class="status-item">
             Objects: <span id="objectCount">0</span>
         </div>
+        <div class="status-item">
+            Firebase: <span id="firebaseStatus" class="status-offline">Loading...</span>
+        </div>
     </div>
     
     <!-- Hidden canvas untuk image processing -->
@@ -88,6 +91,29 @@
     
     <!-- Main detector script -->
     <script src="config.js"></script>
+    
+    <!-- Firebase SDK - Initialize after CONFIG is loaded -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
+        import { getDatabase } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js';
+        
+        // Wait for CONFIG to be available
+        function initFirebase() {
+            if (typeof CONFIG !== 'undefined' && CONFIG.FIREBASE) {
+                try {
+                    window.firebaseApp = initializeApp(CONFIG.FIREBASE);
+                    window.firebaseDatabase = getDatabase(window.firebaseApp);
+                    console.log('[Firebase] ✅ Initialized');
+                } catch (error) {
+                    console.error('[Firebase] ❌ Initialization failed:', error);
+                }
+            } else {
+                setTimeout(initFirebase, 100);
+            }
+        }
+        initFirebase();
+    </script>
+    
     <script src="detector.js"></script>
 </body>
 </html>

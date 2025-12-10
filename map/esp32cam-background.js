@@ -9,7 +9,8 @@
     const CONFIG = {
         CAMERA: {
             MDNS_URL: "http://senavision.local/cam.jpg",
-            IP_URL: "http://192.168.1.97/cam.jpg",
+            // IP_URL tidak lagi hardcode - akan auto-detect dari mDNS atau scan network
+            // Fallback IP hanya digunakan jika mDNS gagal (akan di-detect otomatis)
             TIMEOUT: 5000,
             RETRY_DELAY: 2000,
             FRAME_INTERVAL: 100,
@@ -48,6 +49,8 @@
     let lastVibrateTimeRight = 0;
     let cameraConnected = false;
     let connectionStatusCallback = null;
+    let firebaseRTDB = null;
+    let firebaseInitialized = false;
     
     // Create hidden canvas
     function createCanvas() {
@@ -113,36 +116,72 @@
     
     // Find camera
     async function findCamera() {
-        const testUrl = async (url) => {
-            try {
-                const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), 3000);
-                const response = await fetch(url, {
-                    method: 'GET',
-                    signal: controller.signal,
-                    cache: 'no-cache',
-                    mode: 'cors',
-                    credentials: 'omit'
-                });
-                clearTimeout(timeout);
-                if (response.ok) {
-                    const ct = response.headers.get('content-type');
-                    if (ct && ct.startsWith('image/')) return true;
-                }
-            } catch (e) {
-                if (e.name === 'TypeError' || e.message.includes('CORS')) {
-                    try {
-                        await fetch(url, { method: 'GET', mode: 'no-cors', cache: 'no-cache' });
-                        return true;
-                    } catch {}
-                }
-            }
-            return false;
+        // Helper function untuk test URL dengan Image element (lebih reliable)
+        const testUrl = async (url, timeout = 3000) => {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';  // Coba dengan CORS
+                
+                let resolved = false;
+                const timeoutId = setTimeout(() => {
+                    if (!resolved) {
+                        resolved = true;
+                        img.onload = null;
+                        img.onerror = null;
+                        resolve(false);
+                    }
+                }, timeout);
+                
+                img.onload = () => {
+                    if (!resolved) {
+                        resolved = true;
+                        clearTimeout(timeoutId);
+                        resolve(true);
+                    }
+                };
+                
+                img.onerror = () => {
+                    if (!resolved) {
+                        resolved = true;
+                        clearTimeout(timeoutId);
+                        // Jika CORS error, coba tanpa crossOrigin
+                        const imgNoCors = new Image();
+                        let noCorsResolved = false;
+                        const noCorsTimeout = setTimeout(() => {
+                            if (!noCorsResolved) {
+                                noCorsResolved = true;
+                                resolve(false);
+                            }
+                        }, timeout);
+                        
+                        imgNoCors.onload = () => {
+                            if (!noCorsResolved) {
+                                noCorsResolved = true;
+                                clearTimeout(noCorsTimeout);
+                                resolve(true);  // Image loaded, even without CORS
+                            }
+                        };
+                        
+                        imgNoCors.onerror = () => {
+                            if (!noCorsResolved) {
+                                noCorsResolved = true;
+                                clearTimeout(noCorsTimeout);
+                                resolve(false);
+                            }
+                        };
+                        
+                        imgNoCors.src = url + '?t=' + Date.now();
+                    }
+                };
+                
+                img.src = url + '?t=' + Date.now();
+            });
         };
         
         console.log('[ESP32CAM] 🔍 Searching for camera...');
         updateCameraStatus(false);
         
+        // Try mDNS first (recommended - works with any IP range)
         if (await testUrl(CONFIG.CAMERA.MDNS_URL)) {
             cameraUrl = CONFIG.CAMERA.MDNS_URL;
             console.log(`[ESP32CAM] ✅ Camera found (mDNS): ${cameraUrl}`);
@@ -150,14 +189,36 @@
             return true;
         }
         
-        if (await testUrl(CONFIG.CAMERA.IP_URL)) {
-            cameraUrl = CONFIG.CAMERA.IP_URL;
-            console.log(`[ESP32CAM] ✅ Camera found (IP): ${cameraUrl}`);
-            updateCameraStatus(true);
-            return true;
+        // Fallback: Try common IP ranges for hotspot HP
+        // Android hotspot: 192.168.43.x
+        // iPhone hotspot: 172.20.10.x
+        // Some Android: 192.168.137.x
+        // Old router: 192.168.1.x
+        const commonIPs = [
+            '192.168.43.161',  // Current ESP32CAM IP (from Serial Monitor)
+            '192.168.43.97',   // Android hotspot (common)
+            '192.168.43.1',    // Gateway (sometimes camera)
+            '172.20.10.97',    // iPhone hotspot
+            '192.168.137.97',  // Some Android
+            '192.168.1.97'     // Old router (backward compatibility)
+        ];
+        
+        // Remove duplicates
+        const uniqueIPs = [...new Set(commonIPs)];
+        
+        for (const ip of uniqueIPs) {
+            const testIPUrl = `http://${ip}/cam.jpg`;
+            console.log(`[ESP32CAM] 🔍 Trying IP: ${ip}...`);
+            if (await testUrl(testIPUrl)) {
+                cameraUrl = testIPUrl;
+                console.log(`[ESP32CAM] ✅ Camera found (IP): ${cameraUrl}`);
+                updateCameraStatus(true);
+                return true;
+            }
         }
         
-        console.error('[ESP32CAM] ❌ Camera not found - both mDNS and IP failed');
+        console.error('[ESP32CAM] ❌ Camera not found - mDNS and all IP ranges failed');
+        console.error('[ESP32CAM] 💡 Tip: Check Serial Monitor ESP32CAM untuk melihat IP yang diberikan hotspot');
         updateCameraStatus(false);
         return false;
     }
@@ -233,60 +294,105 @@
         return Math.round(dist * 10) / 10;
     }
     
-    // Send vibrate signal to ESP32-CAM
-    async function sendVibrate(side) {
+    // Initialize Firebase Realtime Database
+    async function initFirebase() {
+        if (firebaseInitialized && firebaseRTDB) {
+            return true;
+        }
+        
+        try {
+            // Check if Firebase is already initialized (from firebase-app.js)
+            if (window.firebaseRTDB) {
+                firebaseRTDB = window.firebaseRTDB;
+                firebaseInitialized = true;
+                log('Firebase RTDB initialized from global');
+                return true;
+            }
+            
+            // Wait a bit for Firebase to initialize
+            let attempts = 0;
+            while (attempts < 10 && !window.firebaseRTDB) {
+                await new Promise(r => setTimeout(r, 500));
+                attempts++;
+            }
+            
+            if (window.firebaseRTDB) {
+                firebaseRTDB = window.firebaseRTDB;
+                firebaseInitialized = true;
+                log('Firebase RTDB initialized after wait');
+                return true;
+            }
+            
+            error('Firebase RTDB not available');
+            return false;
+        } catch (e) {
+            error(`Firebase initialization failed: ${e.message}`);
+            return false;
+        }
+    }
+    
+    // Send detection data to Firebase (for ESP32-C3)
+    async function sendDetectionData(side, distance, objectName) {
         const now = Date.now();
         if (side === 'left') {
             if (now - lastVibrateTimeLeft < CONFIG.VIBRATOR.DEBOUNCE_TIME) {
-                log(`Vibrate ${side} skipped (debounce)`);
+                log(`Detection ${side} skipped (debounce)`);
                 return false;
             }
             lastVibrateTimeLeft = now;
         } else {
             if (now - lastVibrateTimeRight < CONFIG.VIBRATOR.DEBOUNCE_TIME) {
-                log(`Vibrate ${side} skipped (debounce)`);
+                log(`Detection ${side} skipped (debounce)`);
                 return false;
             }
             lastVibrateTimeRight = now;
         }
         
-        if (!cameraUrl) {
-            console.warn(`[ESP32CAM] ⚠️ Cannot send vibrate ${side} - camera not connected`);
-            return false;
-        }
-        
-        const baseUrl = cameraUrl.replace('/cam.jpg', '');
-        const vibrateUrl = `${baseUrl}/${side}`;
-        
-        console.log(`[ESP32CAM] 📳 Sending vibrate signal to ${side.toUpperCase()}...`);
-        console.log(`[ESP32CAM] 📡 URL: ${vibrateUrl}`);
-        
-        for (let i = 0; i < CONFIG.VIBRATOR.RETRY_COUNT; i++) {
-            try {
-                const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), CONFIG.VIBRATOR.TIMEOUT);
-                const response = await fetch(vibrateUrl, {
-                    signal: controller.signal,
-                    cache: 'no-cache'
-                });
-                clearTimeout(timeout);
-                if (response.ok) {
-                    const text = await response.text().catch(() => 'OK');
-                    console.log(`[ESP32CAM] ✅ Vibrate signal sent to ${side.toUpperCase()} (${vibrateUrl})`);
-                    console.log(`[ESP32CAM] 📳 Response: ${text}`);
-                    return true;
-                } else {
-                    console.warn(`[ESP32CAM] ⚠️ Vibrate ${side} returned status ${response.status}`);
-                }
-            } catch (e) {
-                if (i < CONFIG.VIBRATOR.RETRY_COUNT - 1) {
-                    await new Promise(r => setTimeout(r, 100));
-                    continue;
-                }
-                console.error(`[ESP32CAM] ❌ Failed to send vibrate signal to ${side}: ${e.message}`);
+        // Initialize Firebase if needed
+        if (!firebaseInitialized) {
+            const initSuccess = await initFirebase();
+            if (!initSuccess) {
+                console.warn(`[ESP32CAM] ⚠️ Cannot send detection data ${side} - Firebase not initialized`);
+                return false;
             }
         }
-        return false;
+        
+        try {
+            // Import Firebase Database functions
+            const { ref, set } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js');
+            
+            const detectionRef = ref(firebaseRTDB, '/detection/object');
+            const detectionData = {
+                side: side,
+                distance: distance,
+                object: objectName || 'unknown',
+                active: true,
+                timestamp: Date.now()
+            };
+        
+            console.log(`[ESP32CAM] 📳 Sending detection data to Firebase: ${side.toUpperCase()} - ${distance}m - ${objectName}`);
+            
+            // Send to Firebase
+            await set(detectionRef, detectionData);
+            console.log(`[ESP32CAM] ✅ Detection data sent to Firebase: ${side.toUpperCase()} - ${distance}m`);
+            
+            // Auto-clear after 1 second
+            setTimeout(async () => {
+                try {
+                    await set(detectionRef, {
+                        ...detectionData,
+                        active: false
+                    });
+                } catch (e) {
+                    // Ignore clear errors
+                }
+            }, 1000);
+            
+            return true;
+        } catch (e) {
+            console.error(`[ESP32CAM] ❌ Failed to send detection data to Firebase: ${e.message}`);
+            return false;
+        }
     }
     
     // Detect objects
@@ -350,8 +456,13 @@
             }
             
             if (tooClose) {
-                if (left.length > 0) await sendVibrate('left');
-                if (right.length > 0) await sendVibrate('right');
+                // Send detection data for each object detected
+                for (const obj of left) {
+                    await sendDetectionData('left', obj.dist, obj.class);
+                }
+                for (const obj of right) {
+                    await sendDetectionData('right', obj.dist, obj.class);
+                }
                 const sides = [];
                 if (left.length > 0) sides.push(`LEFT (${left.length} objek)`);
                 if (right.length > 0) sides.push(`RIGHT (${right.length} objek)`);

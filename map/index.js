@@ -930,6 +930,62 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 2000);
     }
     
+    // Function to set navigation mode to Firebase (for ESP32-C3)
+    window.setNavigationModeToFirebase = async function(active) {
+        try {
+            // Ensure Firebase is initialized
+            if (typeof window.initFirebaseIfNeeded === 'undefined') {
+                // Try to initialize Firebase if firebase-app.js is loaded
+                if (typeof initFirebaseIfNeeded === 'function') {
+                    await initFirebaseIfNeeded();
+                } else {
+                    // Wait a bit for firebase-app.js to load
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            }
+            
+            // Check if firebaseRTDB is available
+            if (!window.firebaseRTDB) {
+                console.warn('[Navigation] ⚠️ Firebase RTDB not initialized yet, retrying...');
+                // Wait a bit more and retry
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                if (!window.firebaseRTDB) {
+                    console.error('[Navigation] ❌ Firebase RTDB still not available after retry');
+                return false;
+                }
+            }
+            
+            const { ref, set } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js');
+            const navModeRef = ref(window.firebaseRTDB, '/navigation/mode');
+            
+            const data = {
+                active: active,
+                timestamp: Date.now()
+            };
+            
+            await set(navModeRef, data);
+            
+            console.log(`[Navigation] ✅ Navigation mode set to Firebase: ${active ? 'ACTIVE' : 'INACTIVE'}`);
+            console.log(`[Navigation] 📤 Data sent:`, data);
+            console.log(`[Navigation] 📍 Path: /navigation/mode`);
+            return true;
+        } catch (error) {
+            console.error('[Navigation] ❌ Failed to set navigation mode to Firebase:', error);
+            console.error('[Navigation] Error details:', {
+                message: error.message,
+                stack: error.stack,
+                firebaseRTDB: !!window.firebaseRTDB
+            });
+            return false;
+        }
+    };
+    
+    // Alias for backward compatibility
+    function setNavigationModeToFirebase(active) {
+        return window.setNavigationModeToFirebase(active);
+    }
+    
     // Only add click-outside behavior on mobile devices
     if (mapContainer && statusPanel && toggleBtn) {
         mapContainer.addEventListener('click', function(e) {
@@ -1397,6 +1453,10 @@ function onLocationFound(e) {
                 if (typeof window.SpeechCoordinator !== 'undefined') {
                     window.SpeechCoordinator.setNavigating(false);
                 }
+                
+                // Set navigation mode to Firebase (for ESP32-C3) - NAVIGATION ENDED
+                setNavigationModeToFirebase(false);
+                console.log('[Navigation] ✅ Navigation mode set to INACTIVE in Firebase (arrived at destination)');
                 
                 // Deactivate YOLO Detector saat navigasi berhenti
                 if (typeof window.YOLODetector !== 'undefined') {
@@ -4538,6 +4598,9 @@ function handleVoiceCommand(transcript) {
                 map.invalidateSize();
             }, 100);
             
+            // Set navigation mode to Firebase (for ESP32-C3)
+            setNavigationModeToFirebase(false);
+            
             // Nonaktifkan flag navigasi di SpeechCoordinator
             if (typeof window.SpeechCoordinator !== 'undefined') {
                 window.SpeechCoordinator.setNavigating(false);
@@ -4811,6 +4874,9 @@ function startTurnByTurnNavigation() {
     
     // CRITICAL: Set flag navigasi aktif
     isNavigating = true;
+    
+    // Set navigation mode to Firebase (for ESP32-C3)
+    setNavigationModeToFirebase(true);
     
     // NEW: Reset turn instructions list for new navigation session
     turnInstructionsList = [];

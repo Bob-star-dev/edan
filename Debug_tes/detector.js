@@ -25,6 +25,7 @@ class ESP32CAMDetector {
         this.modelStatus = document.getElementById('modelStatus');
         this.fpsElement = document.getElementById('fps');
         this.objectCountElement = document.getElementById('objectCount');
+        this.firebaseStatus = document.getElementById('firebaseStatus');
         
         this.log('ESP32-CAM YOLO Detector initialized');
     }
@@ -72,6 +73,13 @@ class ESP32CAMDetector {
         }
     }
     
+    updateFirebaseStatus(ready) {
+        if (this.firebaseStatus) {
+            this.firebaseStatus.textContent = ready ? 'Ready' : 'Loading...';
+            this.firebaseStatus.className = ready ? 'status-online' : 'status-offline';
+        }
+    }
+    
     // Load COCO-SSD model
     async loadModel() {
         try {
@@ -94,52 +102,66 @@ class ESP32CAMDetector {
     async findCameraUrl() {
         this.log('Finding camera URL...');
         
-        // Helper function untuk test URL dengan fetch image langsung
+        // Helper function untuk test URL dengan Image element (lebih reliable)
         const testCameraUrl = async (url, timeout = 3000) => {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), timeout);
-            
-            try {
-                // Langsung fetch image, tidak pakai HEAD (karena CORS issue)
-                const response = await fetch(url, {
-                    method: 'GET',
-                    signal: controller.signal,
-                    cache: 'no-cache',
-                    mode: 'cors',  // Coba CORS dulu
-                    credentials: 'omit'
-                });
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';  // Coba dengan CORS
                 
-                clearTimeout(timeoutId);
-                
-                // Cek jika response adalah image
-                if (response.ok) {
-                    const contentType = response.headers.get('content-type');
-                    if (contentType && contentType.startsWith('image/')) {
-                        return true;
+                let resolved = false;
+                const timeoutId = setTimeout(() => {
+                    if (!resolved) {
+                        resolved = true;
+                        img.onload = null;
+                        img.onerror = null;
+                        resolve(false);
                     }
-                }
-                return false;
-            } catch (error) {
-                clearTimeout(timeoutId);
+                }, timeout);
                 
-                // Jika CORS error, coba dengan no-cors mode (tidak bisa read response tapi bisa fetch)
-                if (error.name === 'TypeError' || error.message.includes('CORS')) {
-                    try {
-                        const noCorsResponse = await fetch(url, {
-                            method: 'GET',
-                            signal: controller.signal,
-                            cache: 'no-cache',
-                            mode: 'no-cors'  // no-cors mode untuk bypass CORS
-                        });
-                        // no-cors mode selalu return opaque response, jadi kita anggap berhasil
-                        return true;
-                    } catch (noCorsError) {
-                        return false;
+                img.onload = () => {
+                    if (!resolved) {
+                        resolved = true;
+                        clearTimeout(timeoutId);
+                        resolve(true);
                     }
-                }
+                };
                 
-                return false;
-            }
+                img.onerror = () => {
+                    if (!resolved) {
+                        resolved = true;
+                        clearTimeout(timeoutId);
+                        // Jika CORS error, coba tanpa crossOrigin
+                        const imgNoCors = new Image();
+                        let noCorsResolved = false;
+                        const noCorsTimeout = setTimeout(() => {
+                            if (!noCorsResolved) {
+                                noCorsResolved = true;
+                                resolve(false);
+                            }
+                        }, timeout);
+                        
+                        imgNoCors.onload = () => {
+                            if (!noCorsResolved) {
+                                noCorsResolved = true;
+                                clearTimeout(noCorsTimeout);
+                                resolve(true);  // Image loaded, even without CORS
+                            }
+                        };
+                        
+                        imgNoCors.onerror = () => {
+                            if (!noCorsResolved) {
+                                noCorsResolved = true;
+                                clearTimeout(noCorsTimeout);
+                                resolve(false);
+                            }
+                        };
+                        
+                        imgNoCors.src = url + '?t=' + Date.now();
+                    }
+                };
+                
+                img.src = url + '?t=' + Date.now();
+            });
         };
         
         // Try mDNS first
@@ -151,21 +173,45 @@ class ESP32CAMDetector {
             return true;
         }
         
-        this.log('mDNS failed, trying IP address...');
+        this.log('mDNS failed, trying IP addresses...');
         
-        // Try IP address
-        const ipWorks = await testCameraUrl(CONFIG.CAMERA.IP_URL, 3000);
-        if (ipWorks) {
-            this.log('IP URL works');
-            this.cameraUrl = CONFIG.CAMERA.IP_URL;
-            return true;
+        // Try configured IP first (highest priority)
+        const commonIPs = [];
+        if (CONFIG.CAMERA.IP_URL) {
+            const configuredIP = CONFIG.CAMERA.IP_URL.replace('http://', '').replace('/cam.jpg', '');
+            commonIPs.push(configuredIP); // Add configured IP first
         }
         
-        this.error('Both mDNS and IP address failed');
+        // Try common IP ranges for hotspot HP
+        commonIPs.push(
+            '192.168.43.161',  // Current ESP32CAM IP (from Serial Monitor)
+            '192.168.43.97',   // Android hotspot (common)
+            '192.168.43.1',    // Gateway (sometimes camera)
+            '172.20.10.97',    // iPhone hotspot
+            '192.168.137.97',  // Some Android
+            '192.168.1.97'     // Old router (backward compatibility)
+        );
+        
+        // Remove duplicates
+        const uniqueIPs = [...new Set(commonIPs)];
+        
+        // Try each IP
+        for (const ip of uniqueIPs) {
+            const testIPUrl = `http://${ip}/cam.jpg`;
+            this.log(`Trying IP: ${ip}...`);
+            const ipWorks = await testCameraUrl(testIPUrl, 3000);
+            if (ipWorks) {
+                this.log(`✅ IP URL works: ${testIPUrl}`);
+                this.cameraUrl = testIPUrl;
+                return true;
+            }
+        }
+        
+        this.error('❌ All connection methods failed');
         this.error('Please check:');
         this.error('1. ESP32-CAM is powered on and connected to WiFi');
-        this.error('2. ESP32-CAM IP is correct in config.js');
-        this.error('3. ESP32-CAM is accessible: ' + CONFIG.CAMERA.IP_URL);
+        this.error('2. ESP32-CAM is on the same network');
+        this.error('3. Check Serial Monitor ESP32-CAM for actual IP address');
         return false;
     }
     
@@ -251,7 +297,7 @@ class ESP32CAMDetector {
         return Math.round(distanceM * 10) / 10; // Round to 1 decimal
     }
     
-    // Send vibrate signal to ESP32-CAM
+    // Send vibrate signal to Firebase (for ESP32-C3)
     async sendVibrateSignal(side) {
         const currentTime = Date.now();
         
@@ -268,41 +314,44 @@ class ESP32CAMDetector {
             this.lastVibrateTimeRight = currentTime;
         }
         
-        // Extract base URL
-        const baseUrl = this.cameraUrl.replace('/cam.jpg', '');
-        const endpoint = side === 'left' ? '/left' : '/right';
-        const vibrateUrl = `${baseUrl}${endpoint}`;
-        
-        // Send request with retry
-        for (let attempt = 0; attempt < CONFIG.VIBRATOR.RETRY_COUNT; attempt++) {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), CONFIG.VIBRATOR.TIMEOUT);
-                
-                const response = await fetch(vibrateUrl, {
-                    signal: controller.signal,
-                    cache: 'no-cache'
-                });
-                
-                clearTimeout(timeoutId);
-                
-                if (response.ok) {
-                    const text = await response.text();
-                    this.log(`Vibrate signal sent to ${side} (${vibrateUrl})`);
-                    return true;
-                }
-            } catch (error) {
-                if (attempt < CONFIG.VIBRATOR.RETRY_COUNT - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    continue;
-                } else {
-                    this.log(`Failed to send vibrate signal to ${side}: ${error.message}`);
-                    return false;
-                }
-            }
+        // Check if Firebase is initialized
+        if (!window.firebaseDatabase) {
+            this.error('Firebase not initialized yet');
+            return false;
         }
         
-        return false;
+        try {
+            // Import Firebase Database functions
+            const { ref, set } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js');
+            
+            const vibrateRef = ref(window.firebaseDatabase, '/vibrate/signal');
+            const vibrateData = {
+                side: side,
+                active: true,
+                timestamp: Date.now()
+            };
+            
+            // Send to Firebase
+            await set(vibrateRef, vibrateData);
+            this.log(`✅ Vibrate signal sent to Firebase: ${side.toUpperCase()}`);
+            
+            // Auto-clear after 1 second
+            setTimeout(async () => {
+                try {
+                    await set(vibrateRef, {
+                        ...vibrateData,
+                        active: false
+                    });
+                } catch (e) {
+                    // Ignore clear errors
+                }
+            }, 1000);
+            
+            return true;
+            } catch (error) {
+            this.error(`Failed to send vibrate signal to Firebase: ${error.message}`);
+                    return false;
+        }
     }
     
     // Detect objects in image
@@ -462,6 +511,28 @@ class ESP32CAMDetector {
         
         this.log('Starting detector...');
         this.updateStatus('Initializing...');
+        
+        // Wait for Firebase to be ready
+        let firebaseReady = false;
+        let waitCount = 0;
+        while (!firebaseReady && waitCount < 50) { // Wait max 5 seconds
+            if (window.firebaseDatabase) {
+                firebaseReady = true;
+                this.log('Firebase ready');
+            } else {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                waitCount++;
+            }
+        }
+        
+        if (!firebaseReady) {
+            this.updateStatus('Firebase not ready', 'error');
+            this.updateFirebaseStatus(false);
+            this.error('Firebase not initialized. Please refresh the page.');
+            return;
+        }
+        
+        this.updateFirebaseStatus(true);
         
         // Load model
         const modelLoaded = await this.loadModel();

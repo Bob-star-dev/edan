@@ -6,18 +6,28 @@ const CONFIG = {
     // ESP32-CAM URL Configuration
     CAMERA: {
         MDNS_URL: "http://senavision.local/cam.jpg",
-        IP_URL: "http://192.168.1.97/cam.jpg",  // IP address ESP32-CAM
+        IP_URL: "http://192.168.43.161/cam.jpg",  // IP address ESP32-CAM (akan auto-detect)
         TIMEOUT: 5000,  // 5 detik timeout
         RETRY_DELAY: 2000,  // Delay sebelum retry jika gagal (ms)
         FRAME_INTERVAL: 100,  // Interval antar frame (ms) - 10 FPS
+    },
+    
+    // Firebase Configuration
+    FIREBASE: {
+        apiKey: "AIzaSyDrKWMsQvJgtgGRvE2FEHPTnpq7MrKLQTQ",
+        authDomain: "senavision-id.firebaseapp.com",
+        databaseURL: "https://senavision-id-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "senavision-id",
+        storageBucket: "senavision-id.firebasestorage.app",
+        messagingSenderId: "1073477417711",
+        appId: "1:1073477417711:web:681c33a68733fc2b35391a",
+        measurementId: "G-7HJF81K0GE"
     },
     
     // Vibrator Configuration
     VIBRATOR: {
         DISTANCE_THRESHOLD: 1.5,  // Jarak dalam meter untuk trigger vibrate
         DEBOUNCE_TIME: 500,  // Waktu debounce dalam ms (mencegah spam request)
-        TIMEOUT: 5000,  // Timeout untuk request vibrate (ms)
-        RETRY_COUNT: 2,  // Jumlah retry jika request gagal
     },
     
     // Distance Calculation Configuration

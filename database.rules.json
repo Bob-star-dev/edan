@@ -1,52 +1,66 @@
 {
   "rules": {
-    ".read": "auth != null",
-    ".write": "auth != null",
+    ".read": false,
+    ".write": false,
     
-    "ml_results": {
-      ".read": true,
-      ".write": "auth != null",
-      "direction": {
-        ".validate": "newData.isString() && (newData.val() == 'left' || newData.val() == 'right' || newData.val() == 'stop' || newData.val() == 'both' || newData.val() == 'none')"
-      },
-      "timestamp": {
-        ".validate": "newData.isNumber()"
-      },
-      "confidence": {
-        ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1"
-      },
-      "object_detected": {
-        ".validate": "newData.isString()"
-      }
-    },
-    
-    "esp32_status": {
+    "navigation": {
       ".read": true,
       ".write": true,
-      "connected": {
-        ".validate": "newData.isBoolean()"
-      },
-      "motor_active": {
-        ".validate": "newData.isString() && (newData.val() == 'left' || newData.val() == 'right' || newData.val() == 'stop' || newData.val() == 'both' || newData.val() == 'none')"
-      },
-      "last_update": {
-        ".validate": "newData.isNumber()"
-      },
-      "ip_address": {
-        ".validate": "newData.isString()"
-      }
-    },
-    
-    "images": {
-      ".read": "auth != null",
-      ".write": "auth != null",
-      "$imageId": {
-        "data": {
-          ".validate": "newData.isString()"
+      "mode": {
+        ".read": true,
+        ".write": true,
+        "active": {
+          ".validate": "newData.isBoolean()"
         },
         "timestamp": {
           ".validate": "newData.isNumber()"
         }
+      }
+    },
+    
+    "detection": {
+      ".read": true,
+      ".write": true,
+      "object": {
+        ".read": true,
+        ".write": true,
+        "side": {
+          ".validate": "newData.isString() && (newData.val() == 'left' || newData.val() == 'right')"
+        },
+        "distance": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "object": {
+          ".validate": "newData.isString()"
+        },
+        "active": {
+          ".validate": "newData.isBoolean()"
+        },
+        "timestamp": {
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+    
+    "esp32cam": {
+      ".read": true,
+      ".write": true,
+      "online": {
+        ".validate": "newData.isBoolean()"
+      },
+      "ip": {
+        ".validate": "newData.isString()"
+      }
+    },
+    
+    "esp32c3": {
+      ".read": true,
+      ".write": true,
+      "online": {
+        ".validate": "newData.isBoolean()"
+      },
+      "ip": {
+        ".validate": "newData.isString()"
       }
     }
   }
